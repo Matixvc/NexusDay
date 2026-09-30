@@ -121,6 +121,7 @@ cleanly for the active state, scale to any density, and cost ~0 KB of binary siz
 | Audio | `expo-audio` — recording **and** playback |
 | Files | `expo-file-system` (SDK 57 class API) · `expo-sharing` · `expo-document-picker` |
 | Security | `expo-local-authentication` (Face ID / fingerprint / PIN) |
+| Haptics | `expo-haptics` — wrapped in a never-throwing, no-op-on-failure service |
 | Calendar | `expo-calendar` · `react-native-calendars` |
 | Notifications | `expo-notifications` (with inline completion actions) |
 | Delivery | **EAS Build** (Cloud Native Generation) |
@@ -204,6 +205,7 @@ runner, a headless environment).
 | **Global search** | One field ranks matches across notes, events, habits and expenses by prefix-match, field weight and recency. Tapping a result navigates **and highlights** the exact item. | `services/search.js`, `useFocusId.js` |
 | **Private notes & expenses** | Per-item biometric lock. Private content is also **excluded from search results, the dashboard and any summary text** — the lock protects the content, not just the record. | `services/privacy.js` |
 | **Neon accent modes** | 4 themes, instant runtime repaint via the mutable style registry (see above). Also retints the calendar and navigation themes. | `theme/accents.js`, `theme.js` |
+| **Haptic feedback** | Native tactile response wired through `expo-haptics`: a light impact on primary actions, a selection tick when flipping a switch, a success pulse when a habit is ticked, and a medium impact when a swipe action fires. | `services/haptics.js` |
 | **Voice notes** | Record in-app (mono, 64 kbps, metered level bar), replayed inline with a progress bar. The finished take is moved out of the cache into permanent storage only when accepted. | `hooks/useRecorder.js`, `ui/media.js` |
 | **Swipe gestures** | Swipe a row left/right to pin, lock, share or delete, with an `expo-local-authentication` prompt for destructive actions. | `ui/SwipeRow.js` |
 | **Offline assistant (Nexus AI)** | An intent matcher that answers "¿Qué tengo hoy?" / "¿Cuánto gasté este mes?" from data already on the device. **No API key, no network call** — and the UI says so explicitly. | `services/assistant.js` |
@@ -211,9 +213,10 @@ runner, a headless environment).
 | **Calendar bridge** | Copies events to the native calendar and exports to `.ics` through the system share sheet. | `services/calendar.js` |
 | **Multi-format money** | Parses `1.234,56` and `1234.56` alike; formats as es-AR (`$ 1.850,50`) while writing machine-readable decimals to exports. | `utils/money.js` |
 
-> **On haptics:** `expo-haptics` is **not** currently a dependency. It is scheduled for
-> v1.3.0 (see [`ROADMAP_V1.2.md`](ROADMAP_V1.2.md) § 11), where it will back the tick,
-> record and delete interactions.
+> **On haptics:** feedback is **subtle and semantic**, not decorative. Marking a habit done
+> buzzes, *un*-marking stays silent; the vibration means "done", so an accidental un-tick
+> never adds noise. Every call is wrapped by `services/haptics.js`, which probes the module
+> once and degrades to a no-op on a device without a vibrator or in a simulator.
 
 ---
 
@@ -278,9 +281,9 @@ single component.
 | Xcode 16+ / Android Studio | latest | Only for local native builds |
 
 > ⚠️ **NexusDay needs a development build for some features.**
-> Voice recording, the calendar bridge, notifications and biometrics are **native modules**.
-> In Expo Go those controls degrade into an explanatory notice instead of crashing, but to
-> use them you must build the app:
+> Voice recording, the calendar bridge, notifications, biometrics and haptics are **native
+> modules**. In Expo Go those controls degrade into an explanatory notice instead of
+> crashing, but to use them you must build the app:
 >
 > ```bash
 > npx expo run:ios        # or
@@ -389,7 +392,7 @@ Credentials are stored in EAS servers — **no keystore is ever committed**.
 |---|---|
 | **v1.1.0** *(current)* | Interactive onboarding, customizable tabs, biometric lock, swipe gestures |
 | **v1.2.0** | Modular dashboard widgets, smart daily summary, spending & habit analytics, background audio player with waveform, JSON/CSV backup & restore |
-| **v1.3.0** | Encrypted backups with passphrase, scheduled exports, `expo-haptics` |
+| **v1.3.0** | Encrypted backups with passphrase, scheduled exports |
 | **v1.4.0** | Migration to Expo Router |
 
 The full technical plan — architecture decisions, sprint breakdown, dependency matrix and

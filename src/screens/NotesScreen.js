@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
@@ -17,7 +17,7 @@ import {
 } from '../components/ui/primitives';
 import { ColorPicker, TextArea, TextField } from '../components/ui/inputs';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
-import { SwipeRow } from '../components/ui/SwipeRow';
+import SwipeRow from '../components/ui/SwipeRow';
 import { Switch } from '../components/ui/Switch';
 import { AttachmentRow, VoicePlayback, VoiceRecorder } from '../components/ui/media';
 import { deleteRecording, formatSeconds } from '../services/audio';
@@ -69,27 +69,30 @@ export default function NotesScreen() {
 
   const pinnedCount = notes.filter((note) => note.pinned).length;
 
-  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK } });
+  const openCreate = useCallback(() => setSheet({ mode: 'create', values: { ...BLANK } }), []);
 
-  const openEdit = (note) =>
-    setSheet({
-      mode: 'edit',
-      id: note.id,
-      original: note,
-      values: {
-        title: note.title || '',
-        body: note.body || '',
-        color: note.color || colors.accent,
-        pinned: Boolean(note.pinned),
-        audio: note.audio || null,
-        attachment: note.attachment || null,
-      },
-    });
+  const openEdit = useCallback(
+    (note) =>
+      setSheet({
+        mode: 'edit',
+        id: note.id,
+        original: note,
+        values: {
+          title: note.title || '',
+          body: note.body || '',
+          color: note.color || colors.accent,
+          pinned: Boolean(note.pinned),
+          audio: note.audio || null,
+          attachment: note.attachment || null,
+        },
+      }),
+    [],
+  );
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
   /** A private note only opens after the phone confirms who is holding it. */
-  const openNote = async (note) => {
+  const openNote = useCallback(async (note) => {
     if (!note.private || privacyEnabled === false) {
       setUnlockError(null);
       openEdit(note);
@@ -102,9 +105,7 @@ export default function NotesScreen() {
       return;
     }
     setUnlockError(describePrivacyFailure(result.reason));
-  };
-
-  const togglePrivate = (note) => updateNote(note.id, { private: !note.private });
+  }, [openEdit, privacyEnabled]);
 
   // The global search can ask for a specific note: open it in its editor as soon as the
   // list is hydrated. SetState during render is the pattern React recommends for deriving
@@ -182,7 +183,14 @@ export default function NotesScreen() {
     setPickError(null);
   };
 
-  const togglePin = (note) => updateNote(note.id, { pinned: !note.pinned });
+  const togglePin = useCallback((note) => updateNote(note.id, { pinned: !note.pinned }), [updateNote]);
+
+  const togglePrivate = useCallback(
+    (note) => updateNote(note.id, { private: !note.private }),
+    [updateNote],
+  );
+
+  const requestDelete = useCallback((id) => setConfirmId(id), []);
 
   return (
     <>
@@ -229,63 +237,14 @@ export default function NotesScreen() {
           />
         ) : (
           visible.map((note) => (
-            <SwipeRow
+            <NoteRow
               key={note.id}
-              style={styles.swipeRow}
-              leftAction={{
-                label: note.pinned ? '📌 Quitar' : '📌 Fijar',
-                color: note.color || colors.accent,
-                onPress: () => togglePin(note),
-              }}
-              rightAction={{
-                label: note.private ? '🔓 Abrir' : '🔒 Privado',
-                color: colors.accent,
-                onPress: () => togglePrivate(note),
-              }}
-            >
-              <Card accent={note.color} onPress={() => openNote(note)} style={styles.noteCard}>
-                <View style={styles.noteHeader}>
-                  <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={1}>
-                    {note.pinned ? '📌 ' : ''}
-                    {note.title}
-                  </Text>
-                  {note.private ? <Pill label="🔒 privada" /> : null}
-                  {note.pinned ? <Pill label="fija" tone="accent" /> : null}
-                </View>
-
-                {previewOf(note.body) ? (
-                  <Text style={[typography.small, styles.noteBody]} numberOfLines={3}>
-                    {previewOf(note.body)}
-                  </Text>
-                ) : null}
-
-                {note.audio?.uri || note.attachment?.uri ? (
-                  <View style={styles.pillRow}>
-                    {note.audio?.uri ? (
-                      <Pill
-                        label={`🎙 ${formatSeconds((Number(note.audio.durationMs) || 0) / 1000)}`}
-                        tone="accent"
-                      />
-                    ) : null}
-                    {note.attachment?.uri ? (
-                      <Pill label={`📎 ${note.attachment.name || 'adjunto'}`} style={styles.longPill} />
-                    ) : null}
-                  </View>
-                ) : null}
-
-                <View style={styles.noteFooter}>
-                  <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
-                  <View style={styles.noteActions}>
-                    <TextButton
-                      label={note.pinned ? 'Quitar fija' : 'Fijar'}
-                      tone="ghost"
-                      onPress={() => togglePin(note)}
-                    />
-                    <TextButton label="Borrar" tone="danger" onPress={() => setConfirmId(note.id)} />
-                  </View>
-                </View>
-              </Card>
-            </SwipeRow>
+              note={note}
+              onOpen={openNote}
+              onTogglePin={togglePin}
+              onTogglePrivate={togglePrivate}
+              onDelete={requestDelete}
+            />
           ))
         )}
       </Screen>
@@ -396,6 +355,79 @@ export default function NotesScreen() {
     </>
   );
 }
+
+/**
+ * One note row.
+ *
+ * Memoized so that pinning, locking or deleting a single note does not re-render every
+ * other card in the list. The swipe actions are `useMemo`d as well, because `SwipeRow` keys
+ * its pan responder on them: new object literals on every render would rebuild the
+ * responder each time and make the drag feel laggy.
+ */
+const NoteRow = memo(function NoteRow({ note, onOpen, onTogglePin, onTogglePrivate, onDelete }) {
+  const leftAction = useMemo(
+    () => ({
+      label: note.pinned ? '📌 Quitar' : '📌 Fijar',
+      color: note.color || colors.accent,
+      onPress: () => onTogglePin(note),
+    }),
+    [note, onTogglePin],
+  );
+
+  const rightAction = useMemo(
+    () => ({
+      label: note.private ? '🔓 Abrir' : '🔒 Privado',
+      color: colors.accent,
+      onPress: () => onTogglePrivate(note),
+    }),
+    [note, onTogglePrivate],
+  );
+
+  const open = useCallback(() => onOpen(note), [note, onOpen]);
+  const togglePin = useCallback(() => onTogglePin(note), [note, onTogglePin]);
+  const askDelete = useCallback(() => onDelete(note.id), [note.id, onDelete]);
+  const preview = previewOf(note.body);
+
+  return (
+    <SwipeRow style={styles.swipeRow} leftAction={leftAction} rightAction={rightAction}>
+      <Card accent={note.color} onPress={open} style={styles.noteCard}>
+        <View style={styles.noteHeader}>
+          <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={1}>
+            {note.pinned ? '📌 ' : ''}
+            {note.title}
+          </Text>
+          {note.private ? <Pill label="🔒 privada" /> : null}
+          {note.pinned ? <Pill label="fija" tone="accent" /> : null}
+        </View>
+
+        {preview ? (
+          <Text style={[typography.small, styles.noteBody]} numberOfLines={3}>
+            {preview}
+          </Text>
+        ) : null}
+
+        {note.audio?.uri || note.attachment?.uri ? (
+          <View style={styles.pillRow}>
+            {note.audio?.uri ? (
+              <Pill label={`🎙 ${formatSeconds((Number(note.audio.durationMs) || 0) / 1000)}`} tone="accent" />
+            ) : null}
+            {note.attachment?.uri ? (
+              <Pill label={`📎 ${note.attachment.name || 'adjunto'}`} style={styles.longPill} />
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.noteFooter}>
+          <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
+          <View style={styles.noteActions}>
+            <TextButton label={note.pinned ? 'Quitar fija' : 'Fijar'} tone="ghost" onPress={togglePin} />
+            <TextButton label="Borrar" tone="danger" onPress={askDelete} />
+          </View>
+        </View>
+      </Card>
+    </SwipeRow>
+  );
+});
 
 const styles = themedStyles({
   search: {

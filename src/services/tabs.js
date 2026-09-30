@@ -1,4 +1,9 @@
-import { DEFAULT_TAB_ORDER, HOME_TAB } from '../navigation/tabs';
+import { DEFAULT_TAB_ORDER, HOME_TAB, SETTINGS_TAB } from '../navigation/tabs';
+
+/** The tabs the user may neither reorder nor hide. */
+const LOCKED = [HOME_TAB, SETTINGS_TAB];
+
+const isLocked = (name) => LOCKED.includes(name);
 
 /**
  * Tab layout preferences (Ajustes › Personalizar Navegación).
@@ -7,7 +12,13 @@ import { DEFAULT_TAB_ORDER, HOME_TAB } from '../navigation/tabs';
  * tabs are *not* unregistered: they stay in the navigator so the global search can open them
  * (`navigate` would fail on a route the navigator does not know), the bar simply stops
  * showing them and offers a one-tap way to bring them back.
+ *
+ * `order` and `hidden` are **independent** and must be treated as such: the navigator only
+ * has to be rebuilt when the *order* changes, because `BottomTabBar` already filters the
+ * visible routes on every render. That separation is what lets toggling a switch not throw
+ * the user out of the screen they are on.
  */
+
 export const DEFAULT_TAB_CONFIG = { order: [...DEFAULT_TAB_ORDER], hidden: [] };
 
 /** Repairs whatever came out of storage: unknown names, duplicates, missing tabs, Inicio. */
@@ -26,8 +37,9 @@ export function normalizeTabConfig(stored) {
   // Inicio is always the first tab, even if the stored order says otherwise.
   const homeAt = order.indexOf(HOME_TAB);
   if (homeAt > 0) order.splice(0, 0, order.splice(homeAt, 1)[0]);
+  // A locked tab can never be hidden, even if an old backup says so.
   hiddenSource.forEach((name) => {
-    if (name !== HOME_TAB && DEFAULT_TAB_ORDER.includes(name) && !hidden.includes(name)) hidden.push(name);
+    if (!isLocked(name) && DEFAULT_TAB_ORDER.includes(name) && !hidden.includes(name)) hidden.push(name);
   });
 
   return { order, hidden };
@@ -39,13 +51,13 @@ export function visibleTabs(config) {
 }
 
 export function isVisible(config, name) {
-  return !config.hidden.includes(name);
+  return !normalizeTabConfig(config).hidden.includes(name);
 }
 
-/** Moves a tab one slot up (-1) or down (+1). Inicio never moves. */
+/** Moves a tab one slot up (-1) or down (+1). Inicio and Ajustes never move. */
 export function moveTab(config, name, direction) {
   const { order, hidden } = normalizeTabConfig(config);
-  if (name === HOME_TAB) return { order, hidden };
+  if (isLocked(name)) return { order, hidden };
 
   const from = order.indexOf(name);
   const to = from + direction;
@@ -59,7 +71,7 @@ export function moveTab(config, name, direction) {
 
 export function setTabHidden(config, name, hiddenFlag) {
   const { order, hidden } = normalizeTabConfig(config);
-  if (name === HOME_TAB) return { order, hidden };
+  if (isLocked(name)) return { order, hidden };
   const nextHidden = hiddenFlag
     ? Array.from(new Set([...hidden, name]))
     : hidden.filter((item) => item !== name);
@@ -67,10 +79,18 @@ export function setTabHidden(config, name, hiddenFlag) {
 }
 
 export function toggleTabHidden(config, name) {
-  return setTabHidden(config, name, !config.hidden.includes(name));
+  return setTabHidden(config, name, !normalizeTabConfig(config).hidden.includes(name));
 }
 
-/** Short signature used to rebuild the navigator only when the layout really changes. */
+/**
+ * Signature of the **order only**: the navigator must be rebuilt when this changes, and
+ * only then. Visibility changes are rendered by `BottomTabBar` on the fly.
+ */
+export function tabOrderSignature(config) {
+  return normalizeTabConfig(config).order.join('>');
+}
+
+/** Full signature (order + visibility), for callers that genuinely need both. */
 export function tabSignature(config) {
   const { order, hidden } = normalizeTabConfig(config);
   return `${order.join('>')}|${hidden.join('>')}`;

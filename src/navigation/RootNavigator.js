@@ -6,6 +6,7 @@ import { BottomTabBar } from './BottomTabBar';
 import { Glyph } from './TabGlyphs';
 import { TABS, HOME_TAB } from './tabs';
 import { normalizeTabConfig } from '../services/tabs';
+import { useSwipeLock } from '../context/SwipeLockContext';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -25,6 +26,9 @@ const Tab = createMaterialTopTabNavigator();
 export default function RootNavigator({ initialRouteName = HOME_TAB, onRouteChange, tabConfig, onRevealTab }) {
   const config = normalizeTabConfig(tabConfig);
   const order = config.order;
+  // A `SwipeRow` being dragged takes this lock, and the pager stops translating the finger.
+  // Without it, swiping a card sideways also flips to the next section.
+  const { locked: swipeLocked } = useSwipeLock();
 
   return (
     <NavigationContainer theme={navigationTheme}>
@@ -33,7 +37,7 @@ export default function RootNavigator({ initialRouteName = HOME_TAB, onRouteChan
         tabBarPosition="bottom"
         tabBar={(props) => <BottomTabBar {...props} hidden={config.hidden} onRevealTab={onRevealTab} />}
         screenOptions={{
-          swipeEnabled: true,
+          swipeEnabled: !swipeLocked,
           animationEnabled: true,
           lazy: true,
           lazyPreloadDistance: 1,

@@ -1,97 +1,121 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
+import { useSwipeLockActions } from '../../context/SwipeLockContext';
+import { swipe as swipeHaptic } from '../../services/haptics';
 
 /**
  * Swipe-to-action row.
  *
- * The trick is *not* competing with the horizontal pager that moves between sections:
+ * The hard part of this component is *not* the animation, it is winning the gesture
+ * against the horizontal pager that moves between sections. `react-native-pager-view` is a
+ * native view with its own gesture recogniser, so a JS responder alone is not enough: the
+ * row also takes a lock that the navigator honours by disabling `swipeEnabled`
+ * (`SwipeLockContext`). Four rules keep the arbitration predictable:
  *
- * - The gesture is only considered when it starts inside the `EDGE` strip of the row, so a
- *   drag anywhere else belongs to the pager (or to a vertical scroll) and is never stolen:
- *   this row is not even consulted for those touches.
- * - Inside that strip the row still needs `THRESHOLD` px of mostly-horizontal movement
- *   (`dx` clearly bigger than `dy`) before it claims the responder.
- * - Once claimed, `onPanResponderTerminationRequest` returns `false` and the row keeps the
- *   gesture until release, animating back to centre when the action was not reached.
+ * - **The row never asks for the responder on touch start** (`onStartShouldSet*` are
+ *   `false`), so a plain tap still reaches the `Pressable` children underneath.
+ * - **`activeOffsetX` (8 px)** — the row claims the gesture as soon as the finger has moved
+ *   8 px *horizontally*, in **any** direction. It is not restricted to the old edge strips,
+ *   which made swiping feel broken whenever the finger landed mid-card.
+ * - **`failOffsetY` (12 px)** — if the movement is clearly vertical the row bails out and
+ *   gives the gesture back, so the list still scrolls normally.
+ * - **Once claimed it never gives up** — `onPanResponderTerminationRequest` returns `false`,
+ *   the lock is held until release, and the row springs back when the threshold is missed.
  *
- * The per-gesture bookkeeping lives in the closure built by the same memo as the responder
- * (and is therefore per row, not shared), because the React compiler rules forbid mutating
- * refs while rendering.
+ * `onMoveShouldSetPanResponderCapture` is used (not `onMoveShouldSetPanResponder`) so the
+ * decision happens *before* the children: a nested `Pressable` or a text selection can no
+ * longer swallow the drag.
  */
 
-const EDGE = 34; // px strip on each side that arms the row
-const THRESHOLD = 24; // px of horizontal travel before the row takes over
-const RATIO = 1.5; // how much more horizontal than vertical the travel must be
+const ACTIVE_OFFSET_X = 8; // px of horizontal travel that arms the row
+const FAIL_OFFSET_Y = 12; // px of vertical travel that hands the gesture to the list
 const ACTION_WIDTH = 96; // px that must be travelled to fire the action
 const MAX_TRAVEL = 108;
 
-export function SwipeRow({ leftAction, rightAction, children, style, disabled }) {
+function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction }) {
   const translateX = useMemo(() => new Animated.Value(0), []);
+  const { acquireSwipe } = useSwipeLockActions();
 
-  const reset = useCallback(() => {
-    Animated.spring(translateX, {
-      toValue: 0,
-      useNativeDriver: true,
-      speed: 20,
-      bounciness: 4,
-    }).start();
-  }, [translateX]);
+  const { panHandlers, settle } = useMemo(() => {
+    // Per-responder mutable state. It lives *inside* the memo on purpose: it is only ever
+    // meaningful while one finger is down, and keeping it here means no ref is read during
+    // render (which the React Compiler rejects). `release` is the idempotent unlock the
+    // lock hands back on grant.
+    const gesture = { release: null };
 
-  const { panHandlers, onTouchStart, onLayout } = useMemo(() => {
-    // Fresh per responder instance: only meaningful while one finger is down.
-    const gesture = { width: 0, start: null };
+    /** Gives the gesture back to the pager and springs the row to centre. */
+    const settle = () => {
+      if (gesture.release) {
+        gesture.release();
+        gesture.release = null;
+      }
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 20,
+        bounciness: 4,
+      }).start();
+    };
 
     const responder = PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponderCapture: (event, move) => {
         if (disabled) return false;
-        const start = gesture.start;
-        if (!start || !gesture.width) return false;
-        const armed = start.x <= EDGE || start.x >= start.width - EDGE;
-        if (!armed) return false;
-        return Math.abs(move.dx) > THRESHOLD && Math.abs(move.dx) > Math.abs(move.dy) * RATIO;
+        // Vertical intent is checked first: bail out so a vertical scroll is never hijacked.
+        if (Math.abs(move.dy) > FAIL_OFFSET_Y && Math.abs(move.dy) > Math.abs(move.dx)) return false;
+        return Math.abs(move.dx) > ACTIVE_OFFSET_X;
       },
-      // Keep the gesture even if the pager asks for it back.
+      // Keep the gesture even if the pager (or any parent) asks for it back.
       onPanResponderTerminationRequest: () => false,
+      // Block the native side too: this is what actually stops the pager's own recogniser.
       onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: () => {
+        gesture.release = acquireSwipe();
+      },
       onPanResponderMove: (event, move) => {
-        translateX.setValue(Math.max(-MAX_TRAVEL, Math.min(MAX_TRAVEL, move.dx)));
+        // Rubber-band past MAX_TRAVEL so the row feels like it resists instead of stopping.
+        const raw = move.dx;
+        const over = Math.abs(raw) - MAX_TRAVEL;
+        const base = Math.max(-MAX_TRAVEL, Math.min(MAX_TRAVEL, raw));
+        const damped = over > 0 ? Math.sign(raw) * Math.min(over * 0.35, MAX_TRAVEL * 0.35) : 0;
+        translateX.setValue(base + damped);
       },
       onPanResponderRelease: (event, move) => {
-        if (move.dx > ACTION_WIDTH && leftAction?.onPress) {
+        const dx = move.dx;
+        let fired = false;
+
+        if (dx > ACTION_WIDTH && leftAction?.onPress) {
           leftAction.onPress();
-          reset();
-          return;
-        }
-        if (move.dx < -ACTION_WIDTH && rightAction?.onPress) {
+          fired = true;
+        } else if (dx < -ACTION_WIDTH && rightAction?.onPress) {
           rightAction.onPress();
-          reset();
-          return;
+          fired = true;
         }
-        reset();
+
+        if (fired) {
+          swipeHaptic();
+          onAction?.();
+        }
+        settle();
       },
-      onPanResponderTerminate: reset,
+      onPanResponderTerminate: settle,
     });
 
-    return {
-      panHandlers: responder.panHandlers,
-      onTouchStart: (event) => {
-        gesture.start = { x: event.nativeEvent?.locationX ?? 0, width: gesture.width };
-      },
-      onLayout: (event) => {
-        gesture.width = event.nativeEvent.layout.width;
-      },
-    };
-  }, [disabled, leftAction, rightAction, reset, translateX]);
+    return { panHandlers: responder.panHandlers, settle };
+  }, [acquireSwipe, disabled, leftAction, onAction, rightAction, translateX]);
 
+  // A row that becomes disabled must not stay stuck open, and the lock must not leak if
+  // the component unmounts in the middle of a gesture.
   useEffect(() => {
-    if (disabled) Animated.timing(translateX, { toValue: 0, duration: 120, useNativeDriver: true }).start();
-  }, [disabled, translateX]);
+    if (disabled) settle();
+  }, [disabled, settle]);
+
+  useEffect(() => settle, [settle]);
 
   return (
-    <View style={[styles.wrap, style]} onLayout={onLayout} onTouchStart={onTouchStart} {...panHandlers}>
+    <View style={[styles.wrap, style]}>
       {leftAction || rightAction ? (
         <>
           {leftAction ? <Action side="left" {...leftAction} /> : null}
@@ -99,7 +123,9 @@ export function SwipeRow({ leftAction, rightAction, children, style, disabled })
         </>
       ) : null}
 
-      <Animated.View style={[styles.content, { transform: [{ translateX }] }]}>{children}</Animated.View>
+      <Animated.View style={[styles.content, { transform: [{ translateX }] }]} {...panHandlers}>
+        {children}
+      </Animated.View>
     </View>
   );
 }
@@ -119,10 +145,11 @@ function Action({ side, label, color, onPress }) {
   );
 }
 
+export default memo(SwipeRow);
+
 const styles = themedStyles({
   wrap: { position: 'relative', justifyContent: 'center' },
   content: { width: '100%' },
-  spacer: { width: 1, height: 1 },
   action: {
     position: 'absolute',
     top: 0,

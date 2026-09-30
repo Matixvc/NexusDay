@@ -6,10 +6,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { AppDataProvider, useAppData } from './src/context/AppDataContext';
 import { ThemeProvider, useAccentTheme } from './src/context/ThemeContext';
+import { SwipeLockProvider } from './src/context/SwipeLockContext';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { HOME_TAB } from './src/navigation/tabs';
-import { setTabHidden, tabSignature } from './src/services/tabs';
+import { setTabHidden, tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
 
@@ -26,8 +27,10 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AppDataProvider>
-          <StatusBar style="light" />
-          <AppShell />
+          <SwipeLockProvider>
+            <StatusBar style="light" />
+            <AppShell />
+          </SwipeLockProvider>
         </AppDataProvider>
       </ThemeProvider>
     </SafeAreaProvider>
@@ -64,7 +67,10 @@ function AppShell() {
 
   return (
     <RootNavigator
-      key={`${revision}|${tabSignature(tabConfig)}`}
+      // Only the *order* remounts the navigator. Toggling a visibility switch changes
+      // `tabConfig.hidden`, which `BottomTabBar` applies on its own render — so flipping a
+      // switch never rebuilds the navigator and never throws the user off Ajustes.
+      key={`${revision}|${tabOrderSignature(tabConfig)}`}
       initialRouteName={lastRoute}
       onRouteChange={onRouteChange}
       tabConfig={tabConfig}

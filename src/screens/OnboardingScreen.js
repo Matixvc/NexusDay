@@ -163,6 +163,15 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
           <Text style={[typography.overline, styles.step]}>{`PASO ${index + 1} DE ${SLIDES.length}`}</Text>
         </View>
 
+        {/*
+          Full-bleed horizontal pager.
+
+          The slides are exactly `width` wide and the container has **no** horizontal padding:
+          any padding here would shrink the page the pager measures for `pagingEnabled` while
+          the slides stayed `width` wide, which is what produced the overflow and the cut on
+          the right edge. The gutter moves *inside* each slide instead, so the snap points and
+          the page size always agree.
+        */}
         <ScrollView
           style={styles.pager}
           horizontal
@@ -175,7 +184,7 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
           }}
         >
           {SLIDES.map((item) => (
-            <View key={item.key} style={{ width }}>
+            <View key={item.key} style={[styles.slidePage, { width }]}>
               <Slide
                 slide={item}
                 scale={scale}
@@ -580,15 +589,21 @@ const styles = themedStyles({
     backgroundColor: `${colors.background}ee`,
   },
 
-  body: { flex: 1, paddingHorizontal: layout.gutter, gap: spacing.md },
+  body: { flex: 1, gap: spacing.md },
+  // The pager spans the whole window: no horizontal padding here, or `pagingEnabled` would
+  // measure a page narrower than the slides and clip the right edge.
+  pager: { flexGrow: 0, marginHorizontal: -layout.gutter },
+  // Each page is exactly `width` wide; the gutter lives in here.
+  slidePage: { flexGrow: 0 },
+  slide: { paddingHorizontal: layout.gutter, gap: spacing.md, paddingTop: spacing.md },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
   brandMark: { ...typography.title, color: colors.accent },
   brandName: { ...typography.bodyStrong, color: colors.text },
   step: { color: colors.textMuted },
 
-  pager: { flexGrow: 0 },
-  slide: { paddingRight: spacing.sm, gap: spacing.md, paddingTop: spacing.md },
+  // (pager, slidePage and slide are declared above, next to `body`.)
+
   emojiRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   emojiRing: {
     borderWidth: 1,

@@ -1,6 +1,8 @@
+import { memo, useCallback } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
+import { tap as tapHaptic } from '../../services/haptics';
 
 /**
  * Page scaffold: dark background, large title, scrollable body.
@@ -44,7 +46,7 @@ export function Screen({ title, subtitle, headerRight, children, contentStyle })
 }
 
 /** Elevated container used for every list item and group of controls. */
-export function Card({ children, style, accent, onPress, dimmed }) {
+function Card({ children, style, accent, onPress, dimmed }) {
   const body = (
     <View style={[styles.card, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
       {accent ? <View style={[styles.accentBar, { backgroundColor: accent }]} /> : null}
@@ -61,7 +63,7 @@ export function Card({ children, style, accent, onPress, dimmed }) {
   );
 }
 
-export function SectionTitle({ title, count, right }) {
+function SectionTitle({ title, count, right }) {
   return (
     <View style={styles.sectionRow}>
       <View style={styles.sectionLeft}>
@@ -74,7 +76,7 @@ export function SectionTitle({ title, count, right }) {
 }
 
 /** Selectable pill. Used for day tabs, lead times, colours and filters. */
-export function Chip({ label, selected, onPress, color, compact }) {
+function Chip({ label, selected, onPress, color, compact }) {
   const tint = color || colors.accent;
   return (
     <Pressable
@@ -100,7 +102,7 @@ export function Chip({ label, selected, onPress, color, compact }) {
   );
 }
 
-export function Pill({ label, tone = 'neutral', style }) {
+function Pill({ label, tone = 'neutral', style }) {
   const tones = {
     neutral: { backgroundColor: colors.surfacePlus, color: colors.textSecondary },
     accent: { backgroundColor: colors.accentSoft, color: colors.accent },
@@ -118,12 +120,15 @@ export function Pill({ label, tone = 'neutral', style }) {
 }
 
 /** Text button — avoids any icon-font dependency. */
-export function TextButton({ label, onPress, tone = 'primary', disabled, style }) {
+function TextButton({ label, onPress, tone = 'primary', disabled, style }) {
   const tones = { primary: colors.accent, ghost: colors.textSecondary, danger: colors.danger };
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.textButton,
         disabled ? styles.disabled : null,
@@ -138,11 +143,22 @@ export function TextButton({ label, onPress, tone = 'primary', disabled, style }
   );
 }
 
-export function PrimaryButton({ label, onPress, disabled, style }) {
+function PrimaryButton({ label, onPress, disabled, style }) {
+  // A light impact on the main actions: enough to feel the press on a phone held one-handed,
+  // subtle enough not to be noisy when several are pressed in a row.
+  const handlePress = useCallback(() => {
+    if (disabled) return;
+    tapHaptic();
+    onPress?.();
+  }, [disabled, onPress]);
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.primaryButton,
         disabled ? styles.disabled : null,
@@ -157,15 +173,20 @@ export function PrimaryButton({ label, onPress, disabled, style }) {
   );
 }
 
-export function Fab({ onPress, label = '+' }) {
+function Fab({ onPress, label = '+' }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.fab, shadow.fab, pressed ? styles.pressed : null]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Agregar"
+      style={({ pressed }) => [styles.fab, shadow.fab, pressed ? styles.pressed : null]}
+    >
       <Text style={styles.fabLabel}>{label}</Text>
     </Pressable>
   );
 }
 
-export function Stat({ value, label, accent }) {
+function Stat({ value, label, accent }) {
   return (
     <View style={styles.stat}>
       <Text style={[styles.statValue, typography.tabular, accent ? { color: accent } : null]} numberOfLines={1}>
@@ -179,7 +200,7 @@ export function Stat({ value, label, accent }) {
 }
 
 /** Inline feedback line inside forms (permissions, validation, etc). */
-export function Notice({ text, tone = 'info' }) {
+function Notice({ text, tone = 'info' }) {
   if (!text) return null;
   const tones = {
     info: { backgroundColor: colors.accentSoft, color: colors.accent },
@@ -193,7 +214,7 @@ export function Notice({ text, tone = 'info' }) {
   );
 }
 
-export function EmptyState({ emoji, title, hint }) {
+function EmptyState({ emoji, title, hint }) {
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyEmoji}>{emoji}</Text>
@@ -204,7 +225,7 @@ export function EmptyState({ emoji, title, hint }) {
 }
 
 /** Horizontally scrolling row of Chips (day tabs, filters). */
-export function ChipScroller({ children, style, contentContainerStyle, horizontal = true }) {
+function ChipScroller({ children, style, contentContainerStyle, horizontal = true }) {
   if (!horizontal) return <View style={[styles.chipWrap, style]}>{children}</View>;
   return (
     <ScrollView
@@ -217,6 +238,40 @@ export function ChipScroller({ children, style, contentContainerStyle, horizonta
     </ScrollView>
   );
 }
+
+/**
+ * Memoized exports.
+ *
+ * These primitives are rendered dozens of times per screen (one `Card` and one `Pill` per
+ * list row), so wrapping them in `memo` is the cheapest win available: a list that re-renders
+ * because a sibling state changed now only reconciles the rows whose own props moved.
+ *
+ * `Screen` and `ChipScroller` stay unmemoized on purpose — they take `children`, which is a
+ * fresh element on every parent render, so `memo` would never hit and would only add cost.
+ */
+export {
+  Card,
+  SectionTitle,
+  Chip,
+  Pill,
+  TextButton,
+  PrimaryButton,
+  Fab,
+  Stat,
+  Notice,
+  EmptyState,
+};
+
+export const MemoCard = memo(Card);
+export const MemoSectionTitle = memo(SectionTitle);
+export const MemoChip = memo(Chip);
+export const MemoPill = memo(Pill);
+export const MemoStat = memo(Stat);
+export const MemoPrimaryButton = memo(PrimaryButton);
+export const MemoFab = memo(Fab);
+export const MemoEmptyState = memo(EmptyState);
+
+export { ChipScroller };
 
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },

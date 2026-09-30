@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
@@ -19,7 +19,7 @@ import {
 import { TextField } from '../components/ui/inputs';
 import { DateField } from '../components/ui/DateField';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
-import { SwipeRow } from '../components/ui/SwipeRow';
+import SwipeRow from '../components/ui/SwipeRow';
 import { Switch } from '../components/ui/Switch';
 import { authenticate, describePrivacyFailure } from '../services/privacy';
 import { EXPENSE_CATEGORIES, categoryOf, formatMoney, parseAmount, sumAmounts } from '../utils/money';
@@ -82,36 +82,47 @@ export default function ExpensesScreen() {
     setError(null);
   };
 
-  const openEdit = (expense) =>
-    setSheet({
-      mode: 'edit',
-      id: expense.id,
-      values: {
-        amount: String(expense.amount ?? ''),
-        category: expense.category || EXPENSE_CATEGORIES[0].id,
-        note: expense.note || '',
-        dateKey: expense.dateKey || today,
-        private: Boolean(expense.private),
-      },
-    });
+  const openEdit = useCallback(
+    (expense) =>
+      setSheet({
+        mode: 'edit',
+        id: expense.id,
+        values: {
+          amount: String(expense.amount ?? ''),
+          category: expense.category || EXPENSE_CATEGORIES[0].id,
+          note: expense.note || '',
+          dateKey: expense.dateKey || today,
+          private: Boolean(expense.private),
+        },
+      }),
+    [today],
+  );
 
   /** A private expense only opens after the phone authenticates the user. */
-  const openExpense = async (expense) => {
-    if (!expense.private || privacyEnabled === false) {
-      setUnlockError(null);
-      openEdit(expense);
-      return;
-    }
-    const result = await authenticate({ promptMessage: 'Desbloqueá el gasto privado' });
-    if (result.ok) {
-      setUnlockError(null);
-      openEdit(expense);
-      return;
-    }
-    setUnlockError(describePrivacyFailure(result.reason));
-  };
+  const openExpense = useCallback(
+    async (expense) => {
+      if (!expense.private || privacyEnabled === false) {
+        setUnlockError(null);
+        openEdit(expense);
+        return;
+      }
+      const result = await authenticate({ promptMessage: 'Desbloqueá el gasto privado' });
+      if (result.ok) {
+        setUnlockError(null);
+        openEdit(expense);
+        return;
+      }
+      setUnlockError(describePrivacyFailure(result.reason));
+    },
+    [openEdit, privacyEnabled],
+  );
 
-  const togglePrivate = (expense) => updateExpense(expense.id, { private: !expense.private });
+  const togglePrivate = useCallback(
+    (expense) => updateExpense(expense.id, { private: !expense.private }),
+    [updateExpense],
+  );
+
+  const requestDelete = useCallback((id) => setConfirmId(id), []);
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
@@ -220,49 +231,16 @@ export default function ExpensesScreen() {
             hint="Anotá el primero arriba y vas a ver los totales del día y del mes."
           />
         ) : (
-          visible.map((expense) => {
-            const item = categoryOf(expense.category);
-            return (
-              <SwipeRow
-                key={expense.id}
-                style={styles.swipeRow}
-                leftAction={{
-                  label: expense.private ? '🔓 Abrir' : '🔒 Privado',
-                  color: item.color,
-                  onPress: () => togglePrivate(expense),
-                }}
-                rightAction={{
-                  label: '🗑 Borrar',
-                  color: colors.danger,
-                  onPress: () => setConfirmId(expense.id),
-                }}
-              >
-                <Card
-                  accent={item.color}
-                  onPress={() => openExpense(expense)}
-                  style={[styles.row, focusId === expense.id ? styles.focused : null]}
-                >
-                  <View style={styles.rowInner}>
-                    <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
-                      <Text style={styles.rowEmoji}>{item.emoji}</Text>
-                    </View>
-                    <View style={styles.rowBody}>
-                      <Text style={typography.bodyStrong} numberOfLines={1}>
-                        {expense.private ? '🔒 ' : ''}
-                        {expense.note || item.id}
-                      </Text>
-                      <Text style={typography.caption} numberOfLines={1}>
-                        {`${relativeDayLabel(expense.dateKey)} · ${item.id}`}
-                      </Text>
-                    </View>
-                    <Text style={[styles.rowAmount, typography.tabular]}>
-                      {expense.private ? '•••' : formatMoney(expense.amount)}
-                    </Text>
-                  </View>
-                </Card>
-              </SwipeRow>
-            );
-          })
+          visible.map((expense) => (
+            <ExpenseRow
+              key={expense.id}
+              expense={expense}
+              focused={focusId === expense.id}
+              onOpen={openExpense}
+              onTogglePrivate={togglePrivate}
+              onDelete={requestDelete}
+            />
+          ))
         )}
       </Screen>
 
@@ -339,6 +317,57 @@ export default function ExpensesScreen() {
     </>
   );
 }
+
+/**
+ * One expense row.
+ *
+ * Memoized for the same reason as the note and habit rows: adding a single expense rewrites
+ * the `expenses` array, and the swipe actions are `useMemo`d so `SwipeRow` keeps a stable
+ * pan responder instead of rebuilding it on every render.
+ */
+const ExpenseRow = memo(function ExpenseRow({ expense, focused, onOpen, onTogglePrivate, onDelete }) {
+  const item = categoryOf(expense.category);
+
+  const leftAction = useMemo(
+    () => ({
+      label: expense.private ? '🔓 Abrir' : '🔒 Privado',
+      color: item.color,
+      onPress: () => onTogglePrivate(expense),
+    }),
+    [expense, item.color, onTogglePrivate],
+  );
+
+  const rightAction = useMemo(
+    () => ({ label: '🗑 Borrar', color: colors.danger, onPress: () => onDelete(expense.id) }),
+    [expense.id, onDelete],
+  );
+
+  const open = useCallback(() => onOpen(expense), [expense, onOpen]);
+
+  return (
+    <SwipeRow style={styles.swipeRow} leftAction={leftAction} rightAction={rightAction}>
+      <Card accent={item.color} onPress={open} style={[styles.row, focused ? styles.focused : null]}>
+        <View style={styles.rowInner}>
+          <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
+            <Text style={styles.rowEmoji}>{item.emoji}</Text>
+          </View>
+          <View style={styles.rowBody}>
+            <Text style={typography.bodyStrong} numberOfLines={1}>
+              {expense.private ? '🔒 ' : ''}
+              {expense.note || item.id}
+            </Text>
+            <Text style={typography.caption} numberOfLines={1}>
+              {`${relativeDayLabel(expense.dateKey)} · ${item.id}`}
+            </Text>
+          </View>
+          <Text style={[styles.rowAmount, typography.tabular]}>
+            {expense.private ? '•••' : formatMoney(expense.amount)}
+          </Text>
+        </View>
+      </Card>
+    </SwipeRow>
+  );
+});
 
 const styles = themedStyles({
   form: { gap: spacing.md },

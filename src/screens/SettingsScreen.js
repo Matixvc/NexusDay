@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { ACCENT_THEMES } from '../theme/accents';
-import { HOME_TAB, tabByName } from '../navigation/tabs';
+import { isLockedTab, tabByName } from '../navigation/tabs';
 import { DEFAULT_TAB_CONFIG, moveTab, setTabHidden } from '../services/tabs';
 import { authenticate, describeCapability, describePrivacyFailure } from '../services/privacy';
 import { useAccentTheme } from '../context/ThemeContext';
@@ -58,6 +58,8 @@ export default function SettingsScreen() {
     expenses,
     settings,
     updateSettings,
+    userName,
+    setUserName,
     clearAllData,
     replayTutorial,
     tabConfig,
@@ -72,8 +74,10 @@ export default function SettingsScreen() {
   const [privacyLabel, setPrivacyLabel] = useState('Consultando…');
   const [privacyNotice, setPrivacyNotice] = useState(null);
 
+  // The greeting reads `userName` (`@nexusday/v1/user_name`) — the very same value the
+  // tutorial writes — so the field has to start from there and save back to there.
   // `nameDraft` stays null until the user types, so the persisted name appears as soon as
-  // AsyncStorage hydrates without an effect that mirrors state into state.
+  // the context hydrates without an effect that mirrors state into state.
   const [nameDraft, setNameDraft] = useState(null);
   const [calendarPermission, setCalendarPermission] = useState(null);
   const [calendars, setCalendars] = useState([]);
@@ -83,7 +87,7 @@ export default function SettingsScreen() {
   const [notice, setNotice] = useState(null);
   const [info, setInfo] = useState(null);
 
-  const name = nameDraft ?? settings?.displayName ?? '';
+  const name = nameDraft ?? userName ?? '';
   const setName = setNameDraft;
 
   // expo-file-system's folder helpers are synchronous, so they are read once and refreshed
@@ -140,9 +144,18 @@ export default function SettingsScreen() {
     };
   }, [loadCalendar, refreshStorage]);
 
+  /**
+   * Writes the name to its single source of truth and echoes it into the settings blob.
+   *
+   * `setUserName` is what the dashboard greeting reads and what the tutorial writes, so
+   * saving here keeps both in sync; `updateSettings` is kept only for the v1.0 records that
+   * still carry `displayName` (the context adopts it once on first launch).
+   */
   const saveName = () => {
-    updateSettings({ displayName: name.trim() });
-    setInfo(name.trim() ? `Listo, te voy a saludar como ${name.trim()}.` : 'Se quitó el nombre del saludo.');
+    const next = name.trim();
+    setUserName(next);
+    updateSettings({ displayName: next });
+    setInfo(next ? `Listo, te voy a saludar como ${next}.` : 'Se quitó el nombre del saludo.');
   };
 
   const askNotifications = async () => {
@@ -369,24 +382,32 @@ export default function SettingsScreen() {
         <SectionTitle title="Personalizar Navegación" count={tabConfig.order.length} />
         <Card style={styles.card}>
           <Text style={typography.caption}>
-            Reordená las solapas con las flechas y apagá las que no uses. Inicio queda siempre fijo en la
-            posición 1. Las ocultas siguen accesibles desde la búsqueda global de Inicio.
+            Reordená las solapas con las flechas y apagá las que no uses. Inicio y Ajustes quedan fijos con
+            candado: son la única forma de volver atrás y de deshacer estos cambios. Las ocultas siguen
+            accesibles desde la búsqueda global de Inicio.
           </Text>
 
           {tabConfig.order.map((name, index) => {
             const tab = tabByName(name);
-            const locked = name === HOME_TAB;
+            const locked = isLockedTab(name);
             const hidden = tabConfig.hidden.includes(name);
             if (!tab) return null;
             return (
               <View key={name} style={styles.tabRow}>
                 <Text style={[typography.caption, styles.tabIndex]}>{index + 1}</Text>
                 <View style={styles.tabBody}>
-                  <Text style={typography.bodyStrong} numberOfLines={1}>
-                    {tab.label}
-                  </Text>
+                  <View style={styles.tabTitleRow}>
+                    {locked ? <Text style={styles.lockGlyph}>🔒</Text> : null}
+                    <Text style={typography.bodyStrong} numberOfLines={1}>
+                      {tab.label}
+                    </Text>
+                  </View>
                   <Text style={typography.caption} numberOfLines={1}>
-                    {locked ? 'Fija · siempre visible' : hidden ? 'Oculta · se abre desde la búsqueda' : 'Visible en la barra'}
+                    {locked
+                      ? 'Fija · siempre visible'
+                      : hidden
+                        ? 'Oculta · se abre desde la búsqueda'
+                        : 'Visible en la barra'}
                   </Text>
                 </View>
                 <View style={styles.tabArrows}>
@@ -409,7 +430,7 @@ export default function SettingsScreen() {
                   value={!hidden}
                   disabled={locked}
                   onValueChange={(show) => setTabConfig(setTabHidden(tabConfig, name, !show))}
-                  label={`Mostrar ${tab.label}`}
+                  label={locked ? `${tab.label} es permanente` : `Mostrar ${tab.label}`}
                 />
               </View>
             );
@@ -430,15 +451,18 @@ export default function SettingsScreen() {
           <View style={styles.privateRow}>
             <View style={styles.privateBody}>
               <Text style={typography.bodyStrong}>Pedir desbloqueo al abrir privados</Text>
-              <Text style={typography.caption}>
+              <Text style={[typography.caption, styles.privateHint]}>
                 Las notas y los gastos marcados con 🔒 se abren solo después de la autenticación del sistema.
               </Text>
             </View>
-            <Switch
-              value={settings?.privacyEnabled !== false}
-              onValueChange={(value) => updateSettings({ privacyEnabled: value })}
-              label="Pedir desbloqueo al abrir privados"
-            />
+              <Switch
+                value={settings?.privacyEnabled !== false}
+                onValueChange={(value) => updateSettings({ privacyEnabled: value })}
+                // The title above already names the control; repeating it as visible text is
+                // what made the row cramped. The label stays for screen readers.
+                hideLabel
+                label="Pedir desbloqueo al abrir privados"
+              />
           </View>
           {privacyNotice ? <Notice text={privacyNotice} /> : null}
           <View style={styles.actions}>
@@ -555,6 +579,14 @@ const styles = themedStyles({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+    // Wraps to a column on narrow phones so the two-line hint and the switch never
+    // end up sharing one cramped line.
+    flexWrap: 'wrap',
   },
   privateBody: { flex: 1, gap: 2 },
+  // The long sentences of the security block wrap under the switch instead of colliding
+  // with it: the row is `column` on narrow screens, so the copy always has the full width.
+  privateHint: { lineHeight: 17, flexShrink: 1 },
+  tabTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  lockGlyph: { fontSize: 11 },
 });

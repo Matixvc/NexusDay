@@ -16,8 +16,14 @@ export const colors = {
   border: '#26262b',
   borderStrong: '#35353d',
   text: '#f5f5f7',
-  textSecondary: '#a3a3ad',
-  textMuted: '#6d6d78',
+  // Contrast is measured against `background` (#0a0a0a):
+  //   textSecondary #cccccc -> 12.33:1   textMuted #a0a0a0 -> 7.57:1
+  // Both clear WCAG AA (4.5:1) with a wide margin, and they stay above 6:1 even on the
+  // raised panels (#1d1d21). The previous muted grey (#6d6d78) was only 3.87:1 — it failed
+  // AA outright and dropped to 3.29:1 on `surfaceAlt`, which is what made the secondary
+  // copy in the tutorial and the settings captions so hard to read.
+  textSecondary: '#cccccc',
+  textMuted: '#a0a0a0',
   accent: '#4fd1c5',
   accentInk: '#04211e',
   accentSoft: 'rgba(79, 209, 197, 0.13)',

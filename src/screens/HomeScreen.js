@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -17,6 +17,7 @@ import {
 import { SearchField, SearchResults } from '../components/ui/SearchField';
 import { buildDashboard } from '../services/dashboard';
 import { searchEverything } from '../services/search';
+import { tap as tapHaptic } from '../services/haptics';
 import { formatMoney } from '../utils/money';
 
 /** `assets/welcome-bg.jpg` is the decorative hero of the dashboard. */
@@ -90,10 +91,19 @@ export default function HomeScreen({ navigation }) {
   const title = name ? `¡Hola, ${name}! 👋` : data.greeting;
 
   /** One tap: jump to the section and let it highlight the exact item. */
-  const openResult = (item) => {
-    setQuery('');
-    navigation.navigate(item.route, { focusId: item.id });
-  };
+  const openResult = useCallback(
+    (item) => {
+      setQuery('');
+      navigation.navigate(item.route, { focusId: item.id });
+    },
+    [navigation],
+  );
+
+  // Stable navigators for the one-off buttons below. The access grid does not use a callback
+  // at all: `QuickCard` navigates by itself, so a fresh arrow on every render would only
+  // defeat its memoisation.
+  const goToAgenda = useCallback(() => navigation.navigate('Agenda'), [navigation]);
+  const goToSettings = useCallback(() => navigation.navigate('Ajustes'), [navigation]);
 
   return (
     <View style={styles.root}>
@@ -150,32 +160,24 @@ export default function HomeScreen({ navigation }) {
           />
         ) : (
           <>
-          <View style={styles.statsRow}>
-            <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
-            <Stat value={data.notesCount} label="Notas" />
-            <Stat value={data.pendingHabits.length} label="Pendientes" />
+          {/* Orden del dashboard (pedido explícito):
+              1º Barra de búsqueda global (arriba, ya renderizada)
+              2º Accesos rápidos
+              3º Próximas actividades / eventos
+              4º Bloques de resumen: Gastado Hoy · Notas Fijas · Pendientes
+            Lo que se usa todos los días queda arriba; las cifras, al final del scroll. */}
+          <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
+
+          <View style={styles.grid}>
+            {quickAccess.map((item) => (
+              <MemoQuickCard key={item.route} item={item} width={cardWidth} navigation={navigation} />
+            ))}
           </View>
 
-          {showPermissionCard ? (
-            <Card accent={colors.warning}>
-              <Text style={typography.bodyStrong}>
-                {permission.canAskAgain ? 'Activá los avisos' : 'Avisos bloqueados'}
-              </Text>
-              <Text style={[typography.small, styles.bannerText]}>
-                {permission.canAskAgain
-                  ? 'Con permisos el app te recuerda tus eventos, clases y cumpleaños.'
-                  : `Dalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
-              </Text>
-              <View style={styles.bannerActions}>
-                <PrimaryButton label="Permitir avisos" onPress={requestNotifications} style={styles.bannerButton} />
-                <TextButton label="Ver ajustes" tone="ghost" onPress={() => navigation.navigate('Ajustes')} />
-              </View>
-            </Card>
-          ) : null}
           <SectionTitle
             title="Próximas actividades"
             count={data.nextUp.length}
-            right={<TextButton label="Ver agenda" onPress={() => navigation.navigate('Agenda')} />}
+            right={<TextButton label="Ver agenda" onPress={goToAgenda} />}
           />
 
           {data.nextUp.length === 0 ? (
@@ -211,18 +213,30 @@ export default function HomeScreen({ navigation }) {
             ))
           )}
 
-          <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
+          <SectionTitle title="Resumen de hoy" />
 
-          <View style={styles.grid}>
-            {quickAccess.map((item) => (
-              <QuickCard
-                key={item.route}
-                item={item}
-                width={cardWidth}
-                onPress={() => navigation.navigate(item.route)}
-              />
-            ))}
+          <View style={styles.statsRow}>
+            <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
+            <Stat value={data.pinnedNotes} label="Notas fijadas" />
+            <Stat value={data.pendingHabits.length} label="Pendientes" />
           </View>
+
+          {showPermissionCard ? (
+            <Card accent={colors.warning}>
+              <Text style={typography.bodyStrong}>
+                {permission.canAskAgain ? 'Activá los avisos' : 'Avisos bloqueados'}
+              </Text>
+              <Text style={[typography.small, styles.bannerText]}>
+                {permission.canAskAgain
+                  ? 'Con permisos el app te recuerda tus eventos, clases y cumpleaños.'
+                  : `Dalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
+              </Text>
+              <View style={styles.bannerActions}>
+                <PrimaryButton label="Permitir avisos" onPress={requestNotifications} style={styles.bannerButton} />
+                <TextButton label="Ver ajustes" tone="ghost" onPress={goToSettings} />
+              </View>
+            </Card>
+          ) : null}
 
           <Notice text="Deslizá a los costados para cambiar de sección, o tocá una tarjeta para ir directo." />
           </>
@@ -232,10 +246,22 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-function QuickCard({ item, width, onPress }) {
+/**
+ * One tile of the access grid.
+ *
+ * It receives the `navigation` object instead of an `onPress` callback on purpose: an
+ * inline arrow would be a new function on every render and `memo` could never hit. With
+ * `navigation` being stable, the eight tiles only reconcile when `item` or `width` changes.
+ */
+function QuickCard({ item, width, navigation }) {
+  const handlePress = useCallback(() => {
+    tapHaptic();
+    navigation.navigate(item.route);
+  }, [item.route, navigation]);
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`${item.title}. ${item.hint}`}
       style={({ pressed }) => [styles.quickCard, { width }, pressed ? styles.pressed : null]}
@@ -252,6 +278,8 @@ function QuickCard({ item, width, onPress }) {
     </Pressable>
   );
 }
+
+const MemoQuickCard = memo(QuickCard);
 
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
