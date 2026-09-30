@@ -43,14 +43,13 @@
           "calendarPermission": "NexusDay copia tus eventos a la agenda del teléfono para que los veas en tu app de Calendario.",
           "remindersPermission": false
         }
-      ],
-      "expo-asset"
+      ]
     ],
+    "owner": "matix03",
     "extra": {
       "eas": {
-        "projectId": "87a064c2-2b3d-4d16-8d8b-cb8227e220e7"
+        "projectId": "087f40a1-254c-4153-b120-9e77392b5cd0"
       }
-    },
-    "owner": "matix03"
+    }
   }
 }
