@@ -1,0 +1,128 @@
+import { Platform } from 'react-native';
+import { DarkTheme } from '@react-navigation/native';
+
+export const colors = {
+  background: '#0a0a0a',
+  elevated: '#101012',
+  surface: '#151518',
+  surfaceAlt: '#1d1d21',
+  surfacePlus: '#27272d',
+  border: '#26262b',
+  borderStrong: '#35353d',
+  text: '#f5f5f7',
+  textSecondary: '#a3a3ad',
+  textMuted: '#6d6d78',
+  accent: '#4fd1c5',
+  accentInk: '#04211e',
+  accentSoft: 'rgba(79, 209, 197, 0.13)',
+  danger: '#ff6b6b',
+  dangerSoft: 'rgba(255, 107, 107, 0.12)',
+  warning: '#fbbf24',
+  overlay: 'rgba(0, 0, 0, 0.72)',
+};
+
+export const palette = [
+  '#4fd1c5',
+  '#8b5cf6',
+  '#f59e0b',
+  '#ec4899',
+  '#38bdf8',
+  '#a3e635',
+  '#fb7185',
+  '#94a3b8',
+];
+
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 };
+
+export const radius = { sm: 10, md: 14, lg: 18, xl: 22, sheet: 28, pill: 999 };
+
+export const layout = { gutter: 20, listGap: 10, fabInset: 24 };
+
+const fontFamily = Platform.select({ ios: 'System', android: 'sans-serif', default: undefined });
+
+export const typography = {
+  display: { fontFamily, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
+  title: { fontFamily, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3, color: colors.text },
+  subtitle: { fontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
+  body: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.text },
+  bodyStrong: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
+  small: { fontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
+  caption: { fontFamily, fontSize: 11.5, lineHeight: 15, fontWeight: '600', color: colors.textMuted },
+  overline: {
+    fontFamily,
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  tabular: { fontVariant: ['tabular-nums'] },
+};
+
+export const shadow = {
+  card: Platform.select({
+    default: { shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
+    android: { elevation: 3 },
+  }),
+  fab: Platform.select({
+    default: { shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+    android: { elevation: 8 },
+  }),
+};
+
+export const navigationTheme = {
+  ...DarkTheme,
+  dark: true,
+  colors: {
+    ...DarkTheme.colors,
+    primary: colors.accent,
+    background: colors.background,
+    card: colors.elevated,
+    border: colors.border,
+    text: colors.text,
+    notification: colors.accent,
+  },
+};
+
+export const calendarTheme = {
+  background: colors.surface,
+  calendarBackground: colors.surface,
+  textSectionTitleColor: colors.textMuted,
+  textSectionTitleDisabledColor: colors.textMuted,
+  dayTextColor: colors.text,
+  textDisabledColor: colors.borderStrong,
+  selectedDayBackgroundColor: 'transparent',
+  selectedDayTextColor: colors.text,
+  todayTextColor: colors.accent,
+  arrowColor: colors.accent,
+  disabledArrowColor: colors.borderStrong,
+  monthTextColor: colors.text,
+  indicatorColor: colors.accent,
+  dotColor: colors.accent,
+  selectedDotColor: colors.accent,
+  textDayFontFamily: fontFamily,
+  textMonthFontFamily: fontFamily,
+  textDayHeaderFontFamily: fontFamily,
+  textDayFontWeight: '500',
+  textMonthFontWeight: '700',
+  textDayHeaderFontWeight: '600',
+  textDayFontSize: 15,
+  textMonthFontSize: 15.5,
+  textDayHeaderFontSize: 10.5,
+  'stylesheet.calendar.header': {
+    week: { marginTop: spacing.md, flexDirection: 'row', justifyContent: 'space-between' },
+    month: { paddingTop: spacing.sm, alignItems: 'center' },
+  },
+  'stylesheet.calendar.main': {
+    container: { paddingHorizontal: 0, paddingTop: spacing.sm, paddingBottom: 0 },
+    week: { marginVertical: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  },
+  'stylesheet.day.basic': {
+    base: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    selected: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent },
+    today: { borderColor: 'transparent', borderRadius: radius.pill },
+    text: { color: colors.text, fontWeight: '500' },
+    selectedText: { color: colors.accent, fontWeight: '700' },
+  },
+};

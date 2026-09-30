@@ -1,24 +1,54 @@
 {
   "expo": {
-    "name": "AppMobile",
-    "slug": "AppMobile",
+    "name": "NexusDay",
+    "slug": "nexusday",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a0a",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0a0a0a",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.matix03.AppMobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "NexusDay usa el micrófono solo para grabar las notas de voz que se guardan en este dispositivo.",
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "NexusDay copia tus eventos a la agenda del teléfono para que los veas en tu app de Calendario.",
+          "remindersPermission": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "87a064c2-2b3d-4d16-8d8b-cb8227e220e7"
+      }
+    },
+    "owner": "matix03"
   }
 }

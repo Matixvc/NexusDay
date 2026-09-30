@@ -1,20 +1,23 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { enableScreens } from 'react-native-screens';
+import { AppDataProvider } from './src/context/AppDataContext';
+import RootNavigator from './src/navigation/RootNavigator';
+import { configureNotifications } from './src/services/notifications';
+
+enableScreens();
+
+// Register the foreground notification handler before anything can be scheduled.
+configureNotifications();
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <AppDataProvider>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </AppDataProvider>
+    </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
