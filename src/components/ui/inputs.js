@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors, palette, radius, spacing, typography } from '../../theme/theme';
+import { Pressable, Text, TextInput, View } from 'react-native';
+import { themedStyles, colors, palette, radius, spacing, typography } from '../../theme/theme';
 
 export function Field({ label, children, hint }) {
   return (
@@ -133,7 +133,7 @@ export function Divider({ style }) {
   return <View style={[styles.divider, style]} />;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   field: { gap: spacing.sm },
   hint: { fontSize: 11.5, lineHeight: 16, color: colors.textMuted },
   input: {

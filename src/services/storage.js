@@ -26,6 +26,8 @@ export const KEYS = {
   habits: `${NAMESPACE}/habits`,
   expenses: `${NAMESPACE}/expenses`,
   settings: `${NAMESPACE}/settings`,
+  onboarding: `${NAMESPACE}/onboarding`,
+  accent: `${NAMESPACE}/accent`,
 };
 
 /**

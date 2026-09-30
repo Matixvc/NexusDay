@@ -1,5 +1,5 @@
-import { StyleSheet, View } from 'react-native';
-import { radius } from '../theme/theme';
+import { View } from 'react-native';
+import { themedStyles, radius } from '../theme/theme';
 
 /**
  * Tab icons drawn with plain Views instead of an icon font:
@@ -72,6 +72,65 @@ export function Glyph({ name, color }) {
     );
   }
 
+  if (name === 'habit') {
+    return (
+      <View style={[styles.check, { borderColor: color }]}>
+        <View style={[styles.checkShort, { backgroundColor: color }]} />
+        <View style={[styles.checkLong, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'money') {
+    return (
+      <View style={[styles.coin, { borderColor: color }]}>
+        <View style={[styles.coinBar, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'ai') {
+    return (
+      <View style={styles.bot}>
+        <View style={[styles.botAntenna, { backgroundColor: color }]} />
+        <View style={[styles.botHead, { borderColor: color }]}>
+          <View style={[styles.botEye, { backgroundColor: color }]} />
+          <View style={[styles.botEye, { backgroundColor: color }]} />
+        </View>
+      </View>
+    );
+  }
+
+  if (name === 'search') {
+    return (
+      <View style={styles.magnifier}>
+        <View style={[styles.magnifierLens, { borderColor: color }]} />
+        <View style={[styles.magnifierHandle, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'close') {
+    return (
+      <View style={styles.cross}>
+        <View style={[styles.crossBar, { backgroundColor: color, transform: [{ rotate: '45deg' }] }]} />
+        <View style={[styles.crossBar, { backgroundColor: color, transform: [{ rotate: '-45deg' }] }]} />
+      </View>
+    );
+  }
+
+  if (name === 'trash') {
+    return (
+      <View style={styles.bin}>
+        <View style={[styles.binLid, { backgroundColor: color }]} />
+        <View style={[styles.binBody, { borderColor: color }]}>
+          <View style={[styles.binBar, { backgroundColor: color }]} />
+          <View style={[styles.binBar, { backgroundColor: color }]} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.note, { borderColor: color }]}>
       <View style={[styles.noteLine, { backgroundColor: color }]} />
@@ -80,7 +139,7 @@ export function Glyph({ name, color }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   home: { width: 22, height: 22, alignItems: 'center', justifyContent: 'flex-end' },
   roof: {
     width: 0,
@@ -126,4 +185,68 @@ const styles = StyleSheet.create({
   },
   noteLine: { width: 11, height: 2, borderRadius: 1 },
   noteLineShort: { width: 7, height: 2, borderRadius: 1 },
+
+  // Habits: a check mark inside a ring.
+  check: { width: 21, height: 21, borderRadius: radius.pill, borderWidth: 1.6, alignItems: 'center', justifyContent: 'center' },
+  checkShort: {
+    position: 'absolute',
+    width: 6,
+    height: 2,
+    borderRadius: 1,
+    left: 5,
+    top: 11,
+    transform: [{ rotate: '45deg' }],
+  },
+  checkLong: {
+    position: 'absolute',
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    left: 8,
+    top: 10,
+    transform: [{ rotate: '-50deg' }],
+  },
+
+  // Expenses: a coin with the vertical bar of a currency symbol.
+  coin: { width: 21, height: 21, borderRadius: radius.pill, borderWidth: 1.6, alignItems: 'center', justifyContent: 'center' },
+  coinBar: { width: 2, height: 9, borderRadius: 1 },
+
+  // Nexus AI: a little bot head with an antenna.
+  bot: { width: 22, height: 22, alignItems: 'center', justifyContent: 'flex-end' },
+  botAntenna: { width: 2, height: 4, borderRadius: 1, marginBottom: 1 },
+  botHead: {
+    width: 21,
+    height: 16,
+    borderRadius: 6,
+    borderWidth: 1.6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  botEye: { width: 3, height: 3, borderRadius: 2 },
+
+  // Search field and its clear button.
+  magnifier: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  magnifierLens: { width: 15, height: 15, borderRadius: radius.pill, borderWidth: 1.8, marginTop: -2, marginLeft: -2 },
+  magnifierHandle: { position: 'absolute', width: 7, height: 2, borderRadius: 1, right: 1, bottom: 3, transform: [{ rotate: '45deg' }] },
+  cross: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  crossBar: { position: 'absolute', width: 14, height: 2, borderRadius: 1 },
+
+  // "Clear the conversation" in the assistant header.
+  bin: { width: 20, height: 22, alignItems: 'center', justifyContent: 'flex-end' },
+  binLid: { width: 20, height: 2, borderRadius: 1, marginBottom: 2 },
+  binBody: {
+    width: 15,
+    height: 15,
+    borderWidth: 1.5,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  binBar: { width: 1.8, height: 7, borderRadius: 1 },
 });

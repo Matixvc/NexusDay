@@ -15,12 +15,20 @@ export function usePersistentCollection(key, initialValue = []) {
   const [items, setItems] = useState(initialValue);
   const [hydrated, setHydrated] = useState(false);
   const initialRef = useRef(initialValue);
+  // Set by `replaceAll`, which the app only uses to wipe everything (first run, Ajustes).
+  // A wipe that lands before the read resolves must win, otherwise the sample data the
+  // read is still returning would be written back on the next persist.
+  const wipedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       const stored = await loadJSON(key, initialRef.current);
       if (!alive) return;
+      if (wipedRef.current) {
+        setHydrated(true);
+        return;
+      }
       setItems(stored);
       setHydrated(true);
     })();
@@ -50,6 +58,7 @@ export function usePersistentCollection(key, initialValue = []) {
   }, []);
 
   const replaceAll = useCallback((next) => {
+    wipedRef.current = true;
     setItems(next);
   }, []);
 

@@ -1,6 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { colors, radius, spacing, typography } from '../../theme/theme';
+import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { Field } from './inputs';
 import { Notice, TextButton } from './primitives';
 import { useRecorder } from '../../hooks/useRecorder';
@@ -168,7 +168,7 @@ export function AttachmentRow({ attachment, onShare, onRemove, style }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   grow: { flex: 1, gap: 3 },
   truncate: { color: colors.text },
   pressed: { opacity: 0.6 },

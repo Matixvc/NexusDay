@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
-import { spacing, typography } from '../theme/theme';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
+import { ACCENT_THEMES } from '../theme/accents';
+import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButton } from '../components/ui/primitives';
 import { PickerTrigger, TextField } from '../components/ui/inputs';
@@ -42,6 +44,7 @@ function permissionPill(permission, labels) {
 }
 
 export default function SettingsScreen() {
+  const { accentId, setAccentId } = useAccentTheme();
   const {
     activities,
     events,
@@ -52,6 +55,7 @@ export default function SettingsScreen() {
     settings,
     updateSettings,
     clearAllData,
+    replayTutorial,
     permission,
     refreshPermission,
     requestNotifications,
@@ -196,6 +200,44 @@ export default function SettingsScreen() {
           <TextButton label="Guardar saludo" onPress={saveName} />
         </Card>
 
+        <SectionTitle title="Tema" count={ACCENT_THEMES.length} />
+        <Card style={styles.card}>
+          <Text style={typography.caption}>
+            El acento tiñe botones, la solapa activa, los chips y el calendario. Se guarda en el
+            dispositivo y se aplica al instante.
+          </Text>
+          <View style={styles.themeGrid}>
+            {ACCENT_THEMES.map((option) => {
+              const selected = option.id === accentId;
+              return (
+                <Pressable
+                  key={option.id}
+                  onPress={() => setAccentId(option.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${option.label}. ${option.hint}`}
+                  style={({ pressed }) => [
+                    styles.themeCard,
+                    selected ? { borderColor: option.accent } : null,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <View style={styles.themeSwatches}>
+                    <View style={[styles.themeSwatch, { backgroundColor: option.accent }]} />
+                    <View style={[styles.themeSwatch, styles.themeSwatchAlt, { backgroundColor: option.alt }]} />
+                  </View>
+                  <Text style={styles.themeLabel} numberOfLines={1}>
+                    {option.label}
+                  </Text>
+                  <Text style={typography.caption} numberOfLines={2}>
+                    {option.hint}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
         <SectionTitle title="Permisos" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
@@ -297,6 +339,21 @@ export default function SettingsScreen() {
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
+        <SectionTitle title="Ayuda" />
+        <Card style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Tutorial de {APP_NAME}</Text>
+              <Text style={typography.caption}>Las cinco pantallas del primer arranque, otra vez.</Text>
+            </View>
+            <Pill label="5 pasos" tone="accent" />
+          </View>
+          <TextButton label="Ver el tutorial otra vez" onPress={replayTutorial} />
+          <Text style={typography.caption}>
+            Repetirlo no borra nada: solo vuelve a mostrar las diapositivas.
+          </Text>
+        </Card>
+
         <SectionTitle title="Acerca de" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
@@ -340,7 +397,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   card: { gap: spacing.md },
   rowBetween: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -350,4 +407,21 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   aboutText: { lineHeight: 17 },
+  pressed: { opacity: 0.7 },
+  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  themeCard: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  themeSwatches: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
+  themeSwatch: { width: 18, height: 18, borderRadius: radius.pill },
+  themeSwatchAlt: { width: 10, height: 10 },
+  themeLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
 });

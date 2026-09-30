@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, spacing, typography } from '../theme/theme';
+import { Text, View } from 'react-native';
+import { themedStyles, colors, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
@@ -348,7 +348,7 @@ export default function ScheduleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   syncCard: { gap: 8 },
   syncText: { lineHeight: 18 },

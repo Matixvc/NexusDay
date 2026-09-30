@@ -1,6 +1,12 @@
 import { Platform } from 'react-native';
 import { DarkTheme } from '@react-navigation/native';
+import { getAccentTheme } from './accents';
 
+/**
+ * `accent`, `accentSoft` and `accentInk` are the only tokens a theme can change, and they
+ * are mutated in place by `applyAccent` so every module holding a reference to `colors`
+ * (screens, primitives, the navigation theme) picks the new value up.
+ */
 export const colors = {
   background: '#0a0a0a',
   elevated: '#101012',
@@ -126,3 +132,65 @@ export const calendarTheme = {
     selectedText: { color: colors.accent, fontWeight: '700' },
   },
 };
+
+/**
+ * Runtime accent.
+ *
+ * Styles are declared once at import time, so switching the accent cannot rebuild them:
+ * every `themedStyles(...)` object is registered here and `applyAccent` repaints the
+ * accent-derived values in place.
+ *
+ * `themedStyles` deliberately does NOT go through `StyleSheet.create`: in `__DEV__` that
+ * call freezes every entry (`Object.freeze(obj[key])`), and a frozen style would make the
+ * repaint throw. React Native accepts plain style objects in a `style` prop, so the sheet
+ * is used as-is — mutable, and still the same object across renders, which keeps
+ * `React.memo` comparisons stable.
+ */
+const styleRegistry = new Set();
+
+export function themedStyles(styles) {
+  styleRegistry.add(styles);
+  return styles;
+}
+
+// The navigation and calendar themes are plain objects, not StyleSheets, but they carry
+// the same accent tokens, so they are registered too.
+styleRegistry.add(navigationTheme);
+styleRegistry.add(calendarTheme);
+
+/** Replaces every string in `node` that matches a key of `mapping` (recursively). */
+function repaint(node, mapping, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 5) return;
+  if (Array.isArray(node)) {
+    node.forEach((child) => repaint(child, mapping, depth + 1));
+    return;
+  }
+  Object.keys(node).forEach((key) => {
+    const value = node[key];
+    if (typeof value === 'string') {
+      if (mapping[value]) node[key] = mapping[value];
+      return;
+    }
+    repaint(value, mapping, depth + 1);
+  });
+}
+
+/**
+ * Swaps the accent tokens everywhere: the shared `colors` object (for inline styles read
+ * during render) and every registered style object. Returns the resolved theme.
+ */
+export function applyAccent(accentId) {
+  const theme = getAccentTheme(accentId);
+  const mapping = {
+    [colors.accent]: theme.accent,
+    [colors.accentSoft]: theme.accentSoft,
+    [colors.accentInk]: theme.accentInk,
+  };
+
+  colors.accent = theme.accent;
+  colors.accentSoft = theme.accentSoft;
+  colors.accentInk = theme.accentInk;
+
+  styleRegistry.forEach((styles) => repaint(styles, mapping));
+  return theme;
+}

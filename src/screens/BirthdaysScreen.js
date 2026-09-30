@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { Text, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
@@ -331,7 +331,7 @@ function BirthdayRow({ item, onPress }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { marginTop: spacing.md, flexDirection: 'row' },

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, layout, radius, spacing, typography } from '../theme/theme';
+import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Chip, ChipScroller, Pill, PrimaryButton, TextButton } from '../components/ui/primitives';
+import { Glyph } from '../navigation/TabGlyphs';
 import { ASSISTANT_SUGGESTIONS, answerQuestion } from '../services/assistant';
 
 /**
@@ -11,7 +12,9 @@ import { ASSISTANT_SUGGESTIONS, answerQuestion } from '../services/assistant';
  *
  * Es un chat local: cada pregunta se resuelve con `answerQuestion`, que lee las
  * colecciones ya guardadas en el dispositivo. No hay red, ni API key, ni envío de
- * datos; el propio texto de la pantalla lo aclara.
+ * datos; el propio texto de la pantalla lo aclara. El alcance es el app —notas,
+ * agenda, horario, hábitos, gastos— y una pregunta fuera de tema devuelve al usuario
+ * a las funciones del dispositivo.
  */
 export default function AssistantScreen({ navigation }) {
   const { events, activities, birthdays, notes, habits, expenses } = useAppData();
@@ -30,16 +33,43 @@ export default function AssistantScreen({ navigation }) {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   };
 
+  /** Wipes the conversation (and anything half-typed) from the header bin. */
+  const clearHistory = () => {
+    setLog([]);
+    setQuestion('');
+  };
+
+  const canClear = log.length > 0;
+
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={typography.display} numberOfLines={1}>
-          Nexus AI
-        </Text>
-        <Text style={[typography.subtitle, styles.headerSubtitle]} numberOfLines={2}>
-          Asistente local: contesta con los datos del app, sin conexión ni cuentas.
-        </Text>
-        <Pill label="100% offline" tone="accent" />
+        <View style={styles.headerTop}>
+          <View style={styles.headerText}>
+            <Text style={typography.display} numberOfLines={1}>
+              Nexus AI
+            </Text>
+            <Text style={[typography.subtitle, styles.headerSubtitle]} numberOfLines={2}>
+              Asistente local: contesta con los datos de tu app, sin conexión ni cuentas.
+            </Text>
+          </View>
+          <Pressable
+            onPress={clearHistory}
+            disabled={!canClear}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Borrar la conversación"
+            accessibilityState={{ disabled: !canClear }}
+            style={({ pressed }) => [
+              styles.trash,
+              !canClear ? styles.trashDisabled : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Glyph name="trash" color={canClear ? colors.textSecondary : colors.textMuted} />
+          </Pressable>
+        </View>
+        <Pill label="100% offline · solo tus datos" tone="accent" />
       </View>
 
       <ScrollView
@@ -102,10 +132,24 @@ export default function AssistantScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: layout.gutter, paddingBottom: spacing.lg, gap: spacing.sm },
+  headerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  headerText: { flex: 1, gap: spacing.sm },
   headerSubtitle: { marginBottom: spacing.xs },
+  trash: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trashDisabled: { opacity: 0.45 },
+  pressed: { opacity: 0.65 },
   scroll: { flex: 1 },
   content: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxl, gap: spacing.md },
   intro: { gap: spacing.sm },

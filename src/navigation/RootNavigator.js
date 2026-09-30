@@ -1,7 +1,7 @@
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { StyleSheet, View } from 'react-native';
-import { colors, navigationTheme } from '../theme/theme';
+import { View } from 'react-native';
+import { themedStyles, colors, navigationTheme } from '../theme/theme';
 import AssistantScreen from '../screens/AssistantScreen';
 import BirthdaysScreen from '../screens/BirthdaysScreen';
 import CalendarScreen from '../screens/CalendarScreen';
@@ -25,11 +25,11 @@ const Tab = createMaterialTopTabNavigator();
  * insets. Pages render lazily, one neighbour preloaded on each side so swiping feels
  * instant without mounting all nine screens on launch.
  */
-export default function RootNavigator() {
+export default function RootNavigator({ initialRouteName = 'Inicio', onRouteChange }) {
   return (
     <NavigationContainer theme={navigationTheme}>
       <Tab.Navigator
-        initialRouteName="Inicio"
+        initialRouteName={initialRouteName}
         tabBarPosition="bottom"
         tabBar={(props) => <BottomTabBar {...props} />}
         screenOptions={{
@@ -41,6 +41,11 @@ export default function RootNavigator() {
           sceneStyle: styles.scene,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.textMuted,
+        }}
+        listeners={{
+          // Lets the app shell remember the last tab, so remounting (an accent change)
+          // puts the user back where they were instead of on Inicio.
+          tabPress: ({ target }) => onRouteChange?.(target),
         }}
       >
         <Tab.Screen
@@ -68,10 +73,22 @@ export default function RootNavigator() {
           component={NotesScreen}
           options={{ tabBarLabel: 'Notas', tabBarIcon: ({ color }) => <Glyph name="notes" color={color} /> }}
         />
-        {/* No slot in the bar: reached by swiping from Notas or from the Inicio grid. */}
-        <Tab.Screen name="Hábitos" component={HabitsScreen} options={{ tabBarLabel: 'Hábitos' }} />
-        <Tab.Screen name="Gastos" component={ExpensesScreen} options={{ tabBarLabel: 'Gastos' }} />
-        <Tab.Screen name="Nexus AI" component={AssistantScreen} options={{ tabBarLabel: 'Nexus AI' }} />
+        {/* Secondary pages, now with their own slot in the bar (one tap or one swipe away). */}
+        <Tab.Screen
+          name="Hábitos"
+          component={HabitsScreen}
+          options={{ tabBarLabel: 'Hábitos', tabBarIcon: ({ color }) => <Glyph name="habit" color={color} /> }}
+        />
+        <Tab.Screen
+          name="Gastos"
+          component={ExpensesScreen}
+          options={{ tabBarLabel: 'Gastos', tabBarIcon: ({ color }) => <Glyph name="money" color={color} /> }}
+        />
+        <Tab.Screen
+          name="Nexus AI"
+          component={AssistantScreen}
+          options={{ tabBarLabel: 'Nexus AI', tabBarIcon: ({ color }) => <Glyph name="ai" color={color} /> }}
+        />
         <Tab.Screen
           name="Ajustes"
           component={SettingsScreen}
@@ -87,7 +104,7 @@ function Placeholder() {
   return <View style={styles.placeholder} />;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   scene: { backgroundColor: colors.background },
   placeholder: { flex: 1, backgroundColor: colors.background },
 });

@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { Pressable, Text, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { useFocusId } from '../hooks/useFocusId';
 import {
   Card,
   Chip,
   ChipScroller,
   EmptyState,
   Fab,
+  Notice,
   Pill,
   PrimaryButton,
   Screen,
@@ -16,7 +18,8 @@ import {
   TextButton,
 } from '../components/ui/primitives';
 import { ColorPicker, TextField } from '../components/ui/inputs';
-import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
+import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
+import { HABIT_REMINDERS, dropReminder, syncHabitReminder } from '../services/reminders';
 import { habitStreak, lastDays, pendingHabits } from '../services/dashboard';
 import { WEEKDAYS, fromDateKey, todayKey, weekdayIndex } from '../utils/dates';
 
@@ -27,6 +30,10 @@ export default function HabitsScreen() {
   const { habits, addHabit, updateHabit, removeHabit } = useAppData();
   const [sheet, setSheet] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
+  const [reminderId, setReminderId] = useState(null);
+  const [notice, setNotice] = useState(null);
+  // Highlighted by the global search for a few seconds.
+  const focusId = useFocusId();
 
   const today = todayKey();
   const week = useMemo(() => lastDays(7, today), [today]);
@@ -47,8 +54,26 @@ export default function HabitsScreen() {
   /** Ticking any day can be undone with another tap, so no confirmation is needed. */
   const toggleDay = (habit, dateKey) => {
     const marks = Array.isArray(habit.marks) ? habit.marks : [];
-    const next = marks.includes(dateKey) ? marks.filter((item) => item !== dateKey) : [...marks, dateKey];
-    updateHabit(habit.id, { marks: next.sort() });
+    const isMarking = !marks.includes(dateKey);
+    const next = isMarking ? [...marks, dateKey] : marks.filter((item) => item !== dateKey);
+    const patch = { marks: next.sort() };
+
+    // Ticking today retires the daily nudge: there is nothing left to remind about.
+    if (isMarking && dateKey === today) {
+      patch.notificationId = null;
+      dropReminder(habit);
+    }
+
+    updateHabit(habit.id, patch);
+  };
+
+  /** Arms (or clears) the daily reminder, whose notification carries the app actions. */
+  const chooseReminder = async (value) => {
+    const habit = habits.find((item) => item.id === reminderId);
+    if (!habit) return;
+    const result = await syncHabitReminder({ ...habit, remindAt: value }, habit.notificationId);
+    updateHabit(habit.id, { remindAt: value, notificationId: result.notificationId });
+    setNotice(result.notice);
   };
 
   const canSave = Boolean(sheet) && Boolean(sheet.values.name.trim());
@@ -75,6 +100,8 @@ export default function HabitsScreen() {
           <Stat value={bestStreak} label="Mejor racha" />
         </View>
 
+        {notice ? <Notice text={notice} tone="danger" /> : null}
+
         <SectionTitle
           title="Pendientes de hoy"
           count={pending.length}
@@ -92,7 +119,11 @@ export default function HabitsScreen() {
             const marks = Array.isArray(habit.marks) ? habit.marks : [];
             const doneToday = marks.includes(today);
             return (
-              <Card key={habit.id} accent={habit.color} style={styles.habitCard}>
+              <Card
+                key={habit.id}
+                accent={habit.color}
+                style={[styles.habitCard, focusId === habit.id ? styles.focused : null]}
+              >
                 <View style={styles.habitRow}>
                   <View style={[styles.badge, { borderColor: habit.color, backgroundColor: `${habit.color}22` }]}>
                     <Text style={styles.badgeEmoji}>{habit.emoji || '✅'}</Text>
@@ -144,6 +175,17 @@ export default function HabitsScreen() {
                       </Pressable>
                     );
                   })}
+                </View>
+
+                <View style={styles.reminderRow}>
+                  <Text style={typography.caption} numberOfLines={1}>
+                    {habit.remindAt ? `⏰ Aviso diario a las ${habit.remindAt}` : '⏰ Sin aviso diario'}
+                  </Text>
+                  <TextButton
+                    label={habit.remindAt ? 'Cambiar' : 'Activar'}
+                    tone="ghost"
+                    onPress={() => setReminderId(habit.id)}
+                  />
                 </View>
 
                 <View style={styles.habitActions}>
@@ -198,11 +240,20 @@ export default function HabitsScreen() {
         message="Se pierde el historial de marcas de este hábito."
       />
 
+      <OptionSheet
+        visible={Boolean(reminderId)}
+        onClose={() => setReminderId(null)}
+        title="Aviso diario"
+        options={HABIT_REMINDERS}
+        value={habits.find((item) => item.id === reminderId)?.remindAt ?? null}
+        onSelect={chooseReminder}
+      />
+
     </>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   habitCard: { gap: spacing.md },
   habitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -239,4 +290,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   habitActions: { flexDirection: 'row', justifyContent: 'flex-end', marginRight: -spacing.md },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingLeft: spacing.md,
+  },
+  // Used by the global search to point at the matched item.
+  focused: { borderColor: colors.accent, borderWidth: 1.5 },
 });

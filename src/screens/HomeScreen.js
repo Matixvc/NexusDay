@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { colors, layout, radius, shadow, spacing, typography } from '../theme/theme';
+import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
@@ -14,7 +14,9 @@ import {
   Stat,
   TextButton,
 } from '../components/ui/primitives';
+import { SearchField, SearchResults } from '../components/ui/SearchField';
 import { buildDashboard } from '../services/dashboard';
+import { searchEverything } from '../services/search';
 import { formatMoney } from '../utils/money';
 
 /** `assets/welcome-bg.jpg` is the decorative hero of the dashboard. */
@@ -65,16 +67,30 @@ export default function HomeScreen({ navigation }) {
 
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const [query, setQuery] = useState('');
 
   const data = useMemo(
     () => buildDashboard({ activities, events, birthdays, notes, habits, expenses }),
     [activities, events, birthdays, notes, habits, expenses],
   );
 
+  // Real-time: the four collections the dashboard can reach, ranked by relevance.
+  const search = useMemo(
+    () => searchEverything(query, { notes, events, habits, expenses }),
+    [query, notes, events, habits, expenses],
+  );
+  const searching = query.trim().length > 0;
+
   const quickAccess = useMemo(() => buildQuickAccess(data), [data]);
   const cardWidth = (width - layout.gutter * 2 - spacing.md) / 2;
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
   const name = settings?.displayName?.trim();
+
+  /** One tap: jump to the section and let it highlight the exact item. */
+  const openResult = (item) => {
+    setQuery('');
+    navigation.navigate(item.route, { focusId: item.id });
+  };
 
   return (
     <View style={styles.root}>
@@ -88,7 +104,10 @@ export default function HomeScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <ImageBackground source={WELCOME_BG} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
+          {/* Dark filter over the photo: the banner is the brightest element of a #0a0a0a
+              app, so the picture is dimmed and then scrimmed twice under the text block. */}
           <View style={styles.heroOverlay} />
+          <View style={styles.heroOverlayBottom} />
           <View style={styles.heroBody}>
             <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
               {data.dateLabel}
@@ -112,81 +131,98 @@ export default function HomeScreen({ navigation }) {
           </View>
         </ImageBackground>
 
-        <View style={styles.statsRow}>
-          <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
-          <Stat value={data.notesCount} label="Notas" />
-          <Stat value={data.pendingHabits.length} label="Pendientes" />
-        </View>
-
-        {showPermissionCard ? (
-          <Card accent={colors.warning}>
-            <Text style={typography.bodyStrong}>
-              {permission.canAskAgain ? 'Activá los avisos' : 'Avisos bloqueados'}
-            </Text>
-            <Text style={[typography.small, styles.bannerText]}>
-              {permission.canAskAgain
-                ? 'Con permisos el app te recuerda tus eventos, clases y cumpleaños.'
-                : `Dalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
-            </Text>
-            <View style={styles.bannerActions}>
-              <PrimaryButton label="Permitir avisos" onPress={requestNotifications} style={styles.bannerButton} />
-              <TextButton label="Ver ajustes" tone="ghost" onPress={() => navigation.navigate('Ajustes')} />
-            </View>
-          </Card>
-        ) : null}
-        <SectionTitle
-          title="Próximas actividades"
-          count={data.nextUp.length}
-          right={<TextButton label="Ver agenda" onPress={() => navigation.navigate('Agenda')} />}
+        <SearchField
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar en notas, eventos, hábitos y gastos"
         />
 
-        {data.nextUp.length === 0 ? (
-          <EmptyState
-            emoji="☕"
-            title="Nada por delante"
-            hint="Agendá un evento o cargá una actividad en el horario y va a aparecer acá."
+        {searching ? (
+          <SearchResults
+            items={search.items}
+            total={search.total}
+            query={search.query}
+            onSelect={openResult}
           />
         ) : (
-          data.nextUp.map((item) => (
-            <Card
-              key={item.id}
-              accent={item.color}
-              onPress={() => navigation.navigate(item.kind === 'event' ? 'Agenda' : 'Horario')}
-              style={styles.nextCard}
-            >
-              <View style={styles.nextRow}>
-                <Text style={[styles.nextTime, typography.tabular]}>{item.time}</Text>
-                <View style={styles.nextBody}>
-                  <Text style={typography.bodyStrong} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Text style={typography.caption} numberOfLines={1}>
-                    {item.detail}
-                  </Text>
-                </View>
-                <Pill
-                  label={item.kind === 'event' ? 'Agenda' : 'Horario'}
-                  tone={item.kind === 'event' ? 'accent' : 'neutral'}
-                />
+          <>
+          <View style={styles.statsRow}>
+            <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
+            <Stat value={data.notesCount} label="Notas" />
+            <Stat value={data.pendingHabits.length} label="Pendientes" />
+          </View>
+
+          {showPermissionCard ? (
+            <Card accent={colors.warning}>
+              <Text style={typography.bodyStrong}>
+                {permission.canAskAgain ? 'Activá los avisos' : 'Avisos bloqueados'}
+              </Text>
+              <Text style={[typography.small, styles.bannerText]}>
+                {permission.canAskAgain
+                  ? 'Con permisos el app te recuerda tus eventos, clases y cumpleaños.'
+                  : `Dalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
+              </Text>
+              <View style={styles.bannerActions}>
+                <PrimaryButton label="Permitir avisos" onPress={requestNotifications} style={styles.bannerButton} />
+                <TextButton label="Ver ajustes" tone="ghost" onPress={() => navigation.navigate('Ajustes')} />
               </View>
             </Card>
-          ))
-        )}
+          ) : null}
+          <SectionTitle
+            title="Próximas actividades"
+            count={data.nextUp.length}
+            right={<TextButton label="Ver agenda" onPress={() => navigation.navigate('Agenda')} />}
+          />
 
-        <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
-
-        <View style={styles.grid}>
-          {quickAccess.map((item) => (
-            <QuickCard
-              key={item.route}
-              item={item}
-              width={cardWidth}
-              onPress={() => navigation.navigate(item.route)}
+          {data.nextUp.length === 0 ? (
+            <EmptyState
+              emoji="☕"
+              title="Nada por delante"
+              hint="Agendá un evento o cargá una actividad en el horario y va a aparecer acá."
             />
-          ))}
-        </View>
+          ) : (
+            data.nextUp.map((item) => (
+              <Card
+                key={item.id}
+                accent={item.color}
+                onPress={() => navigation.navigate(item.kind === 'event' ? 'Agenda' : 'Horario')}
+                style={styles.nextCard}
+              >
+                <View style={styles.nextRow}>
+                  <Text style={[styles.nextTime, typography.tabular]}>{item.time}</Text>
+                  <View style={styles.nextBody}>
+                    <Text style={typography.bodyStrong} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Text style={typography.caption} numberOfLines={1}>
+                      {item.detail}
+                    </Text>
+                  </View>
+                  <Pill
+                    label={item.kind === 'event' ? 'Agenda' : 'Horario'}
+                    tone={item.kind === 'event' ? 'accent' : 'neutral'}
+                  />
+                </View>
+              </Card>
+            ))
+          )}
 
-        <Notice text="Deslizá a los costados para cambiar de sección, o tocá una tarjeta para ir directo." />
+          <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
+
+          <View style={styles.grid}>
+            {quickAccess.map((item) => (
+              <QuickCard
+                key={item.route}
+                item={item}
+                width={cardWidth}
+                onPress={() => navigation.navigate(item.route)}
+              />
+            ))}
+          </View>
+
+          <Notice text="Deslizá a los costados para cambiar de sección, o tocá una tarjeta para ir directo." />
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -213,7 +249,7 @@ function QuickCard({ item, width, onPress }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
   content: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxxl, gap: spacing.lg },
@@ -225,8 +261,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.surface,
   },
-  heroImage: { borderRadius: radius.xl },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(6, 6, 8, 0.62)' },
+  heroImage: { borderRadius: radius.xl, opacity: 0.55 },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: `${colors.background}b0` },
+  heroOverlayBottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: '38%',
+    backgroundColor: `${colors.background}d9`,
+  },
   heroBody: { padding: spacing.lg, gap: spacing.sm },
   heroDate: { color: colors.accent },
   heroHint: { color: colors.textSecondary },

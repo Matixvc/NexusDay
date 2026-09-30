@@ -43,7 +43,8 @@
           "calendarPermission": "NexusDay copia tus eventos a la agenda del teléfono para que los veas en tu app de Calendario.",
           "remindersPermission": false
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {

@@ -1,5 +1,5 @@
 import * as Notif from './notifications';
-import { buildDateTime, fromDateKey, nextYearlyOccurrence, parseTime } from '../utils/dates';
+import { buildDateTime, fromDateKey, nextYearlyOccurrence, parseTime, todayKey } from '../utils/dates';
 
 /** Lead times for calendar events, in minutes. -1 = no reminder. */
 export const EVENT_REMINDERS = [
@@ -17,6 +17,19 @@ export const BIRTHDAY_LEADS = [
   { label: '1 día antes', value: 1 },
   { label: '3 días antes', value: 3 },
   { label: '1 semana antes', value: 7 },
+];
+
+/**
+ * Times offered per habit. A habit reminder is a one-shot for *today* (rebuilt on every
+ * app start by `resyncReminders`), so it never fires on a day the habit is already ticked.
+ */
+export const HABIT_REMINDERS = [
+  { label: 'Sin aviso', value: null },
+  { label: '08:00', value: '08:00' },
+  { label: '13:00', value: '13:00' },
+  { label: '18:00', value: '18:00' },
+  { label: '21:00', value: '21:00' },
+  { label: '22:30', value: '22:30' },
 ];
 
 const NOTICES = {
@@ -44,7 +57,7 @@ export async function dropReminder(item) {
  * Rebuilds the notification for a calendar event.
  * Always cancels `existingId` first, so editing an event never leaves orphans.
  */
-export async function syncEventReminder({ title, notes, dateKey, time, leadMinutes }, existingId) {
+export async function syncEventReminder({ id, title, notes, dateKey, time, leadMinutes }, existingId) {
   await Notif.cancel(existingId);
 
   if (leadMinutes === -1 || leadMinutes == null) {
@@ -58,6 +71,7 @@ export async function syncEventReminder({ title, notes, dateKey, time, leadMinut
     title: `📌 ${title}`,
     body: notes && notes.trim() ? notes.trim().slice(0, 120) : `A las ${time}.`,
     date: when,
+    data: { kind: 'event', itemId: id },
   });
 
   if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
@@ -71,9 +85,10 @@ export async function syncEventReminder({ title, notes, dateKey, time, leadMinut
  * notificationId are left untouched — and past dates fail quietly, so it is
  * safe to run once per app start.
  */
-export async function resyncReminders({ events = [], birthdays = [] }) {
+export async function resyncReminders({ events = [], birthdays = [], habits = [] }) {
   const eventPatches = [];
   const birthdayPatches = [];
+  const habitPatches = [];
 
   for (const event of events) {
     if (event.notificationId || (event.leadMinutes ?? -1) === -1) continue;
@@ -87,7 +102,13 @@ export async function resyncReminders({ events = [], birthdays = [] }) {
     if (notificationId) birthdayPatches.push({ id: birthday.id, notificationId });
   }
 
-  return { eventPatches, birthdayPatches };
+  for (const habit of habits) {
+    if (habit.notificationId || !habit.remindAt) continue;
+    const { notificationId } = await syncHabitReminder(habit, null);
+    if (notificationId) habitPatches.push({ id: habit.id, notificationId });
+  }
+
+  return { eventPatches, birthdayPatches, habitPatches };
 }
 
 /**
@@ -95,7 +116,7 @@ export async function resyncReminders({ events = [], birthdays = [] }) {
  * The anchor date is (next birthday - daysBefore), and the trigger repeats
  * annually on that anchor, so it keeps firing every year without re-syncing.
  */
-export async function syncBirthdayReminder({ name, dateKey, time, daysBefore }, existingId) {
+export async function syncBirthdayReminder({ id, name, dateKey, time, daysBefore }, existingId) {
   await Notif.cancel(existingId);
 
   if (daysBefore == null) return { notificationId: null, notice: null };
@@ -113,6 +134,32 @@ export async function syncBirthdayReminder({ name, dateKey, time, daysBefore }, 
     day: anchor.getDate(),
     hour,
     minute,
+    data: { kind: 'birthday', itemId: id },
+  });
+
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
+  return { notificationId: null, notice: describe(result.status, result) };
+}
+
+/**
+ * Daily nudge for a habit, scheduled for *today* only.
+ *
+ * It is cancelled as soon as the day is ticked (or the reminder is turned off), and
+ * `resyncReminders` rebuilds it on the next app start, so a habit never gets a 3 a.m.
+ * notification for something already done.
+ */
+export async function syncHabitReminder({ id, name, emoji, marks, remindAt }, existingId) {
+  await Notif.cancel(existingId);
+
+  const today = todayKey();
+  const done = Array.isArray(marks) && marks.includes(today);
+  if (!remindAt || done) return { notificationId: null, notice: null };
+
+  const result = await Notif.scheduleAt({
+    title: `${emoji || '✅'} ${name}`,
+    body: 'Tocá “✓ Completar” para marcarlo sin abrir el app.',
+    date: buildDateTime(today, remindAt),
+    data: { kind: 'habit', itemId: id },
   });
 
   if (result.status === 'scheduled') return { notificationId: result.id, notice: null };

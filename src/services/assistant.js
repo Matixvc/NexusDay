@@ -1,5 +1,6 @@
 import { categoryOf, formatMoney, sumAmounts } from '../utils/money';
 import { formatDateShort, formatTime } from '../utils/dates';
+import { normalizeText } from '../utils/text';
 import { buildDashboard, habitStreak } from './dashboard';
 
 /**
@@ -8,6 +9,10 @@ import { buildDashboard, habitStreak } from './dashboard';
  * There is no API key in this project and no network call is made: the assistant is a
  * small intent matcher that answers with the data already stored on the device. That keeps
  * it instant, private and dependency-free; the UI states this explicitly.
+ *
+ * Its scope is the app itself: notes, agenda, schedule, birthdays, habits and expenses.
+ * Anything outside that scope is not answered, it is reoriented towards what the device
+ * *can* do — see `APP_KEYWORDS` and the `offtopic` answer below.
  */
 
 export const ASSISTANT_SUGGESTIONS = [
@@ -19,15 +24,22 @@ export const ASSISTANT_SUGGESTIONS = [
   '¿Cómo programo un recordatorio?',
 ];
 
+/**
+ * Words that mark a question as being about this app. Used only to tell "I did not
+ * understand" apart from "that is out of scope", so it can be generous.
+ */
+export const APP_KEYWORDS = [
+  'hoy', 'agenda', 'horario', 'clase', 'actividad', 'nota', 'notas', 'apunte', 'lista',
+  'gasto', 'gastos', 'gaste', 'plata', 'dinero', 'presupuesto', 'precio', 'cuanto',
+  'habito', 'habitos', 'racha', 'rutina', 'cumple', 'cumpleanos', 'regalo', 'evento',
+  'eventos', 'recorda', 'recordar', 'recordatorio', 'aviso', 'notificacion', 'calendario',
+  'sincroniz', 'ics', 'exportar', 'tema', 'color', 'acento', 'audio', 'voz', 'adjunto',
+  'busca', 'buscar', 'encuentra', 'tengo', 'proximo', 'proxima', 'siguiente', 'resumen',
+];
+
 /** Lowercase, sin acentos ni signos: así "¿Cuánto GASTÉ hoy?" y "cuanto gaste hoy" coinciden. */
 export function normalizeQuestion(text) {
-  return String(text ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeText(text);
 }
 
 const has = (text, words) => words.some((word) => text.includes(word));
@@ -195,6 +207,25 @@ export function answerQuestion(question, data = {}) {
     if (intent) {
       return { id: intent.id, question: String(question), ...intent.answer({ ...data, dashboard, text }) };
     }
+
+    // Out of scope: no internet, no general knowledge. Answer with what the device can do.
+    if (!has(text, APP_KEYWORDS)) {
+      return {
+        id: 'offtopic',
+        question: String(question),
+        title: 'Eso está fuera de NexusDay',
+        body: bullets([
+          'Soy el asistente de este teléfono: no tengo internet ni conocimiento general.',
+          'Lo que sí hago es consultar y gestionar tus datos guardados:',
+          '· Notas con voz y adjuntos · Agenda y calendario · Horario semanal',
+          '· Hábitos y rachas · Gastos por categoría · Cumpleaños y avisos',
+          '· Y el tema de acento que elegís en Ajustes.',
+        ]),
+        route: 'Inicio',
+        routeLabel: 'Ir al inicio',
+      };
+    }
+
     return {
       id: 'fallback',
       question: String(question),

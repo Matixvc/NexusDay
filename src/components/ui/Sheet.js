@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { colors, layout, radius, spacing, typography } from '../../theme/theme';
+import { themedStyles, colors, layout, radius, spacing, typography } from '../../theme/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextButton } from './primitives';
 
@@ -119,7 +119,7 @@ export function OptionSheet({ visible, onClose, title, options, value, onSelect 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
   backdropTouch: { ...StyleSheet.absoluteFillObject },
   sheet: {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme/theme';
+import { Text, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { formatTime, parseTime, shiftTime } from '../../utils/dates';
 import { Chip, ChipScroller } from './primitives';
 import { StepButton } from './inputs';
@@ -75,7 +75,7 @@ export function TimeField({ label = 'Hora', value, onChange, minuteStep = 5, hin
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent, paddingVertical: 2 },

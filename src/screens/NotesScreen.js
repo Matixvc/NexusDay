@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { Text, TextInput, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { useFocusId } from '../hooks/useFocusId';
 import {
   Card,
   EmptyState,
@@ -47,6 +48,8 @@ export default function NotesScreen() {
   const [pickError, setPickError] = useState(null);
 
   const trimmed = query.trim().toLowerCase();
+  // Set by the global search: the matched note opens straight in its editor.
+  const focusId = useFocusId();
 
   const visible = useMemo(() => {
     const ordered = sortNotes(notes);
@@ -78,6 +81,26 @@ export default function NotesScreen() {
     });
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
+
+  // The global search can ask for a specific note: open it in its editor as soon as the
+  // list is hydrated. SetState during render is the pattern React recommends for deriving
+  // state from props, and the guard keeps it to one update.
+  const focusedNote = focusId ? notes.find((note) => note.id === focusId) : null;
+  if (focusedNote && sheet?.id !== focusedNote.id) {
+    setSheet({
+      mode: 'edit',
+      id: focusedNote.id,
+      original: focusedNote,
+      values: {
+        title: focusedNote.title || '',
+        body: focusedNote.body || '',
+        color: focusedNote.color || colors.accent,
+        pinned: Boolean(focusedNote.pinned),
+        audio: focusedNote.audio || null,
+        attachment: focusedNote.attachment || null,
+      },
+    });
+  }
 
   const canSave = Boolean(sheet) && Boolean(sheet.values.title.trim() || sheet.values.body.trim());
 
@@ -320,7 +343,7 @@ export default function NotesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   search: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.md,

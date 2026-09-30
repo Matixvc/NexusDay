@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { Text, TextInput, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { useFocusId } from '../hooks/useFocusId';
 import {
   Card,
   Chip,
@@ -25,6 +26,8 @@ const MAX_ROWS = 8;
 
 export default function ExpensesScreen() {
   const { expenses, addExpense, updateExpense, removeExpense } = useAppData();
+  // Highlighted by the global search for a few seconds.
+  const focusId = useFocusId();
 
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0].id);
@@ -192,7 +195,12 @@ export default function ExpensesScreen() {
           visible.map((expense) => {
             const item = categoryOf(expense.category);
             return (
-              <Card key={expense.id} accent={item.color} onPress={() => openEdit(expense)} style={styles.row}>
+              <Card
+                key={expense.id}
+                accent={item.color}
+                onPress={() => openEdit(expense)}
+                style={[styles.row, focusId === expense.id ? styles.focused : null]}
+              >
                 <View style={styles.rowInner}>
                   <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
                     <Text style={styles.rowEmoji}>{item.emoji}</Text>
@@ -276,7 +284,7 @@ export default function ExpensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   form: { gap: spacing.md },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   currency: { fontSize: 26, fontWeight: '800', color: colors.textSecondary },
@@ -314,4 +322,6 @@ const styles = StyleSheet.create({
   rowEmoji: { fontSize: 18 },
   rowBody: { flex: 1, gap: 2 },
   rowAmount: { fontSize: 15, fontWeight: '700', color: colors.text },
+  // Used by the global search to point at the matched item.
+  focused: { borderColor: colors.accent, borderWidth: 1.5 },
 });

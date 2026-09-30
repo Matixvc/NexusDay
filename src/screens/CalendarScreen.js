@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
-import { calendarTheme, colors, spacing, typography } from '../theme/theme';
+import { themedStyles, calendarTheme, colors, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
@@ -449,7 +449,7 @@ function EventRow({ event, onPress, showDay }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { marginTop: spacing.md, flexDirection: 'row' },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },

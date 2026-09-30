@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme/theme';
+import { Pressable, Text, View } from 'react-native';
+import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import {
   MONTHS,
   addDaysToKey,
@@ -175,7 +175,7 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent, paddingVertical: 2 },

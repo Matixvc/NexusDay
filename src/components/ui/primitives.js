@@ -1,6 +1,6 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
+import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
 
 /**
  * Page scaffold: dark background, large title, scrollable body.
@@ -218,7 +218,7 @@ export function ChipScroller({ children, style, contentContainerStyle, horizonta
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
