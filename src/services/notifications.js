@@ -106,7 +106,7 @@ export async function scheduleAt({ title, body, date }) {
 
   try {
     const id = await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: 'default', data: { source: 'appmobile' } },
+      content: { title, body, sound: 'default', data: { source: 'nexusday' } },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date,
@@ -135,7 +135,7 @@ export async function scheduleYearly({ title, body, month, day, hour, minute }) 
 
   try {
     const id = await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: 'default', data: { source: 'appmobile', repeats: 'yearly' } },
+      content: { title, body, sound: 'default', data: { source: 'nexusday', repeats: 'yearly' } },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.YEARLY,
         month,

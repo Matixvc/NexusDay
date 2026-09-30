@@ -235,7 +235,7 @@ export default function CalendarScreen() {
             <Text style={[typography.small, styles.bannerText]}>
               {permission.canAskAgain
                 ? 'Sin permisos la agenda se guarda igual, pero no te avisa cuando se acerca un evento.'
-                : 'Dalos desde Ajustes → Aplicaciones → AppMobile → Notificaciones para volver a usarlos.'}
+                : 'Dalos desde Ajustes → Aplicaciones → NexusDay → Notificaciones para volver a usarlos.'}
             </Text>
             {permission.canAskAgain ? (
               <View style={styles.bannerActions}>

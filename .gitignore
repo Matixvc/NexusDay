@@ -5,12 +5,15 @@ node_modules/
 
 # Expo
 .expo/
+build/
 dist/
 web-build/
 expo-env.d.ts
 
 # Native
 .kotlin/
+*.apk
+*.aab
 *.orig.*
 *.jks
 *.p8

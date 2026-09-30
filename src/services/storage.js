@@ -1,6 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const NAMESPACE = '@appmobile/v1';
+const NAMESPACE = '@nexusday/v1';
+
+/** Pre-rebrand namespace. Kept read-only so installs that stored data under the old
+ *  name keep working after the rename; new writes always go to NAMESPACE. */
+const LEGACY_NAMESPACE = '@appmobile/v1';
+
+/** `'@nexusday/v1/events'` -> `'@appmobile/v1/events'`. */
+function legacyKey(key) {
+  return key.startsWith(NAMESPACE) ? key.replace(NAMESPACE, LEGACY_NAMESPACE) : key;
+}
+
+/** Reads from the current namespace, falling back to the legacy one when empty. */
+async function readItem(key) {
+  const raw = await AsyncStorage.getItem(key);
+  if (raw != null) return raw;
+  return AsyncStorage.getItem(legacyKey(key));
+}
 
 export const KEYS = {
   activities: `${NAMESPACE}/activities`,
@@ -19,7 +35,7 @@ export const KEYS = {
  */
 export async function loadJSON(key, fallback = []) {
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await readItem(key);
     if (raw == null) return fallback;
     const parsed = JSON.parse(raw);
     if (parsed == null) return fallback;
@@ -43,6 +59,8 @@ export async function saveJSON(key, value) {
 export async function removeKey(key) {
   try {
     await AsyncStorage.removeItem(key);
+    // "Borrar datos" must not leave the pre-rebrand copy behind.
+    await AsyncStorage.removeItem(legacyKey(key));
     return true;
   } catch (error) {
     console.warn(`[storage] could not remove ${key}`, error);
@@ -56,7 +74,7 @@ export async function removeKey(key) {
  */
 export async function loadValue(key, fallback = null) {
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await readItem(key);
     if (raw == null) return fallback;
     const parsed = JSON.parse(raw);
     return parsed == null ? fallback : parsed;

@@ -312,7 +312,7 @@ function icsLocal(date) {
  * Serialises app events as an `.ics` file (RFC 5545). This is the fallback path when the
  * user does not want to grant calendar access: the file can be opened or shared anywhere.
  */
-export function buildAgendaICS(events = [], { product = 'AppMobile' } = {}) {
+export function buildAgendaICS(events = [], { product = 'NexusDay' } = {}) {
   const stamp = icsStamp(new Date());
   const lines = [
     'BEGIN:VCALENDAR',
@@ -327,7 +327,7 @@ export function buildAgendaICS(events = [], { product = 'AppMobile' } = {}) {
     const details = toEventDetails(event);
     const uid = event.calendarEventId || event.id || `evento-${index}`;
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${icsEscape(`${uid}@appmobile`)}`);
+    lines.push(`UID:${icsEscape(`${uid}@nexusday`)}`);
     lines.push(`DTSTAMP:${stamp}`);
     lines.push(`DTSTART:${icsLocal(details.startDate)}`);
     lines.push(`DTEND:${icsLocal(details.endDate)}`);
@@ -348,7 +348,7 @@ export async function shareAgendaICS(events = [], { name = 'agenda.ics', dialogT
 
 const STATUS_MESSAGES = {
   unsupported: 'Este dispositivo no permite acceder a su calendario.',
-  denied: 'Sin acceso al calendario. Puedes activarlo en Ajustes › AppMobile › Calendario.',
+  denied: 'Sin acceso al calendario. Puedes activarlo en Ajustes › NexusDay › Calendario.',
   'no-calendar': 'No hay ningún calendario editable en este dispositivo.',
   error: 'El calendario del dispositivo rechazó la operación.',
   partial: 'Algunos eventos no se pudieron guardar en el calendario.',

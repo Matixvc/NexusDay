@@ -90,7 +90,7 @@ export default function BirthdaysScreen({ navigation }) {
   const next = sorted[0];
 
   // The material-top-tabs API expects a function returning the badge element, so the
-  // count stays inside the custom bar instead of a bottom-tabs style string.
+  // count stays inside the custom bar instead of a plain badge string.
   useEffect(() => {
     navigation.setOptions({
       tabBarBadge: soon.length ? () => <TabBadge count={soon.length} /> : undefined,

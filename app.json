@@ -2,6 +2,7 @@
   "expo": {
     "name": "NexusDay",
     "slug": "nexusday",
+    "scheme": "nexusday",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +18,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.matix03.AppMobile",
+      "package": "com.matix03.nexusday",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
