@@ -2,17 +2,10 @@ import { createMaterialTopTabNavigator } from '@react-navigation/material-top-ta
 import { NavigationContainer } from '@react-navigation/native';
 import { View } from 'react-native';
 import { themedStyles, colors, navigationTheme } from '../theme/theme';
-import AssistantScreen from '../screens/AssistantScreen';
-import BirthdaysScreen from '../screens/BirthdaysScreen';
-import CalendarScreen from '../screens/CalendarScreen';
-import ExpensesScreen from '../screens/ExpensesScreen';
-import HabitsScreen from '../screens/HabitsScreen';
-import HomeScreen from '../screens/HomeScreen';
-import NotesScreen from '../screens/NotesScreen';
-import ScheduleScreen from '../screens/ScheduleScreen';
-import SettingsScreen from '../screens/SettingsScreen';
 import { BottomTabBar } from './BottomTabBar';
 import { Glyph } from './TabGlyphs';
+import { TABS, HOME_TAB } from './tabs';
+import { normalizeTabConfig } from '../services/tabs';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -24,14 +17,21 @@ const Tab = createMaterialTopTabNavigator();
  * custom `BottomTabBar` keeps the bottom-bar look of the app and applies the safe-area
  * insets. Pages render lazily, one neighbour preloaded on each side so swiping feels
  * instant without mounting all nine screens on launch.
+ *
+ * Every section stays registered in the navigator (in the order the user chose, hidden
+ * ones included) because the global search navigates by name: a route the navigator does
+ * not know would make `navigate` fail. Hiding a tab only removes it from the bar.
  */
-export default function RootNavigator({ initialRouteName = 'Inicio', onRouteChange }) {
+export default function RootNavigator({ initialRouteName = HOME_TAB, onRouteChange, tabConfig, onRevealTab }) {
+  const config = normalizeTabConfig(tabConfig);
+  const order = config.order;
+
   return (
     <NavigationContainer theme={navigationTheme}>
       <Tab.Navigator
-        initialRouteName={initialRouteName}
+        initialRouteName={order.includes(initialRouteName) ? initialRouteName : HOME_TAB}
         tabBarPosition="bottom"
-        tabBar={(props) => <BottomTabBar {...props} />}
+        tabBar={(props) => <BottomTabBar {...props} hidden={config.hidden} onRevealTab={onRevealTab} />}
         screenOptions={{
           swipeEnabled: true,
           animationEnabled: true,
@@ -43,57 +43,25 @@ export default function RootNavigator({ initialRouteName = 'Inicio', onRouteChan
           tabBarInactiveTintColor: colors.textMuted,
         }}
         listeners={{
-          // Lets the app shell remember the last tab, so remounting (an accent change)
-          // puts the user back where they were instead of on Inicio.
+          // Lets the app shell remember the last tab, so remounting (an accent change,
+          // a tab layout change) puts the user back where they were.
           tabPress: ({ target }) => onRouteChange?.(target),
         }}
       >
-        <Tab.Screen
-          name="Inicio"
-          component={HomeScreen}
-          options={{ tabBarLabel: 'Inicio', tabBarIcon: ({ color }) => <Glyph name="home" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Horario"
-          component={ScheduleScreen}
-          options={{ tabBarLabel: 'Horario', tabBarIcon: ({ color }) => <Glyph name="schedule" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Agenda"
-          component={CalendarScreen}
-          options={{ tabBarLabel: 'Agenda', tabBarIcon: ({ color }) => <Glyph name="calendar" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Cumpleaños"
-          component={BirthdaysScreen}
-          options={{ tabBarLabel: 'Cumple', tabBarIcon: ({ color }) => <Glyph name="birthdays" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Notas"
-          component={NotesScreen}
-          options={{ tabBarLabel: 'Notas', tabBarIcon: ({ color }) => <Glyph name="notes" color={color} /> }}
-        />
-        {/* Secondary pages, now with their own slot in the bar (one tap or one swipe away). */}
-        <Tab.Screen
-          name="Hábitos"
-          component={HabitsScreen}
-          options={{ tabBarLabel: 'Hábitos', tabBarIcon: ({ color }) => <Glyph name="habit" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Gastos"
-          component={ExpensesScreen}
-          options={{ tabBarLabel: 'Gastos', tabBarIcon: ({ color }) => <Glyph name="money" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Nexus AI"
-          component={AssistantScreen}
-          options={{ tabBarLabel: 'Nexus AI', tabBarIcon: ({ color }) => <Glyph name="ai" color={color} /> }}
-        />
-        <Tab.Screen
-          name="Ajustes"
-          component={SettingsScreen}
-          options={{ tabBarLabel: 'Ajustes', tabBarIcon: ({ color }) => <Glyph name="settings" color={color} /> }}
-        />
+        {order.map((name) => {
+          const tab = TABS.find((item) => item.name === name) || TABS[0];
+          return (
+            <Tab.Screen
+              key={tab.name}
+              name={tab.name}
+              component={tab.component}
+              options={{
+                tabBarLabel: tab.label,
+                tabBarIcon: ({ color }) => <Glyph name={tab.glyph} color={color} />,
+              }}
+            />
+          );
+        })}
       </Tab.Navigator>
     </NavigationContainer>
   );

@@ -20,7 +20,14 @@ import { colors } from '../theme/theme';
  *   must not contain ":" or "-".
  */
 
-export const CHANNEL_ID = 'recordatorios';
+/**
+ * Android channel id.
+ *
+ * `v2` because Android freezes `importance`/`sound` once a channel exists: a new id is the
+ * only way to hand users the alarm-grade channel without uninstalling. Notifications that
+ * were scheduled before the upgrade keep pointing at the old channel and still fire.
+ */
+export const CHANNEL_ID = 'recordatorios_v2';
 export const CATEGORY_ID = 'nexusday_recordatorio';
 
 /** Action ids shared by the category buttons and the response handler. */
@@ -115,10 +122,22 @@ async function ensureChannel() {
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Recordatorios',
-      description: 'Avisos de eventos, horarios y cumpleaños.',
+      description: 'Avisos de eventos, horarios, cumpleaños y hábitos.',
+      // Alarm-grade: heads-up, sound, vibration, and the alarm audio attributes so the
+      // volume slider in ring mode still gets it through.
       importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 220, 140, 220],
+      sound: 'default',
+      vibrationPattern: [0, 250, 150, 250],
       lightColor: colors.accent,
+      enableLights: true,
+      enableVibrate: true,
+      bypassDnd: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.ALARM,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        flags: { enforceAudibility: true, requestHardwareAudioVideoSynchronization: false },
+      },
     });
     channelReady = true;
   } catch (error) {
@@ -178,6 +197,8 @@ export async function scheduleAt({ title, body, date, data }) {
         title,
         body,
         sound: 'default',
+        // iOS 15+ honours this: reminders come through even in a Focus mode.
+        interruptionLevel: 'timeSensitive',
         categoryIdentifier: CATEGORY_ID,
         data: { source: 'nexusday', ...data },
       },
@@ -213,6 +234,7 @@ export async function scheduleYearly({ title, body, month, day, hour, minute, da
         title,
         body,
         sound: 'default',
+        interruptionLevel: 'timeSensitive',
         categoryIdentifier: CATEGORY_ID,
         data: { source: 'nexusday', repeats: 'yearly', ...data },
       },

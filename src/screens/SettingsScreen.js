@@ -3,11 +3,15 @@ import { Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { ACCENT_THEMES } from '../theme/accents';
+import { HOME_TAB, tabByName } from '../navigation/tabs';
+import { DEFAULT_TAB_CONFIG, moveTab, setTabHidden } from '../services/tabs';
+import { authenticate, describeCapability, describePrivacyFailure } from '../services/privacy';
 import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButton } from '../components/ui/primitives';
 import { PickerTrigger, TextField } from '../components/ui/inputs';
 import { ConfirmSheet, OptionSheet } from '../components/ui/Sheet';
+import { Switch } from '../components/ui/Switch';
 import {
   FOLDERS,
   clearFolder,
@@ -56,11 +60,17 @@ export default function SettingsScreen() {
     updateSettings,
     clearAllData,
     replayTutorial,
+    tabConfig,
+    setTabConfig,
     permission,
     refreshPermission,
     requestNotifications,
     notificationsSupported,
   } = useAppData();
+
+  // What the phone can authenticate with (biometric enrolled or device passcode only).
+  const [privacyLabel, setPrivacyLabel] = useState('Consultando…');
+  const [privacyNotice, setPrivacyNotice] = useState(null);
 
   // `nameDraft` stays null until the user types, so the persisted name appears as soon as
   // AsyncStorage hydrates without an effect that mirrors state into state.
@@ -79,6 +89,23 @@ export default function SettingsScreen() {
   // expo-file-system's folder helpers are synchronous, so they are read once and refreshed
   // explicitly (cleanup button) instead of on every render.
   const [storage, setStorage] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const label = await describeCapability();
+      if (alive) setPrivacyLabel(label);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** Fires the native prompt once, so the user can verify the lock before relying on it. */
+  const testPrivacy = async () => {
+    const result = await authenticate({ promptMessage: 'Probá el desbloqueo de NexusDay' });
+    setPrivacyNotice(result.ok ? 'Autenticación correcta.' : describePrivacyFailure(result.reason));
+  };
 
   const loadCalendar = useCallback(async () => {
     if (!calendarAvailable()) return;
@@ -339,6 +366,90 @@ export default function SettingsScreen() {
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
+        <SectionTitle title="Personalizar Navegación" count={tabConfig.order.length} />
+        <Card style={styles.card}>
+          <Text style={typography.caption}>
+            Reordená las solapas con las flechas y apagá las que no uses. Inicio queda siempre fijo en la
+            posición 1. Las ocultas siguen accesibles desde la búsqueda global de Inicio.
+          </Text>
+
+          {tabConfig.order.map((name, index) => {
+            const tab = tabByName(name);
+            const locked = name === HOME_TAB;
+            const hidden = tabConfig.hidden.includes(name);
+            if (!tab) return null;
+            return (
+              <View key={name} style={styles.tabRow}>
+                <Text style={[typography.caption, styles.tabIndex]}>{index + 1}</Text>
+                <View style={styles.tabBody}>
+                  <Text style={typography.bodyStrong} numberOfLines={1}>
+                    {tab.label}
+                  </Text>
+                  <Text style={typography.caption} numberOfLines={1}>
+                    {locked ? 'Fija · siempre visible' : hidden ? 'Oculta · se abre desde la búsqueda' : 'Visible en la barra'}
+                  </Text>
+                </View>
+                <View style={styles.tabArrows}>
+                  <TextButton
+                    label="↑"
+                    tone="ghost"
+                    disabled={locked || index === 0}
+                    onPress={() => setTabConfig(moveTab(tabConfig, name, -1))}
+                    style={styles.arrow}
+                  />
+                  <TextButton
+                    label="↓"
+                    tone="ghost"
+                    disabled={locked || index === tabConfig.order.length - 1}
+                    onPress={() => setTabConfig(moveTab(tabConfig, name, 1))}
+                    style={styles.arrow}
+                  />
+                </View>
+                <Switch
+                  value={!hidden}
+                  disabled={locked}
+                  onValueChange={(show) => setTabConfig(setTabHidden(tabConfig, name, !show))}
+                  label={`Mostrar ${tab.label}`}
+                />
+              </View>
+            );
+          })}
+
+          <TextButton label="Restablecer barra" tone="ghost" onPress={() => setTabConfig(DEFAULT_TAB_CONFIG)} />
+        </Card>
+
+        <SectionTitle title="Seguridad" />
+        <Card style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Seguridad biométrica / PIN</Text>
+              <Text style={typography.caption}>{privacyLabel}</Text>
+            </View>
+            <Pill label="Nativo" tone="accent" />
+          </View>
+          <View style={styles.privateRow}>
+            <View style={styles.privateBody}>
+              <Text style={typography.bodyStrong}>Pedir desbloqueo al abrir privados</Text>
+              <Text style={typography.caption}>
+                Las notas y los gastos marcados con 🔒 se abren solo después de la autenticación del sistema.
+              </Text>
+            </View>
+            <Switch
+              value={settings?.privacyEnabled !== false}
+              onValueChange={(value) => updateSettings({ privacyEnabled: value })}
+              label="Pedir desbloqueo al abrir privados"
+            />
+          </View>
+          {privacyNotice ? <Notice text={privacyNotice} /> : null}
+          <View style={styles.actions}>
+            <PrimaryButton label="Probar autenticación" onPress={testPrivacy} style={styles.actionButton} />
+          </View>
+          <Text style={typography.caption}>
+            Se usa la autenticación del propio teléfono (huella, Face ID o PIN): el app nunca guarda datos
+            biométricos.
+          </Text>
+        </Card>
+
         <SectionTitle title="Ayuda" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
@@ -424,4 +535,26 @@ const styles = themedStyles({
   themeSwatch: { width: 18, height: 18, borderRadius: radius.pill },
   themeSwatchAlt: { width: 10, height: 10 },
   themeLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
+  tabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  tabIndex: { width: 18, textAlign: 'center' },
+  tabBody: { flex: 1, gap: 1 },
+  tabArrows: { flexDirection: 'row', alignItems: 'center' },
+  arrow: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  privateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  privateBody: { flex: 1, gap: 2 },
 });

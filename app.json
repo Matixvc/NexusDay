@@ -3,7 +3,7 @@
     "name": "NexusDay",
     "slug": "nexusday",
     "scheme": "nexusday",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -23,7 +23,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_CALENDAR",
-        "android.permission.WRITE_CALENDAR"
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "web": {
@@ -42,6 +44,12 @@
         {
           "calendarPermission": "NexusDay copia tus eventos a la agenda del teléfono para que los veas en tu app de Calendario.",
           "remindersPermission": false
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "NexusDay usa Face ID para abrir las notas y los gastos que marcaste como privados."
         }
       ]
     ],

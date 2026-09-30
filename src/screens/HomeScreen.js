@@ -60,6 +60,7 @@ export default function HomeScreen({ navigation }) {
     habits,
     expenses,
     settings,
+    userName,
     permission,
     requestNotifications,
     notificationsSupported,
@@ -84,7 +85,9 @@ export default function HomeScreen({ navigation }) {
   const quickAccess = useMemo(() => buildQuickAccess(data), [data]);
   const cardWidth = (width - layout.gutter * 2 - spacing.md) / 2;
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
-  const name = settings?.displayName?.trim();
+  // v1.1 name (written by the tutorial) wins; the v1.0 profile field stays as a fallback.
+  const name = (userName || settings?.displayName || '').trim();
+  const title = name ? `¡Hola, ${name}! 👋` : data.greeting;
 
   /** One tap: jump to the section and let it highlight the exact item. */
   const openResult = (item) => {
@@ -113,9 +116,10 @@ export default function HomeScreen({ navigation }) {
               {data.dateLabel}
             </Text>
             <Text style={typography.display} numberOfLines={2}>
-              {name ? `${data.greeting}, ${name}` : data.greeting}
+              {title}
             </Text>
             <Text style={[typography.small, styles.heroHint]} numberOfLines={2}>
+              {name ? `${data.greeting}. ` : ''}
               {data.nextUp.length
                 ? `Tenés ${data.nextUp.length} cosa(s) por delante hoy.`
                 : 'No tenés nada agendado por ahora.'}

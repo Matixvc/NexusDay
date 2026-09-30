@@ -24,17 +24,27 @@ import {
  * `AudioRecorder` shared object, and playback is `useAudioPlayer`. This module keeps
  * everything that is *not* the hook: permissions, the audio session mode, and the
  * file juggling that turns a temporary cache recording into a permanent attachment.
- *
- * Recordings are captured in the cache directory (cheap, disposable) and only moved
- * into `Documents/recordings/` once the user accepts the take, so a discarded take
- * never leaves a file behind.
  */
 
-/** Same shape `expo-audio` ships, pinned to `.m4a` so iOS/Android agree on the container. */
+/**
+ * Voice-note recording preset on top of `expo-audio` (SDK 57).
+ *
+ * Same container as the stock preset (`.m4a`/AAC, so iOS and Android agree), tuned for
+ * speech: mono instead of stereo, half the bit rate, and metering enabled so the recorder
+ * can paint a live level bar. Files are captured in the cache directory (cheap, disposable)
+ * and only moved into `Documents/recordings/` once the user accepts the take, so a discarded
+ * take never leaves a file behind.
+ */
 export const recordingOptions = {
   ...RecordingPresets.HIGH_QUALITY,
+  numberOfChannels: 1,
+  bitRate: 64000,
+  isMeteringEnabled: true,
   directory: 'cache',
 };
+
+/** How often the hook polls the recorder (duration + level), in milliseconds. */
+export const RECORDING_POLL_MS = 250;
 
 export function isSupported() {
   return Platform.OS === 'ios' || Platform.OS === 'android';

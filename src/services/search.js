@@ -42,7 +42,10 @@ export function searchEverything(
 
   const candidates = [];
 
-  notes.forEach((note) => {
+  // Private notes and expenses stay out of the results: the dashboard is the most public
+  // surface of the app and the whole point of the lock is that the text is not floating
+  // around before the user authenticates.
+  notes.filter((note) => !note.private).forEach((note) => {
     const match = score(
       [
         { text: note.title, weight: 0 },
@@ -107,7 +110,7 @@ export function searchEverything(
     });
   });
 
-  expenses.forEach((expense) => {
+  expenses.filter((expense) => !expense.private).forEach((expense) => {
     const category = categoryOf(expense.category);
     const match = score(
       [

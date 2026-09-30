@@ -1,9 +1,19 @@
-import { useRef, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
+import { useAppData } from '../context/AppDataContext';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -11,11 +21,16 @@ const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 /** Decorative hero, the same asset the dashboard uses. */
 const WELCOME_BG = require('../../assets/welcome-bg.jpg');
 
+/** Tab names of the demo bar, in the same order as the real one. */
+const DEMO_TABS = ['Inicio', 'Horario', 'Agenda', 'Cumple', 'Notas', 'Hábitos', 'Gastos', 'AI', 'Ajustes'];
+const DEMO_ICONS = ['🏠', '🗓️', '📆', '🎂', '📝', '💪', '💰', '🤖', '⚙️'];
+
 /**
  * Copy of the tutorial.
  *
- * Every slide carries three short points plus a `tip` the user can expand: a first run full
- * of text is the fastest way to make somebody skip the whole thing.
+ * `demo` renders a small, *touchable* mock of the real screen: in a first run the user
+ * pokes at the app before trusting it with real data. Slide 1 also carries the name field
+ * (`field: true`), the only thing the tutorial asks for.
  */
 const SLIDES = [
   {
@@ -28,7 +43,9 @@ const SLIDES = [
       'Las próximas actividades, ordenadas por hora.',
       'Tarjetas de acceso directo a cada sección.',
     ],
-    tip: 'El buscador global está arriba del todo: escribí dos letras y filtrá notas, eventos, hábitos y gastos a la vez.',
+    tip: 'Probá el buscador de la demo: filtra notas, eventos, hábitos y gastos mientras escribís.',
+    demo: 'search',
+    field: true,
   },
   {
     key: 'nav',
@@ -40,7 +57,8 @@ const SLIDES = [
       'Notas · Hábitos · Gastos · Nexus AI · Ajustes.',
       'Deslizá el dedo a los costados para cambiar de sección.',
     ],
-    tip: 'La solapa iluminada es la que estás viendo. Si tocás una tarjeta de acceso rápido, saltás directo a esa sección.',
+    tip: 'Tocá una solapa de la demo. En Ajustes podés reordenarlas u ocultarlas cuando quieras.',
+    demo: 'tabs',
   },
   {
     key: 'notes',
@@ -52,7 +70,8 @@ const SLIDES = [
       'Adjuntá un documento sin salir del app.',
       '“Añadir al calendario” copia tus eventos al teléfono.',
     ],
-    tip: 'Si preferís no dar permisos, exportás la agenda a un archivo .ics y lo abrís en cualquier app.',
+    tip: 'Tocá el micrófono de la demo: la grabación se guarda dentro del app, nunca sube a la nube.',
+    demo: 'note',
   },
   {
     key: 'habits',
@@ -64,7 +83,8 @@ const SLIDES = [
       'Avisos con “✓ Completar” directo en la notificación.',
       'Resumen por categoría del mes en pantalla.',
     ],
-    tip: 'El acento neón se cambia en Ajustes › Tema: hay cuatro variantes para que el app se sienta tuyo.',
+    tip: 'Tocá el ✓ de la demo para ver cómo crece la racha, y el + para sumar un gasto.',
+    demo: 'habits',
   },
   {
     key: 'ai',
@@ -76,39 +96,49 @@ const SLIDES = [
       'Busca en tus notas, eventos, hábitos y cumpleaños.',
       'Si le preguntás algo ajeno al app, te reorienta.',
     ],
-    tip: 'El botón de papelera del header borra la conversación cuando quieras empezar de cero.',
+    tip: 'Tocá una sugerencia de la demo. El botón de papelera del header borra la conversación.',
+    demo: 'ai',
   },
 ];
 
 /**
  * First-run tutorial (also the replay Ajustes can trigger).
  *
- * Swipe between slides, tap a point to expand its tip, and finish with “Comenzar a usar
- * NexusDay”, which is also what wipes the sample data so the app starts completely blank.
+ * Everything scales with `useWindowDimensions`: the copy, the ring, the demo and the
+ * controls are derived from one `scale` factor, so a 5" phone and a tablet both get a
+ * comfortable layout instead of a stretched one.
  */
 export default function OnboardingScreen({ firstRun = true, onFinish }) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const pagerRef = useRef(null);
+  const { width, height } = useWindowDimensions();
+  const { userName, setUserName } = useAppData();
   const [index, setIndex] = useState(0);
   const [openTip, setOpenTip] = useState(null);
+  const [draft, setDraft] = useState(userName);
+
+  // 390 x 780 is the reference layout; anything bigger/smaller is scaled and clamped so the
+  // text never turns unreadable on a very small screen nor huge on a tablet.
+  const scale = useMemo(
+    () => Math.min(1.12, Math.max(0.82, Math.min(width / 390, height / 780))),
+    [height, width],
+  );
+  const unit = (value) => Math.round(value * scale);
 
   const last = index === SLIDES.length - 1;
 
   const goTo = (next) => {
     const target = Math.min(Math.max(next, 0), SLIDES.length - 1);
-    pagerRef.current?.scrollTo({ x: target * width, animated: true });
     setIndex(target);
     setOpenTip(null);
   };
 
-  const onMomentumScroll = (event) => {
-    const next = Math.round(event.nativeEvent.contentOffset.x / width);
-    setIndex((current) => (current === next ? current : next));
-    setOpenTip(null);
-  };
-
   const toggleTip = (pointIndex) => setOpenTip((current) => (current === pointIndex ? null : pointIndex));
+
+  /** The name is stored as soon as the user confirms it, not on the last slide. */
+  const saveName = () => {
+    const next = draft.trim();
+    if (next) setUserName(next);
+  };
 
   return (
     <ImageBackground source={WELCOME_BG} style={styles.root} imageStyle={styles.rootImage} resizeMode="cover">
@@ -117,11 +147,16 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
       <View style={styles.scrim} />
       <View style={styles.scrimBottom} />
 
-      <View style={[styles.body, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.md }]}>
+      <View
+        style={[
+          styles.body,
+          { paddingTop: insets.top + unit(12), paddingBottom: insets.bottom + unit(10) },
+        ]}
+      >
         <View style={styles.topRow}>
           <View style={styles.brand}>
-            <Text style={styles.brandMark}>{APP_NAME.slice(0, 1)}</Text>
-            <Text style={styles.brandName} numberOfLines={1}>
+            <Text style={[styles.brandMark, { fontSize: unit(19) }]}>{APP_NAME.slice(0, 1)}</Text>
+            <Text style={[styles.brandName, { fontSize: unit(15) }]} numberOfLines={1}>
               {APP_NAME}
             </Text>
           </View>
@@ -129,16 +164,29 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
         </View>
 
         <ScrollView
-          ref={pagerRef}
+          style={styles.pager}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           bounces={false}
-          onMomentumScrollEnd={onMomentumScroll}
-          style={styles.pager}
+          onMomentumScrollEnd={(event) => {
+            const next = Math.round(event.nativeEvent.contentOffset.x / width);
+            if (next !== index) goTo(next);
+          }}
         >
           {SLIDES.map((item) => (
-            <Slide key={item.key} slide={item} width={width} openTip={openTip} onToggleTip={toggleTip} />
+            <View key={item.key} style={{ width }}>
+              <Slide
+                slide={item}
+                scale={scale}
+                unit={unit}
+                openTip={openTip}
+                onToggleTip={toggleTip}
+                nameDraft={item.field ? draft : ''}
+                onChangeName={item.field ? setDraft : null}
+                onSaveName={item.field ? saveName : null}
+              />
+            </View>
           ))}
         </ScrollView>
 
@@ -149,10 +197,20 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
             accessibilityLabel={`Paso ${index + 1} de ${SLIDES.length}`}
           >
             {SLIDES.map((item, dotIndex) => (
-              <View
+              <Pressable
                 key={item.key}
-                style={[styles.dot, dotIndex === index ? { backgroundColor: colors.accent, width: 22 } : null]}
-              />
+                onPress={() => goTo(dotIndex)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Ir al paso ${dotIndex + 1}`}
+              >
+                <View
+                  style={[
+                    styles.dot,
+                    dotIndex === index ? { backgroundColor: colors.accent, width: unit(22) } : null,
+                  ]}
+                />
+              </Pressable>
             ))}
           </View>
 
@@ -176,15 +234,23 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
   );
 }
 
-/** One page of the pager: emoji, headline and the three expandable points. */
-function Slide({ slide, width, openTip, onToggleTip }) {
+/** One page: the headline, the name field (slide 1), a live mini-demo and the points. */
+function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onSaveName }) {
   return (
-    <View style={[styles.slide, { width }]}>
-      <View style={styles.emojiRing}>
-        <Text style={styles.emoji}>{slide.emoji}</Text>
+    <View style={styles.slide}>
+      <View style={styles.emojiRow}>
+        <View style={[styles.emojiRing, { width: unit(62), height: unit(62), borderRadius: unit(31) }]}>
+          <Text style={{ fontSize: unit(28) }}>{slide.emoji}</Text>
+        </View>
+        <View style={styles.headline}>
+          <Text style={[typography.display, { fontSize: unit(25), lineHeight: unit(30) }]}>{slide.title}</Text>
+          <Text style={[typography.subtitle, { lineHeight: unit(19) }]}>{slide.body}</Text>
+        </View>
       </View>
-      <Text style={styles.slideTitle}>{slide.title}</Text>
-      <Text style={styles.slideBody}>{slide.body}</Text>
+
+      {slide.field ? <NameField unit={unit} value={nameDraft} onChange={onChangeName} onSave={onSaveName} /> : null}
+
+      <Demo kind={slide.demo} unit={unit} />
 
       <View style={styles.points}>
         {slide.points.map((point, pointIndex) => {
@@ -200,7 +266,7 @@ function Slide({ slide, width, openTip, onToggleTip }) {
             >
               <Text style={[styles.pointMark, { color: colors.accent }]}>✓</Text>
               <View style={styles.pointBody}>
-                <Text style={styles.pointText}>{point}</Text>
+                <Text style={[typography.small, styles.pointText]}>{point}</Text>
                 {open ? <Text style={styles.pointTip}>{slide.tip}</Text> : null}
               </View>
               <Text style={[styles.pointHint, { color: colors.accent }]}>{open ? '−' : '+'}</Text>
@@ -209,6 +275,294 @@ function Slide({ slide, width, openTip, onToggleTip }) {
         })}
       </View>
     </View>
+  );
+}
+
+/** "¿Cómo querés que te llamemos?" — stored in `@nexusday/v1/user_name`. */
+function NameField({ unit, value, onChange, onSave }) {
+  return (
+    <View style={styles.nameBlock}>
+      <Text style={[typography.overline, { fontSize: unit(10) }]}>¿Cómo querés que te llamemos?</Text>
+      <View style={styles.nameRow}>
+        <TextInput
+          value={value}
+          onChangeText={onChange}
+          onSubmitEditing={onSave}
+          placeholder="Tu nombre"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.nameInput, { fontSize: unit(15) }]}
+          selectionColor={colors.accent}
+          cursorColor={colors.accent}
+          returnKeyType="done"
+          maxLength={20}
+          autoCapitalize="words"
+          autoCorrect={false}
+          accessibilityLabel="¿Cómo querés que te llamemos?"
+        />
+        <Pressable
+          onPress={onSave}
+          accessibilityRole="button"
+          accessibilityLabel="Guardar el nombre"
+          style={({ pressed }) => [styles.nameSave, pressed ? styles.pointPressed : null]}
+        >
+          <Text style={[styles.nameSaveLabel, { fontSize: unit(12) }]}>Guardar</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.nameHint}>
+        Se usa solo para el saludo del dashboard (“¡Hola, {value.trim() || 'Nombre'}! 👋”). Podés cambiarlo en
+        Ajustes.
+      </Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Mini demos: small, touchable mocks of the real screens.
+ * ------------------------------------------------------------------ */
+
+/** Wraps every demo: same frame the app uses, so the shape is recognisable. */
+function DemoFrame({ children, caption }) {
+  return (
+    <View style={styles.demo}>
+      <View style={styles.demoTop}>
+        <View style={styles.demoDot} />
+        <View style={styles.demoDot} />
+        <View style={styles.demoDot} />
+        <Text style={styles.demoCaption} numberOfLines={1}>
+          {caption}
+        </Text>
+      </View>
+      <View style={styles.demoBody}>{children}</View>
+    </View>
+  );
+}
+
+function Demo({ kind, unit }) {
+  if (kind === 'search') return <SearchDemo unit={unit} />;
+  if (kind === 'tabs') return <TabsDemo unit={unit} />;
+  if (kind === 'note') return <NoteDemo unit={unit} />;
+  if (kind === 'habits') return <HabitsDemo unit={unit} />;
+  return <AiDemo unit={unit} />;
+}
+
+/** Dashboard: a working search that filters four fake collections. */
+function SearchDemo({ unit }) {
+  const [query, setQuery] = useState('');
+  const pool = [
+    { icon: '📝', label: 'Nota · Pendientes de la semana' },
+    { icon: '🗓️', label: 'Evento · Entrega del proyecto' },
+    { icon: '💧', label: 'Hábito · Tomar 2 L de agua' },
+    { icon: '💰', label: 'Gasto · Almuerzo en la facultad' },
+  ];
+  const needle = query.trim().toLowerCase();
+  const hits = pool.filter((item) => item.label.toLowerCase().includes(needle));
+
+  return (
+    <DemoFrame caption="Inicio · búsqueda global">
+      <View style={styles.demoField}>
+        <Text style={{ fontSize: unit(13) }}>🔍</Text>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar…"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.demoInput, { fontSize: unit(13) }]}
+          selectionColor={colors.accent}
+          autoCorrect={false}
+          accessibilityLabel="Demo del buscador global"
+        />
+        <Text style={[styles.demoCount, { fontSize: unit(11) }]}>{hits.length}</Text>
+      </View>
+      <View style={styles.demoRows}>
+        {hits.length === 0 ? (
+          <Text style={styles.demoEmpty}>Sin coincidencias</Text>
+        ) : (
+          hits.map((item) => (
+            <View key={item.label} style={styles.demoRow}>
+              <Text style={{ fontSize: unit(13) }}>{item.icon}</Text>
+              <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
+                {item.label}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+    </DemoFrame>
+  );
+}
+
+/** Bottom bar: nine slots, the tapped one lights up. */
+function TabsDemo({ unit }) {
+  const [active, setActive] = useState(0);
+  return (
+    <DemoFrame caption="Barra inferior · 9 secciones">
+      <Text style={styles.demoEmpty}>
+        {`Estás en ${DEMO_TABS[active]}. Deslizá el dedo o tocá otra solapa.`}
+      </Text>
+      <View style={styles.demoTabs}>
+        {DEMO_TABS.map((label, index) => (
+          <Pressable
+            key={label}
+            onPress={() => setActive(index)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: index === active }}
+            accessibilityLabel={label}
+            style={({ pressed }) => [
+              styles.demoTab,
+              index === active ? { backgroundColor: colors.accentSoft, borderColor: colors.accent } : null,
+              pressed ? styles.pointPressed : null,
+            ]}
+          >
+            <Text style={{ fontSize: unit(11) }}>{DEMO_ICONS[index]}</Text>
+            <Text
+              style={[
+                styles.demoTabLabel,
+                index === active ? { color: colors.accent } : null,
+                { fontSize: unit(8) },
+              ]}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </DemoFrame>
+  );
+}
+
+/** Note editor: record / stop, then the resulting chip. */
+function NoteDemo({ unit }) {
+  const [recording, setRecording] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  return (
+    <DemoFrame caption="Nota · audio local">
+      <View style={styles.demoRow}>
+        <Pressable
+          onPress={() => {
+            if (recording) setSaved(true);
+            setRecording((value) => !value);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={recording ? 'Detener la grabación' : 'Grabar nota de voz'}
+          style={({ pressed }) => [
+            styles.demoRecButton,
+            recording ? { backgroundColor: colors.dangerSoft, borderColor: colors.danger } : null,
+            pressed ? styles.pointPressed : null,
+          ]}
+        >
+          <Text style={{ fontSize: unit(15) }}>{recording ? '■' : '🎙'}</Text>
+        </Pressable>
+        <View style={styles.demoRowBody}>
+          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
+            {recording ? 'Grabando… 0:03' : saved ? 'nota-de-voz-1.m4a' : 'Tocá para grabar'}
+          </Text>
+          <Text style={typography.caption} numberOfLines={1}>
+            {saved ? '4 KB · dentro del app' : 'Se guarda en el dispositivo'}
+          </Text>
+        </View>
+        {saved ? <Text style={{ fontSize: unit(14) }}>▶️</Text> : null}
+      </View>
+      <View style={styles.demoActions}>
+        <View style={[styles.demoChip, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+          <Text style={[styles.demoChipLabel, { color: colors.accent, fontSize: unit(10) }]}>📅 Al calendario</Text>
+        </View>
+        <View style={styles.demoChip}>
+          <Text style={[styles.demoChipLabel, { fontSize: unit(10) }]}>📎 Adjuntar</Text>
+        </View>
+      </View>
+    </DemoFrame>
+  );
+}
+
+/** Habit tick with a live streak plus a quick expense. */
+function HabitsDemo({ unit }) {
+  const [days, setDays] = useState(3);
+  const [spent, setSpent] = useState(0);
+
+  return (
+    <DemoFrame caption="Hábitos y gastos">
+      <View style={styles.demoRow}>
+        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+          <Text style={{ fontSize: unit(14) }}>💧</Text>
+        </View>
+        <View style={styles.demoRowBody}>
+          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
+            Tomar 2 L de agua
+          </Text>
+          <Text style={typography.caption}>{`Racha: ${days} día(s)`}</Text>
+        </View>
+        <Pressable
+          onPress={() => setDays((value) => value + 1)}
+          accessibilityRole="button"
+          accessibilityLabel="Marcar el hábito de hoy"
+          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
+        >
+          <Text style={{ fontSize: unit(14) }}>✓</Text>
+        </Pressable>
+      </View>
+      <View style={styles.demoRow}>
+        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+          <Text style={{ fontSize: unit(14) }}>💰</Text>
+        </View>
+        <View style={styles.demoRowBody}>
+          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
+            {`Gastado hoy: $${spent}`}
+          </Text>
+          <Text style={typography.caption}>Un toque y queda cargado</Text>
+        </View>
+        <Pressable
+          onPress={() => setSpent((value) => value + 500)}
+          accessibilityRole="button"
+          accessibilityLabel="Agregar un gasto"
+          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
+        >
+          <Text style={{ fontSize: unit(15) }}>+</Text>
+        </Pressable>
+      </View>
+    </DemoFrame>
+  );
+}
+
+/** Assistant: tap a suggestion, get the answer bubble. */
+function AiDemo({ unit }) {
+  const [answer, setAnswer] = useState(null);
+  const suggestions = ['¿Qué tengo hoy?', '¿Cuánto gasté?', '¿Qué hábitos me faltan?'];
+
+  return (
+    <DemoFrame caption="Nexus AI · 100% offline">
+      <View style={styles.demoActions}>
+        {suggestions.map((item) => (
+          <Pressable
+            key={item}
+            onPress={() => setAnswer(item)}
+            accessibilityRole="button"
+            accessibilityLabel={item}
+            style={({ pressed }) => [
+              styles.demoChip,
+              answer === item ? { backgroundColor: colors.accentSoft, borderColor: colors.accent } : null,
+              pressed ? styles.pointPressed : null,
+            ]}
+          >
+            <Text style={[styles.demoChipLabel, { fontSize: unit(9.5) }]}>{item}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {answer ? (
+        <View style={styles.demoBubble}>
+          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={2}>
+            {answer === '¿Cuánto gasté?'
+              ? 'Hoy llevás $1.850 en 1 movimiento.'
+              : answer === '¿Qué hábitos me faltan?'
+                ? 'Te falta 1 hábito hoy: Tomar 2 L de agua.'
+                : 'Tenés 1 cosa por delante: 18:30 Entrega del proyecto.'}
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.demoEmpty}>Tocá una sugerencia para ver una respuesta.</Text>
+      )}
+    </DemoFrame>
   );
 }
 
@@ -235,19 +589,37 @@ const styles = themedStyles({
 
   pager: { flexGrow: 0 },
   slide: { paddingRight: spacing.sm, gap: spacing.md, paddingTop: spacing.md },
+  emojiRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   emojiRing: {
-    width: 62,
-    height: 62,
-    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.accent,
     backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emoji: { fontSize: 28 },
-  slideTitle: { ...typography.display, fontSize: 25, lineHeight: 30, color: colors.text },
-  slideBody: { ...typography.subtitle, lineHeight: 19, color: colors.textSecondary },
+  headline: { flex: 1, gap: 4 },
+
+  nameBlock: { gap: spacing.xs },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  nameInput: {
+    flex: 1,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    color: colors.text,
+    minHeight: 44,
+  },
+  nameSave: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+  },
+  nameSaveLabel: { fontWeight: '800', color: colors.accentInk },
+  nameHint: { ...typography.caption, lineHeight: 16 },
 
   points: { gap: spacing.sm, marginTop: spacing.xs },
   point: {
@@ -275,4 +647,95 @@ const styles = themedStyles({
   skip: { flex: 0, paddingHorizontal: spacing.lg },
   next: { flex: 1, paddingHorizontal: spacing.lg },
   wipeNote: { textAlign: 'center', lineHeight: 16 },
+
+  // Demos
+  demo: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: `${colors.surface}cc`,
+    overflow: 'hidden',
+  },
+  demoTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
+  },
+  demoDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
+  demoCaption: { ...typography.caption, marginLeft: spacing.xs, flex: 1 },
+  demoBody: { padding: spacing.md, gap: spacing.sm },
+  demoField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+  },
+  demoInput: { flex: 1, color: colors.text, paddingVertical: spacing.sm, minHeight: 34 },
+  demoCount: { ...typography.caption, color: colors.accent, fontWeight: '800' },
+  demoRows: { gap: spacing.xs },
+  demoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  demoRowBody: { flex: 1, gap: 1 },
+  demoRowLabel: { color: colors.text },
+  demoEmpty: { ...typography.caption, lineHeight: 16, paddingVertical: spacing.xs },
+  demoTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'center' },
+  demoTab: {
+    width: 56,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  demoTabLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  demoRecButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfacePlus,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  demoChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  demoChipLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  demoBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoCheck: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfacePlus,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  demoBubble: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
 });
+
+

@@ -28,63 +28,102 @@ export function TabBadge({ count }) {
   );
 }
 
-export function BottomTabBar({ state, descriptors, navigation }) {
+export function BottomTabBar({ state, descriptors, navigation, hidden = [], onRevealTab }) {
   const insets = useSafeAreaInsets();
 
-  // Every route gets a tab: no filtering, no hidden sections.
   const routes = state.routes.map((route, index) => ({
     route,
     index,
     options: descriptors[route.key]?.options || {},
   }));
 
+  const isHidden = (name) => hidden.includes(name);
+  const visible = routes.filter((item) => !isHidden(item.route.name));
+  const activeRoute = routes[state.index]?.route.name;
+  // Landing on a hidden tab (the global search can do that) shows a dimmed "pin" slot:
+  // one tap brings it back to the bar.
+  const orphan = isHidden(activeRoute) ? routes.find((item) => item.route.name === activeRoute) : null;
+
   return (
     <View
       style={[styles.bar, { height: TAB_BAR_BASE_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
       accessibilityRole="tablist"
     >
-      {routes.map(({ route, index, options }) => {
-        const focused = index === state.index;
-        const color = focused ? colors.accent : colors.textMuted;
-        const badgeOption = options.tabBarBadge;
-        const badge =
-          typeof badgeOption === 'function'
-            ? badgeOption()
-            : badgeOption
-              ? <TabBadge count={badgeOption} />
-              : null;
-        const label = options.tabBarLabel ?? options.title ?? route.name;
+      {visible.map(({ route, index, options }) => (
+        <TabButton
+          key={route.key}
+          route={route}
+          index={index}
+          options={options}
+          navigation={navigation}
+          active={index === state.index}
+        />
+      ))}
 
-        return (
-          <Pressable
-            key={route.key}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: focused }}
-            accessibilityLabel={options.tabBarAccessibilityLabel || String(label)}
-            onPress={() => {
-              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!event.defaultPrevented) navigation.navigate(route.name);
-            }}
-            onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
-            style={({ pressed }) => [styles.item, pressed ? styles.pressed : null]}
+      {orphan ? (
+        <Pressable
+          onPress={() => onRevealTab?.(orphan.route.name)}
+          accessibilityRole="button"
+          accessibilityLabel={`${orphan.options.tabBarLabel || orphan.route.name} está oculta. Tocar para mostrar de nuevo.`}
+          style={({ pressed }) => [styles.item, styles.orphanItem, pressed ? styles.pressed : null]}
+        >
+          <View style={styles.orphanWrap}>
+            {typeof orphan.options.tabBarIcon === 'function'
+              ? orphan.options.tabBarIcon({ focused: true, color: colors.accent })
+              : null}
+          </View>
+          <Text
+            style={[styles.label, styles.labelActive]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
           >
-            <View style={[styles.iconWrap, focused ? { backgroundColor: colors.accentSoft } : null]}>
-              {typeof options.tabBarIcon === 'function' ? options.tabBarIcon({ focused, color }) : null}
-              {badge}
-            </View>
-            <Text
-              style={[styles.label, focused ? styles.labelActive : null]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
-              {label}
-            </Text>
-            {focused ? <View style={styles.indicator} /> : null}
-          </Pressable>
-        );
-      })}
+            {orphan.options.tabBarLabel || orphan.route.name}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
+  );
+}
+
+/** One tab: glyph, label, the active indicator and the press/long-press contract. */
+function TabButton({ route, index, options, navigation, active }) {
+  const color = active ? colors.accent : colors.textMuted;
+  const badgeOption = options.tabBarBadge;
+  const badge =
+    typeof badgeOption === 'function'
+      ? badgeOption()
+      : badgeOption
+        ? <TabBadge count={badgeOption} />
+        : null;
+  const label = options.tabBarLabel ?? options.title ?? route.name;
+
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={options.tabBarAccessibilityLabel || String(label)}
+      onPress={() => {
+        const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+        if (!event.defaultPrevented) navigation.navigate(route.name);
+      }}
+      onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
+      style={({ pressed }) => [styles.item, pressed ? styles.pressed : null]}
+    >
+      <View style={[styles.iconWrap, active ? { backgroundColor: colors.accentSoft } : null]}>
+        {typeof options.tabBarIcon === 'function' ? options.tabBarIcon({ focused: active, color }) : null}
+        {badge}
+      </View>
+      <Text
+        style={[styles.label, active ? styles.labelActive : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {label}
+      </Text>
+      {active ? <View style={styles.indicator} /> : null}
+    </Pressable>
   );
 }
 
@@ -98,6 +137,19 @@ const styles = themedStyles({
     paddingTop: spacing.xs,
   },
   item: { flex: 1, alignItems: 'center', gap: 2, paddingTop: 3, paddingHorizontal: 1 },
+  // The "pin" slot shown when the current tab is hidden.
+  orphanItem: { opacity: 0.85 },
+  orphanWrap: {
+    height: 24,
+    minWidth: 26,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+  },
   pressed: { opacity: 0.6 },
   iconWrap: {
     height: 24,

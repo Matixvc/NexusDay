@@ -17,8 +17,11 @@ import {
 } from '../components/ui/primitives';
 import { ColorPicker, TextArea, TextField } from '../components/ui/inputs';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
+import { SwipeRow } from '../components/ui/SwipeRow';
+import { Switch } from '../components/ui/Switch';
 import { AttachmentRow, VoicePlayback, VoiceRecorder } from '../components/ui/media';
 import { deleteRecording, formatSeconds } from '../services/audio';
+import { authenticate, describePrivacyFailure } from '../services/privacy';
 import { describePickStatus, isAvailable as filesAvailable, pickAndImport, removeFile, shareFile } from '../services/files';
 import { timeAgo } from '../utils/dates';
 
@@ -40,7 +43,9 @@ function previewOf(body) {
 }
 
 export default function NotesScreen() {
-  const { notes, addNote, updateNote, removeNote } = useAppData();
+  const { notes, addNote, updateNote, removeNote, settings } = useAppData();
+  // The global lock can be turned off in Ajustes; secure by default.
+  const privacyEnabled = settings?.privacyEnabled;
   const [query, setQuery] = useState('');
   const [sheet, setSheet] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
@@ -50,6 +55,7 @@ export default function NotesScreen() {
   const trimmed = query.trim().toLowerCase();
   // Set by the global search: the matched note opens straight in its editor.
   const focusId = useFocusId();
+  const [unlockError, setUnlockError] = useState(null);
 
   const visible = useMemo(() => {
     const ordered = sortNotes(notes);
@@ -81,6 +87,24 @@ export default function NotesScreen() {
     });
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
+
+  /** A private note only opens after the phone confirms who is holding it. */
+  const openNote = async (note) => {
+    if (!note.private || privacyEnabled === false) {
+      setUnlockError(null);
+      openEdit(note);
+      return;
+    }
+    const result = await authenticate({ promptMessage: `Desbloqueá “${note.title || 'la nota'}”` });
+    if (result.ok) {
+      setUnlockError(null);
+      openEdit(note);
+      return;
+    }
+    setUnlockError(describePrivacyFailure(result.reason));
+  };
+
+  const togglePrivate = (note) => updateNote(note.id, { private: !note.private });
 
   // The global search can ask for a specific note: open it in its editor as soon as the
   // list is hydrated. SetState during render is the pattern React recommends for deriving
@@ -129,7 +153,7 @@ export default function NotesScreen() {
       if (original?.attachment?.uri && original.attachment.uri !== payload.attachment?.uri) {
         removeFile(original.attachment);
       }
-      updateNote(id, { ...payload, pinned: values.pinned, updatedAt: Date.now() });
+      updateNote(id, { ...payload, pinned: values.pinned, private: Boolean(values.private), updatedAt: Date.now() });
     } else {
       const stamp = Date.now();
       addNote({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp });
@@ -179,6 +203,8 @@ export default function NotesScreen() {
           clearButtonMode="while-editing"
         />
 
+        {unlockError ? <Notice text={unlockError} tone="danger" /> : null}
+
         <View style={styles.statsRow}>
           <Stat value={notes.length} label="en total" />
           <Stat value={pinnedCount} label="fijas" accent={pinnedCount ? colors.accent : undefined} />
@@ -203,47 +229,63 @@ export default function NotesScreen() {
           />
         ) : (
           visible.map((note) => (
-            <Card key={note.id} accent={note.color} onPress={() => openEdit(note)} style={styles.noteCard}>
-              <View style={styles.noteHeader}>
-                <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={1}>
-                  {note.pinned ? '📌 ' : ''}
-                  {note.title}
-                </Text>
-                {note.pinned ? <Pill label="fija" tone="accent" /> : null}
-              </View>
+            <SwipeRow
+              key={note.id}
+              style={styles.swipeRow}
+              leftAction={{
+                label: note.pinned ? '📌 Quitar' : '📌 Fijar',
+                color: note.color || colors.accent,
+                onPress: () => togglePin(note),
+              }}
+              rightAction={{
+                label: note.private ? '🔓 Abrir' : '🔒 Privado',
+                color: colors.accent,
+                onPress: () => togglePrivate(note),
+              }}
+            >
+              <Card accent={note.color} onPress={() => openNote(note)} style={styles.noteCard}>
+                <View style={styles.noteHeader}>
+                  <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={1}>
+                    {note.pinned ? '📌 ' : ''}
+                    {note.title}
+                  </Text>
+                  {note.private ? <Pill label="🔒 privada" /> : null}
+                  {note.pinned ? <Pill label="fija" tone="accent" /> : null}
+                </View>
 
-              {previewOf(note.body) ? (
-                <Text style={[typography.small, styles.noteBody]} numberOfLines={3}>
-                  {previewOf(note.body)}
-                </Text>
-              ) : null}
+                {previewOf(note.body) ? (
+                  <Text style={[typography.small, styles.noteBody]} numberOfLines={3}>
+                    {previewOf(note.body)}
+                  </Text>
+                ) : null}
 
-              {note.audio?.uri || note.attachment?.uri ? (
-                <View style={styles.pillRow}>
-                  {note.audio?.uri ? (
-                    <Pill
-                      label={`🎙 ${formatSeconds((Number(note.audio.durationMs) || 0) / 1000)}`}
-                      tone="accent"
+                {note.audio?.uri || note.attachment?.uri ? (
+                  <View style={styles.pillRow}>
+                    {note.audio?.uri ? (
+                      <Pill
+                        label={`🎙 ${formatSeconds((Number(note.audio.durationMs) || 0) / 1000)}`}
+                        tone="accent"
+                      />
+                    ) : null}
+                    {note.attachment?.uri ? (
+                      <Pill label={`📎 ${note.attachment.name || 'adjunto'}`} style={styles.longPill} />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                <View style={styles.noteFooter}>
+                  <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
+                  <View style={styles.noteActions}>
+                    <TextButton
+                      label={note.pinned ? 'Quitar fija' : 'Fijar'}
+                      tone="ghost"
+                      onPress={() => togglePin(note)}
                     />
-                  ) : null}
-                  {note.attachment?.uri ? (
-                    <Pill label={`📎 ${note.attachment.name || 'adjunto'}`} style={styles.longPill} />
-                  ) : null}
+                    <TextButton label="Borrar" tone="danger" onPress={() => setConfirmId(note.id)} />
+                  </View>
                 </View>
-              ) : null}
-
-              <View style={styles.noteFooter}>
-                <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
-                <View style={styles.noteActions}>
-                  <TextButton
-                    label={note.pinned ? 'Quitar fija' : 'Fijar'}
-                    tone="ghost"
-                    onPress={() => togglePin(note)}
-                  />
-                  <TextButton label="Borrar" tone="danger" onPress={() => setConfirmId(note.id)} />
-                </View>
-              </View>
-            </Card>
+              </Card>
+            </SwipeRow>
           ))
         )}
       </Screen>
@@ -320,6 +362,18 @@ export default function NotesScreen() {
               {pickError ? <Notice text={pickError} tone="danger" /> : null}
             </View>
             <View style={styles.pinRow}>
+              <Text style={typography.overline}>Privada</Text>
+              <View style={styles.privateRow}>
+                <Text style={styles.privateHint}>Pedir huella, rostro o PIN</Text>
+                <Switch
+                  value={Boolean(sheet.values.private)}
+                  onValueChange={(value) => setValue({ private: value })}
+                  label="Nota privada"
+                />
+              </View>
+            </View>
+
+            <View style={styles.pinRow}>
               <Text style={typography.overline}>Fijar arriba de todas</Text>
               <TextButton
                 label={sheet.values.pinned ? 'Sí, fijada' : 'No'}
@@ -356,6 +410,7 @@ const styles = themedStyles({
     minHeight: 46,
   },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
+  swipeRow: { marginBottom: spacing.md },
   noteCard: { gap: 6 },
   noteHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   noteTitle: { flex: 1 },
@@ -383,5 +438,7 @@ const styles = themedStyles({
     paddingLeft: spacing.md,
   },
   pinButton: { paddingVertical: spacing.sm },
+  privateRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: spacing.md },
+  privateHint: { ...typography.caption },
 });
 

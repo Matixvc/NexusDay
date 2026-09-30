@@ -19,13 +19,18 @@ import {
 import { TextField } from '../components/ui/inputs';
 import { DateField } from '../components/ui/DateField';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
+import { SwipeRow } from '../components/ui/SwipeRow';
+import { Switch } from '../components/ui/Switch';
+import { authenticate, describePrivacyFailure } from '../services/privacy';
 import { EXPENSE_CATEGORIES, categoryOf, formatMoney, parseAmount, sumAmounts } from '../utils/money';
 import { relativeDayLabel, todayKey } from '../utils/dates';
 
 const MAX_ROWS = 8;
 
 export default function ExpensesScreen() {
-  const { expenses, addExpense, updateExpense, removeExpense } = useAppData();
+  const { expenses, addExpense, updateExpense, removeExpense, settings } = useAppData();
+  // The global lock can be turned off in Ajustes; secure by default.
+  const privacyEnabled = settings?.privacyEnabled;
   // Highlighted by the global search for a few seconds.
   const focusId = useFocusId();
 
@@ -36,6 +41,7 @@ export default function ExpensesScreen() {
   const [showAll, setShowAll] = useState(false);
   const [sheet, setSheet] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
+  const [unlockError, setUnlockError] = useState(null);
 
   const today = todayKey();
   const monthPrefix = today.slice(0, 7);
@@ -85,8 +91,27 @@ export default function ExpensesScreen() {
         category: expense.category || EXPENSE_CATEGORIES[0].id,
         note: expense.note || '',
         dateKey: expense.dateKey || today,
+        private: Boolean(expense.private),
       },
     });
+
+  /** A private expense only opens after the phone authenticates the user. */
+  const openExpense = async (expense) => {
+    if (!expense.private || privacyEnabled === false) {
+      setUnlockError(null);
+      openEdit(expense);
+      return;
+    }
+    const result = await authenticate({ promptMessage: 'Desbloqueá el gasto privado' });
+    if (result.ok) {
+      setUnlockError(null);
+      openEdit(expense);
+      return;
+    }
+    setUnlockError(describePrivacyFailure(result.reason));
+  };
+
+  const togglePrivate = (expense) => updateExpense(expense.id, { private: !expense.private });
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
@@ -99,6 +124,7 @@ export default function ExpensesScreen() {
       category: sheet.values.category,
       note: sheet.values.note.trim(),
       dateKey: sheet.values.dateKey,
+      private: Boolean(sheet.values.private),
     });
     setSheet(null);
   };
@@ -110,6 +136,8 @@ export default function ExpensesScreen() {
         subtitle="Cargá lo que gastás en dos toques."
         headerRight={<Pill label={`${expenses.length} movimientos`} />}
       >
+        {unlockError ? <Notice text={unlockError} tone="danger" /> : null}
+
         <Card accent={colors.accent} style={styles.form}>
           <Text style={typography.overline}>Gasto rápido</Text>
           <View style={styles.amountRow}>
@@ -195,27 +223,44 @@ export default function ExpensesScreen() {
           visible.map((expense) => {
             const item = categoryOf(expense.category);
             return (
-              <Card
+              <SwipeRow
                 key={expense.id}
-                accent={item.color}
-                onPress={() => openEdit(expense)}
-                style={[styles.row, focusId === expense.id ? styles.focused : null]}
+                style={styles.swipeRow}
+                leftAction={{
+                  label: expense.private ? '🔓 Abrir' : '🔒 Privado',
+                  color: item.color,
+                  onPress: () => togglePrivate(expense),
+                }}
+                rightAction={{
+                  label: '🗑 Borrar',
+                  color: colors.danger,
+                  onPress: () => setConfirmId(expense.id),
+                }}
               >
-                <View style={styles.rowInner}>
-                  <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
-                    <Text style={styles.rowEmoji}>{item.emoji}</Text>
-                  </View>
-                  <View style={styles.rowBody}>
-                    <Text style={typography.bodyStrong} numberOfLines={1}>
-                      {expense.note || item.id}
+                <Card
+                  accent={item.color}
+                  onPress={() => openExpense(expense)}
+                  style={[styles.row, focusId === expense.id ? styles.focused : null]}
+                >
+                  <View style={styles.rowInner}>
+                    <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
+                      <Text style={styles.rowEmoji}>{item.emoji}</Text>
+                    </View>
+                    <View style={styles.rowBody}>
+                      <Text style={typography.bodyStrong} numberOfLines={1}>
+                        {expense.private ? '🔒 ' : ''}
+                        {expense.note || item.id}
+                      </Text>
+                      <Text style={typography.caption} numberOfLines={1}>
+                        {`${relativeDayLabel(expense.dateKey)} · ${item.id}`}
+                      </Text>
+                    </View>
+                    <Text style={[styles.rowAmount, typography.tabular]}>
+                      {expense.private ? '•••' : formatMoney(expense.amount)}
                     </Text>
-                    <Text style={typography.caption} numberOfLines={1}>
-                      {`${relativeDayLabel(expense.dateKey)} · ${item.id}`}
-                    </Text>
                   </View>
-                  <Text style={[styles.rowAmount, typography.tabular]}>{formatMoney(expense.amount)}</Text>
-                </View>
-              </Card>
+                </Card>
+              </SwipeRow>
             );
           })
         )}
@@ -268,6 +313,17 @@ export default function ExpensesScreen() {
               maxLength={60}
             />
             <DateField label="Día" value={sheet.values.dateKey} onChange={(dateKey) => setValue({ dateKey })} />
+            <View style={styles.privateRow}>
+              <View style={styles.privateBody}>
+                <Text style={typography.bodyStrong}>Gasto privado</Text>
+                <Text style={typography.caption}>Pide huella, rostro o PIN al abrirlo.</Text>
+              </View>
+              <Switch
+                value={Boolean(sheet.values.private)}
+                onValueChange={(value) => setValue({ private: value })}
+                label="Gasto privado"
+              />
+            </View>
           </>
         ) : null}
       </Sheet>
@@ -301,6 +357,19 @@ const styles = themedStyles({
     color: colors.text,
   },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
+  swipeRow: { marginBottom: spacing.sm },
+  privateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  privateBody: { flex: 1, gap: 2 },
 
   breakdown: { gap: spacing.md },
   breakRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

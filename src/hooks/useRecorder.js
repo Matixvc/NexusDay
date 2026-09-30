@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import {
+  RECORDING_POLL_MS,
   describeAudioStatus,
   ensureRecordingMode,
   persistRecording,
@@ -23,7 +24,8 @@ import {
  */
 export function useRecorder({ prefix = 'voz' } = {}) {
   const recorder = useAudioRecorder(recordingOptions);
-  const state = useAudioRecorderState(recorder, 250);
+  // 250 ms: smooth enough for the level bar, cheap enough not to drain the battery.
+  const state = useAudioRecorderState(recorder, RECORDING_POLL_MS);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -91,6 +93,17 @@ export function useRecorder({ prefix = 'voz' } = {}) {
     } finally {
       setBusy(false);
     }
+  }, [recorder]);
+
+  // Leaving the screen (or unmounting the sheet) with the mic open is the classic "the
+  // recording indicator never goes away" bug, so the take is always closed here.
+  useEffect(() => {
+    return () => {
+      if (!recorder.isRecording) return;
+      recorder
+        .stop()
+        .catch((error) => console.warn('[useRecorder] could not stop on unmount', error));
+    };
   }, [recorder]);
 
   return {

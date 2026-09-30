@@ -28,6 +28,8 @@ export const KEYS = {
   settings: `${NAMESPACE}/settings`,
   onboarding: `${NAMESPACE}/onboarding`,
   accent: `${NAMESPACE}/accent`,
+  userName: `${NAMESPACE}/user_name`,
+  tabConfig: `${NAMESPACE}/tab_config`,
 };
 
 /**

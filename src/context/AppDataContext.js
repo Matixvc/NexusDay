@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { KEYS, loadValue, saveValue } from '../services/storage';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
 import { setPreferredCalendar } from '../services/calendar';
+import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
 import { resyncReminders } from '../services/reminders';
 import {
@@ -18,7 +19,7 @@ const AppDataContext = createContext(null);
 
 const UNKNOWN_PERMISSION = { status: 'unknown', granted: false, canAskAgain: true, checked: false };
 
-const DEFAULT_SETTINGS = { displayName: '', preferredCalendarId: null };
+const DEFAULT_SETTINGS = { displayName: '', preferredCalendarId: null, privacyEnabled: true };
 
 /**
  * First-run tutorial.
@@ -46,6 +47,8 @@ export function AppDataProvider({ children }) {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [permission, setPermission] = useState(UNKNOWN_PERMISSION);
   const [tutorial, setTutorial] = useState(UNSEEN_TUTORIAL);
+  const [userName, setUserNameState] = useState('');
+  const [tabConfig, setTabConfigState] = useState(DEFAULT_TAB_CONFIG);
 
   useEffect(() => {
     let alive = true;
@@ -58,15 +61,32 @@ export function AppDataProvider({ children }) {
     };
   }, []);
 
+  // The preferred name and the tab layout are read once, next to the settings, because
+  // Ajustes and the dashboard need all three hydrated before the first paint of interest.
   useEffect(() => {
     let alive = true;
-    loadValue(KEYS.settings, DEFAULT_SETTINGS).then((stored) => {
+    (async () => {
+      const [stored, savedName, storedTabs] = await Promise.all([
+        loadValue(KEYS.settings, DEFAULT_SETTINGS),
+        loadValue(KEYS.userName, ''),
+        loadValue(KEYS.tabConfig, null),
+      ]);
       if (!alive) return;
+
       const next = stored && typeof stored === 'object' ? { ...DEFAULT_SETTINGS, ...stored } : DEFAULT_SETTINGS;
       setSettings(next);
       setSettingsLoaded(true);
       if (next.preferredCalendarId) setPreferredCalendar(next.preferredCalendarId);
-    });
+
+      // v1.0 stored the name inside the settings blob; adopt it once as the canonical one.
+      const name = String(savedName || '').trim() || String(next.displayName || '').trim();
+      if (name) {
+        setUserNameState(name);
+        if (!savedName) saveValue(KEYS.userName, name);
+      }
+
+      if (storedTabs) setTabConfigState(normalizeTabConfig(storedTabs));
+    })();
     return () => {
       alive = false;
     };
@@ -81,6 +101,20 @@ export function AppDataProvider({ children }) {
     if (patch?.preferredCalendarId !== undefined) setPreferredCalendar(patch.preferredCalendarId);
   }, []);
 
+  /** Preferred name for the dashboard greeting (also written by the first-run tutorial). */
+  const setUserName = useCallback((value) => {
+    const next = String(value ?? '').trim();
+    setUserNameState(next);
+    saveValue(KEYS.userName, next);
+  }, []);
+
+  /** Tab order and visibility (Ajustes › Personalizar Navegación). */
+  const setTabConfig = useCallback((next) => {
+    const normalized = normalizeTabConfig(next);
+    setTabConfigState(normalized);
+    saveValue(KEYS.tabConfig, normalized);
+    return normalized;
+  }, []);
 
   const refreshPermission = useCallback(async () => {
     const status = await Notif.getPermissionStatus();
@@ -211,6 +245,11 @@ export function AppDataProvider({ children }) {
       finishTutorial,
       replayTutorial,
 
+      userName,
+      setUserName,
+      tabConfig,
+      setTabConfig,
+
       activities: activities.items,
       addActivity: activities.create,
       updateActivity: activities.update,
@@ -266,6 +305,10 @@ export function AppDataProvider({ children }) {
       tutorial,
       finishTutorial,
       replayTutorial,
+      userName,
+      setUserName,
+      tabConfig,
+      setTabConfig,
       permission,
       refreshPermission,
       requestNotifications,

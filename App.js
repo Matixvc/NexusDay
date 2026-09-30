@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
@@ -8,6 +8,8 @@ import { AppDataProvider, useAppData } from './src/context/AppDataContext';
 import { ThemeProvider, useAccentTheme } from './src/context/ThemeContext';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import RootNavigator from './src/navigation/RootNavigator';
+import { HOME_TAB } from './src/navigation/tabs';
+import { setTabHidden, tabSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
 
@@ -41,8 +43,18 @@ export default function App() {
  */
 function AppShell() {
   const { revision } = useAccentTheme();
-  const { onboardingCompleted, tutorialReplay, finishTutorial } = useAppData();
-  const lastRoute = useRef('Inicio');
+  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, setTabConfig } = useAppData();
+  // Remembered so a remount (accent change, tab layout change) lands on the same section.
+  const [lastRoute, setLastRoute] = useState(HOME_TAB);
+
+  const onRouteChange = useCallback((name) => {
+    setLastRoute((previous) => (previous === name ? previous : name));
+  }, []);
+
+  const onRevealTab = useCallback(
+    (name) => setTabConfig(setTabHidden(tabConfig, name, false)),
+    [setTabConfig, tabConfig],
+  );
 
   if (onboardingCompleted === null) return <BootScreen />;
 
@@ -52,11 +64,11 @@ function AppShell() {
 
   return (
     <RootNavigator
-      key={revision}
-      initialRouteName={lastRoute.current}
-      onRouteChange={(name) => {
-        lastRoute.current = name;
-      }}
+      key={`${revision}|${tabSignature(tabConfig)}`}
+      initialRouteName={lastRoute}
+      onRouteChange={onRouteChange}
+      tabConfig={tabConfig}
+      onRevealTab={onRevealTab}
     />
   );
 }
