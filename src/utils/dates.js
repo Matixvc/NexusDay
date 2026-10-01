@@ -136,6 +136,17 @@ export function buildDateTime(dateKey, time) {
   return d;
 }
 
+/**
+ * True when the `dateKey` + `time` moment already happened.
+ *
+ * Reminders use it to explain themselves: a notification for a moment that is already gone can
+ * never fire, so the UI switches the warning off instead of scheduling something doomed.
+ */
+export function isPastDateTime(dateKey, time = '00:00', from = new Date()) {
+  if (!dateKey) return false;
+  return buildDateTime(dateKey, time).getTime() <= from.getTime();
+}
+
 /** Duration between two 'HH:mm' values, negative when the range is invalid. */
 export function minutesBetween(start, end) {
   return minutesOfDay(end) - minutesOfDay(start);

@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
@@ -51,6 +51,10 @@ export default function NotesScreen() {
   const [confirmId, setConfirmId] = useState(null);
   const [importing, setImporting] = useState(false);
   const [pickError, setPickError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  // Handle to the recorder living inside the sheet: "Guardar" has to close the microphone
+  // *before* the sheet (and with it the recorder) unmounts.
+  const recorderRef = useRef(null);
 
   const trimmed = query.trim().toLowerCase();
   // Set by the global search: the matched note opens straight in its editor.
@@ -98,7 +102,7 @@ export default function NotesScreen() {
       openEdit(note);
       return;
     }
-    const result = await authenticate({ promptMessage: `Desbloqueá “${note.title || 'la nota'}”` });
+    const result = await authenticate({ promptMessage: `Desbloquea “${note.title || 'la nota'}”` });
     if (result.ok) {
       setUnlockError(null);
       openEdit(note);
@@ -127,7 +131,8 @@ export default function NotesScreen() {
     });
   }
 
-  const canSave = Boolean(sheet) && Boolean(sheet.values.title.trim() || sheet.values.body.trim());
+  const hasContent = Boolean(sheet) && Boolean(sheet.values.title.trim() || sheet.values.body.trim());
+  const canSave = hasContent && !saving;
 
   /** Voice notes and imported documents are sandbox copies: they die with the note. */
   const destroyFiles = (note) => {
@@ -136,14 +141,26 @@ export default function NotesScreen() {
     if (note.attachment?.uri) removeFile(note.attachment);
   };
 
-  const save = () => {
-    if (!canSave) return;
+  /**
+   * Persists the note.
+   *
+   * The recorder is mounted inside this sheet, so closing the sheet releases it — and
+   * releasing a recorder that is still capturing is what closed the app. An open take is
+   * therefore stopped, unloaded and copied to storage *first*; its descriptor is folded into
+   * the payload below, so the audio is never left behind by the note that references it.
+   */
+  const save = async () => {
+    if (!hasContent || saving) return;
+    setSaving(true);
+
+    const take = (await recorderRef.current?.finishTake?.()) || null;
     const { mode, id, values, original } = sheet;
+    const audio = take || values.audio || null;
     const payload = {
       title: values.title.trim() || 'Sin título',
       body: values.body.trim(),
       color: values.color,
-      audio: values.audio || null,
+      audio,
       attachment: values.attachment || null,
     };
 
@@ -160,6 +177,7 @@ export default function NotesScreen() {
       addNote({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp });
     }
 
+    setSaving(false);
     setSheet(null);
   };
 
@@ -178,7 +196,12 @@ export default function NotesScreen() {
     else setPickError(describePickStatus(result.status));
   };
 
-  const closeSheet = () => {
+  /**
+   * Dismisses the editor. A take that is still being captured is thrown away here — never
+   * left running while the recorder unmounts — and the note itself is untouched.
+   */
+  const closeSheet = async () => {
+    await recorderRef.current?.discardTake?.();
     setSheet(null);
     setPickError(null);
   };
@@ -231,8 +254,8 @@ export default function NotesScreen() {
             title={trimmed ? 'Nada coincide con la búsqueda' : 'Todavía no hay notas'}
             hint={
               trimmed
-                ? 'Probá con otra palabra o borrá la búsqueda.'
-                : 'Anotá pendientes, ideas o la lista del súper; se ordenan por última edición.'
+                ? 'Prueba con otra palabra o elimina la búsqueda.'
+                : 'Anota pendientes, ideas o la lista del súper; se ordenan por última edición.'
             }
           />
         ) : (
@@ -262,13 +285,21 @@ export default function NotesScreen() {
               <TextButton
                 label="Eliminar"
                 tone="danger"
-                onPress={() => {
-                  setConfirmId(sheet.id);
+                onPress={async () => {
+                  const { id } = sheet;
+                  // Same reason as `closeSheet`: the recorder must be closed before its host
+                  // disappears, and here the take is thrown away with the edit.
+                  await recorderRef.current?.discardTake?.();
+                  setConfirmId(id);
                   setSheet(null);
                 }}
               />
             ) : null}
-            <PrimaryButton label="Guardar" onPress={save} disabled={!canSave} />
+            <PrimaryButton
+              label={saving ? 'Guardando…' : 'Guardar'}
+              onPress={save}
+              disabled={!canSave}
+            />
           </>
         }
       >
@@ -286,7 +317,7 @@ export default function NotesScreen() {
               label="Contenido"
               value={sheet.values.body}
               onChangeText={(body) => setValue({ body })}
-              placeholder="Escribí acá…"
+              placeholder="Escribe aquí…"
               minHeight={150}
             />
             <ColorPicker value={sheet.values.color} onChange={(color) => setValue({ color })} />
@@ -296,7 +327,8 @@ export default function NotesScreen() {
               value={sheet.values.audio}
               onChange={(audio) => setValue({ audio })}
               prefix="nota"
-              hint="Se guarda en el app; podés escucharla desde la nota."
+              hint="Se guarda en la app; puedes escucharla desde la nota."
+              controllerRef={recorderRef}
             />
             {sheet.values.audio?.uri ? <VoicePlayback audio={sheet.values.audio} /> : null}
 

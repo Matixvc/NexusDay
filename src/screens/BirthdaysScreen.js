@@ -23,6 +23,7 @@ import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
 import { TabBadge } from '../navigation/BottomTabBar';
 import { BIRTHDAY_LEADS, dropReminder, syncBirthdayReminder } from '../services/reminders';
 import { ageOn, daysUntilYearly, formatDateMedium, fromDateKey, nextYearlyOccurrence } from '../utils/dates';
+import { plural } from '../utils/text';
 
 const EMOJIS = ['🎂', '🎉', '🎈', '🎁', '⭐', '🌟', '🎧', '⚽', '📚', '🐱', '🐶', '✈️'];
 
@@ -153,7 +154,7 @@ export default function BirthdaysScreen({ navigation }) {
       <Screen
         title="Cumpleaños"
         subtitle="Se repiten cada año, con aviso anticipado."
-        headerRight={<Pill label={`${birthdays.length} guardados`} />}
+        headerRight={<Pill label={plural(birthdays.length, 'cumpleaños')} />}
       >
         {notice ? (
           <View style={styles.noticeRow}>
@@ -164,7 +165,7 @@ export default function BirthdaysScreen({ navigation }) {
 
         {notificationsSupported && permission.checked && !permission.granted && permission.canAskAgain ? (
           <Card accent={colors.warning}>
-            <Text style={typography.bodyStrong}>Activá los avisos</Text>
+            <Text style={typography.bodyStrong}>Activa los avisos</Text>
             <Text style={[typography.small, styles.bannerText]}>
               Los cumpleaños se guardan igual, pero sin permiso no te llega el aviso anticipado.
             </Text>
@@ -202,7 +203,7 @@ export default function BirthdaysScreen({ navigation }) {
           <EmptyState
             emoji="🎂"
             title="Sin cumpleaños aún"
-            hint="Cargá fechas y elegí con cuántos días de anticipación querés que te avise."
+            hint="Registra fechas y elige con cuántos días de anticipación quieres que te avise."
           />
         ) : (
           sorted.map((item) => <BirthdayRow key={item.id} item={item} onPress={() => openEdit(item)} />)

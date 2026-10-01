@@ -19,6 +19,7 @@ import { buildDashboard } from '../services/dashboard';
 import { searchEverything } from '../services/search';
 import { tap as tapHaptic } from '../services/haptics';
 import { formatMoney } from '../utils/money';
+import { plural } from '../utils/text';
 
 /** `assets/welcome-bg.jpg` is the decorative hero of the dashboard. */
 const WELCOME_BG = require('../../assets/welcome-bg.jpg');
@@ -26,24 +27,39 @@ const WELCOME_BG = require('../../assets/welcome-bg.jpg');
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
+/**
+ * La línea resumen del banner. Se resuelve con tres frases completas en lugar de un
+ * `1 cosa(s)`: así el número y el sustantivo siempre concuerdan.
+ */
+function commitmentSummary(count) {
+  if (!count) return 'No tienes eventos o tareas pendientes para hoy.';
+  return `Tienes ${plural(count, 'evento pendiente', 'eventos pendientes')} para hoy.`;
+}
+
 /** Quick access cards: one tap opens the matching section of the swipeable pager. */
 function buildQuickAccess(data) {
   return [
     { route: 'Horario', emoji: '📅', title: 'Horario semanal', hint: `${data.todayActivities.length} hoy`, color: colors.accent },
-    { route: 'Notas', emoji: '📝', title: 'Bloc de notas', hint: `${data.notesCount} guardadas`, color: '#a3e635' },
-    { route: 'Agenda', emoji: '🗓️', title: 'Calendario', hint: `${data.upcomingEvents.length} próximos`, color: '#8b5cf6' },
+    { route: 'Notas', emoji: '📝', title: 'Bloc de notas', hint: plural(data.notesCount, 'nota guardada', 'notas guardadas'), color: '#a3e635' },
+    {
+      route: 'Agenda',
+      emoji: '🗓️',
+      title: 'Calendario',
+      hint: plural(data.upcomingEvents.length, 'próximo', 'próximos'),
+      color: '#8b5cf6',
+    },
     {
       route: 'Cumpleaños',
       emoji: '🎂',
       title: 'Cumpleaños',
-      hint: data.upcomingBirthdays.length ? `${data.upcomingBirthdays.length} cerca` : 'Sin avisos',
+      hint: data.upcomingBirthdays.length ? `${data.upcomingBirthdays.length} próximos` : 'Sin avisos',
       color: '#ec4899',
     },
     {
       route: 'Hábitos',
       emoji: '💪',
       title: 'Hábitos',
-      hint: data.pendingHabits.length ? `${data.pendingHabits.length} pendientes` : 'Todo al día',
+      hint: data.pendingHabits.length ? plural(data.pendingHabits.length, 'pendiente', 'pendientes') : 'Todo al día',
       color: '#f59e0b',
     },
     { route: 'Gastos', emoji: '💰', title: 'Gastos rápidos', hint: formatMoney(data.spentToday), color: '#38bdf8' },
@@ -116,34 +132,38 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <ImageBackground source={WELCOME_BG} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
-          {/* Dark filter over the photo: the banner is the brightest element of a #0a0a0a
-              app, so the picture is dimmed and then scrimmed twice under the text block. */}
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroOverlayBottom} />
-          <View style={styles.heroBody}>
-            <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
-              {data.dateLabel}
-            </Text>
-            <Text style={typography.display} numberOfLines={2}>
-              {title}
-            </Text>
-            <Text style={[typography.small, styles.heroHint]} numberOfLines={2}>
-              {name ? `${data.greeting}. ` : ''}
-              {data.nextUp.length
-                ? `Tenés ${data.nextUp.length} cosa(s) por delante hoy.`
-                : 'No tenés nada agendado por ahora.'}
-            </Text>
-            <View style={styles.heroPills}>
-              <Pill label={`${data.todayActivities.length} en el horario`} tone="accent" />
-              {data.pendingHabits.length ? (
-                <Pill label={`${data.pendingHabits.length} hábito(s) pendiente(s)`} />
-              ) : (
-                <Pill label="Hábitos al día" />
-              )}
+        {/* The hero only exists while browsing. Searching hides the photo, its scrim and every
+            shadow below it, so the results start at the top of the screen instead of competing
+            with a picture. */}
+        {searching ? null : (
+          <ImageBackground source={WELCOME_BG} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
+            {/* Dark filter over the photo: the banner is the brightest element of a #0a0a0a
+                app, so the picture is dimmed and then scrimmed twice under the text block. */}
+            <View style={styles.heroOverlay} />
+            <View style={styles.heroOverlayBottom} />
+            <View style={styles.heroBody}>
+              <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
+                {data.dateLabel}
+              </Text>
+              <Text style={typography.display} numberOfLines={2}>
+                {title}
+              </Text>
+              <Text style={[typography.small, styles.heroHint]} numberOfLines={3}>
+                {name ? `${data.greeting}. ` : ''}
+                {commitmentSummary(data.todayCommitments)}
+              </Text>
+              <View style={styles.heroPills}>
+                <Pill label={`${data.todayActivities.length} en el horario`} tone="accent" />
+                <Pill label={`${data.todayEvents.length} en la agenda`} tone="accent" />
+                {data.pendingHabits.length ? (
+                  <Pill label={plural(data.pendingHabits.length, 'hábito pendiente', 'hábitos pendientes')} />
+                ) : (
+                  <Pill label="Hábitos al día" />
+                )}
+              </View>
             </View>
-          </View>
-        </ImageBackground>
+          </ImageBackground>
+        )}
 
         <SearchField
           value={query}
@@ -184,7 +204,7 @@ export default function HomeScreen({ navigation }) {
             <EmptyState
               emoji="☕"
               title="Nada por delante"
-              hint="Agendá un evento o cargá una actividad en el horario y va a aparecer acá."
+              hint="Agenda un evento o registra una actividad en el horario y va a aparecer aquí."
             />
           ) : (
             data.nextUp.map((item) => (
@@ -224,12 +244,12 @@ export default function HomeScreen({ navigation }) {
           {showPermissionCard ? (
             <Card accent={colors.warning}>
               <Text style={typography.bodyStrong}>
-                {permission.canAskAgain ? 'Activá los avisos' : 'Avisos bloqueados'}
+                {permission.canAskAgain ? 'Activa los avisos' : 'Avisos bloqueados'}
               </Text>
               <Text style={[typography.small, styles.bannerText]}>
                 {permission.canAskAgain
-                  ? 'Con permisos el app te recuerda tus eventos, clases y cumpleaños.'
-                  : `Dalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
+                  ? 'Con permisos la app te recuerda tus eventos, clases y cumpleaños.'
+                  : `Actívalos desde Ajustes → Aplicaciones → ${APP_NAME} → Notificaciones.`}
               </Text>
               <View style={styles.bannerActions}>
                 <PrimaryButton label="Permitir avisos" onPress={requestNotifications} style={styles.bannerButton} />
@@ -238,7 +258,7 @@ export default function HomeScreen({ navigation }) {
             </Card>
           ) : null}
 
-          <Notice text="Deslizá a los costados para cambiar de sección, o tocá una tarjeta para ir directo." />
+          <Notice text="Desliza a los costados para cambiar de sección, o toca una tarjeta para ir directo." />
           </>
         )}
       </ScrollView>

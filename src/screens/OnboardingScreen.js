@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FlatList,
   ImageBackground,
   Pressable,
   ScrollView,
@@ -14,6 +15,7 @@ import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
 import { useAppData } from '../context/AppDataContext';
+import { plural } from '../utils/text';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -43,47 +45,47 @@ const SLIDES = [
       'Las próximas actividades, ordenadas por hora.',
       'Tarjetas de acceso directo a cada sección.',
     ],
-    tip: 'Probá el buscador de la demo: filtra notas, eventos, hábitos y gastos mientras escribís.',
+    tip: 'Prueba el buscador de la demo: filtra notas, eventos, hábitos y gastos mientras escribes.',
     demo: 'search',
     field: true,
   },
   {
     key: 'nav',
     emoji: '👆',
-    title: 'Todo abajo, y deslizá para ir',
+    title: 'Todo abajo, y desliza para ir',
     body: 'Las nueve secciones viven en la barra inferior. No hay menús escondidos.',
     points: [
       'Inicio · Horario · Agenda · Cumpleaños.',
       'Notas · Hábitos · Gastos · Nexus AI · Ajustes.',
-      'Deslizá el dedo a los costados para cambiar de sección.',
+      'Desliza el dedo a los costados para cambiar de sección.',
     ],
-    tip: 'Tocá una solapa de la demo. En Ajustes podés reordenarlas u ocultarlas cuando quieras.',
+    tip: 'Toca una solapa de la demo. En Ajustes puedes reordenarlas u ocultarlas cuando quieras.',
     demo: 'tabs',
   },
   {
     key: 'notes',
     emoji: '🎙️',
-    title: 'Notas con voz y calendario',
-    body: 'Las notas aceptan audio y documentos, y la agenda se copia a tu calendario.',
+    title: 'Notas con voz y adjuntos',
+    body: 'Las notas aceptan audio y documentos, y la agenda se exporta en un archivo .ics.',
     points: [
-      'Grabá una nota de voz y guardala junto al texto.',
-      'Adjuntá un documento sin salir del app.',
-      '“Añadir al calendario” copia tus eventos al teléfono.',
+      'Graba una nota de voz y guárdala junto al texto.',
+      'Adjunta un documento sin salir de la app.',
+      '“Exportar .ics” te lleva el día a cualquier calendario.',
     ],
-    tip: 'Tocá el micrófono de la demo: la grabación se guarda dentro del app, nunca sube a la nube.',
+    tip: 'Toca el micrófono de la demo: la grabación se guarda dentro de la app, nunca sube a la nube.',
     demo: 'note',
   },
   {
     key: 'habits',
     emoji: '💪',
     title: 'Hábitos y gastos bajo control',
-    body: 'Marcá el día con un toque y cargá un gasto en dos: monto y categoría.',
+    body: 'Marca el día con un toque y registra un gasto en dos: monto y categoría.',
     points: [
       'Un toque por día: la racha se arma sola.',
       'Avisos con “✓ Completar” directo en la notificación.',
       'Resumen por categoría del mes en pantalla.',
     ],
-    tip: 'Tocá el ✓ de la demo para ver cómo crece la racha, y el + para sumar un gasto.',
+    tip: 'Toca el ✓ de la demo para ver cómo crece la racha, y el + para sumar un gasto.',
     demo: 'habits',
   },
   {
@@ -94,9 +96,9 @@ const SLIDES = [
     points: [
       'Resume el día, los gastos y las rachas.',
       'Busca en tus notas, eventos, hábitos y cumpleaños.',
-      'Si le preguntás algo ajeno al app, te reorienta.',
+      'Si le preguntas algo ajeno a la app, te reorienta.',
     ],
-    tip: 'Tocá una sugerencia de la demo. El botón de papelera del header borra la conversación.',
+    tip: 'Toca una sugerencia de la demo. El botón de papelera de la barra superior borra la conversación.',
     demo: 'ai',
   },
 ];
@@ -132,6 +134,26 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
     setOpenTip(null);
   };
 
+  // ── Pager ────────────────────────────────────────────────────────────────────────────────
+  const pagerRef = useRef(null);
+  /** Last offset the list reported, so the effect below never fights the finger. */
+  const lastOffset = useRef(0);
+
+  /** One page == one window. Stated up front so `scrollToOffset` always lands on a boundary. */
+  const itemLayout = useCallback(
+    (unusedData, itemIndex) => ({ length: width, offset: width * itemIndex, index: itemIndex }),
+    [width],
+  );
+
+  // `pagingEnabled` only ever moves on a finger: the dots and the "Siguiente" button change
+  // `index`, and this is what drags the list along with them.
+  useEffect(() => {
+    const target = index * width;
+    if (Math.abs(target - lastOffset.current) < 2) return;
+    lastOffset.current = target;
+    pagerRef.current?.scrollToOffset({ offset: target, animated: true });
+  }, [index, width]);
+
   const toggleTip = (pointIndex) => setOpenTip((current) => (current === pointIndex ? null : pointIndex));
 
   /** The name is stored as soon as the user confirms it, not on the last slide. */
@@ -164,40 +186,64 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
         </View>
 
         {/*
-          Full-bleed horizontal pager.
+          Horizontal pager.
 
-          The slides are exactly `width` wide and the container has **no** horizontal padding:
-          any padding here would shrink the page the pager measures for `pagingEnabled` while
-          the slides stayed `width` wide, which is what produced the overflow and the cut on
-          the right edge. The gutter moves *inside* each slide instead, so the snap points and
-          the page size always agree.
+          Each page is exactly `width` wide and the list itself carries **no** horizontal padding
+          and no negative margin: `pagingEnabled` snaps by the width of the list, so padding here
+          (or pulling the list out of the screen with a negative margin) makes the snap points
+          drift and clips the right edge of every slide — which is what this rewrite fixes. The
+          gutter lives *inside* each slide instead, and `getItemLayout` states the page geometry
+          up front so `scrollToOffset` from the dots and the "Siguiente" button always lands on a
+          page boundary.
         */}
-        <ScrollView
+        <FlatList
+          ref={pagerRef}
           style={styles.pager}
+          data={SLIDES}
+          keyExtractor={(item) => item.key}
           horizontal
           pagingEnabled
-          showsHorizontalScrollIndicator={false}
           bounces={false}
+          scrollEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          getItemLayout={itemLayout}
+          initialScrollIndex={0}
+          contentContainerStyle={styles.pagerContent}
+          // Five slides is nothing: render them all. Windowing would recycle pages mid-swipe and
+          // the tallest slide would keep resizing the list under the footer.
+          initialNumToRender={SLIDES.length}
+          extraData={{ openTip, draft }}
           onMomentumScrollEnd={(event) => {
-            const next = Math.round(event.nativeEvent.contentOffset.x / width);
+            const offset = event.nativeEvent.contentOffset.x;
+            lastOffset.current = offset;
+            const next = Math.round(offset / width);
             if (next !== index) goTo(next);
           }}
-        >
-          {SLIDES.map((item) => (
-            <View key={item.key} style={[styles.slidePage, { width }]}>
-              <Slide
-                slide={item}
-                scale={scale}
-                unit={unit}
-                openTip={openTip}
-                onToggleTip={toggleTip}
-                nameDraft={item.field ? draft : ''}
-                onChangeName={item.field ? setDraft : null}
-                onSaveName={item.field ? saveName : null}
-              />
+          renderItem={({ item }) => (
+            <View style={[styles.slidePage, { width }]}>
+              {/* Each page scrolls on its own axis: a slide that does not fit a small screen
+                  reads to the end instead of losing its last lines behind the footer. */}
+              <ScrollView
+                style={styles.slideScroll}
+                contentContainerStyle={styles.slide}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Slide
+                  slide={item}
+                  scale={scale}
+                  unit={unit}
+                  openTip={openTip}
+                  onToggleTip={toggleTip}
+                  nameDraft={item.field ? draft : ''}
+                  onChangeName={item.field ? setDraft : null}
+                  onSaveName={item.field ? saveName : null}
+                />
+              </ScrollView>
             </View>
-          ))}
-        </ScrollView>
+          )}
+        />
 
         <View style={styles.footer}>
           <View
@@ -234,7 +280,7 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
 
           {last && firstRun ? (
             <Text style={[typography.caption, styles.wipeNote]}>
-              Al empezar borramos los datos de ejemplo: la app queda en blanco para que cargues lo tuyo.
+              Al empezar borramos los datos de ejemplo: la app queda en blanco para que registres lo tuyo.
             </Text>
           ) : null}
         </View>
@@ -246,7 +292,7 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
 /** One page: the headline, the name field (slide 1), a live mini-demo and the points. */
 function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onSaveName }) {
   return (
-    <View style={styles.slide}>
+    <View style={styles.slideBody}>
       <View style={styles.emojiRow}>
         <View style={[styles.emojiRing, { width: unit(62), height: unit(62), borderRadius: unit(31) }]}>
           <Text style={{ fontSize: unit(28) }}>{slide.emoji}</Text>
@@ -287,11 +333,11 @@ function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onS
   );
 }
 
-/** "¿Cómo querés que te llamemos?" — stored in `@nexusday/v1/user_name`. */
+/** "¿Cómo quieres que te llamemos?" — stored in `@nexusday/v1/user_name`. */
 function NameField({ unit, value, onChange, onSave }) {
   return (
     <View style={styles.nameBlock}>
-      <Text style={[typography.overline, { fontSize: unit(10) }]}>¿Cómo querés que te llamemos?</Text>
+      <Text style={[typography.overline, { fontSize: unit(10) }]}>¿Cómo quieres que te llamemos?</Text>
       <View style={styles.nameRow}>
         <TextInput
           value={value}
@@ -306,7 +352,7 @@ function NameField({ unit, value, onChange, onSave }) {
           maxLength={20}
           autoCapitalize="words"
           autoCorrect={false}
-          accessibilityLabel="¿Cómo querés que te llamemos?"
+          accessibilityLabel="¿Cómo quieres que te llamemos?"
         />
         <Pressable
           onPress={onSave}
@@ -318,7 +364,7 @@ function NameField({ unit, value, onChange, onSave }) {
         </Pressable>
       </View>
       <Text style={styles.nameHint}>
-        Se usa solo para el saludo del dashboard (“¡Hola, {value.trim() || 'Nombre'}! 👋”). Podés cambiarlo en
+        Se usa solo para el saludo del dashboard (“¡Hola, {value.trim() || 'Nombre'}! 👋”). Puedes cambiarlo en
         Ajustes.
       </Text>
     </View>
@@ -406,7 +452,7 @@ function TabsDemo({ unit }) {
   return (
     <DemoFrame caption="Barra inferior · 9 secciones">
       <Text style={styles.demoEmpty}>
-        {`Estás en ${DEMO_TABS[active]}. Deslizá el dedo o tocá otra solapa.`}
+        {`Estás en ${DEMO_TABS[active]}. Desliza el dedo o toca otra solapa.`}
       </Text>
       <View style={styles.demoTabs}>
         {DEMO_TABS.map((label, index) => (
@@ -465,10 +511,10 @@ function NoteDemo({ unit }) {
         </Pressable>
         <View style={styles.demoRowBody}>
           <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            {recording ? 'Grabando… 0:03' : saved ? 'nota-de-voz-1.m4a' : 'Tocá para grabar'}
+            {recording ? 'Grabando… 0:03' : saved ? 'nota-de-voz-1.m4a' : 'Toca para grabar'}
           </Text>
           <Text style={typography.caption} numberOfLines={1}>
-            {saved ? '4 KB · dentro del app' : 'Se guarda en el dispositivo'}
+            {saved ? '4 KB · dentro de la app' : 'Se guarda en el dispositivo'}
           </Text>
         </View>
         {saved ? <Text style={{ fontSize: unit(14) }}>▶️</Text> : null}
@@ -500,7 +546,7 @@ function HabitsDemo({ unit }) {
           <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
             Tomar 2 L de agua
           </Text>
-          <Text style={typography.caption}>{`Racha: ${days} día(s)`}</Text>
+          <Text style={typography.caption}>{`Racha: ${plural(days, 'día')}`}</Text>
         </View>
         <Pressable
           onPress={() => setDays((value) => value + 1)}
@@ -562,14 +608,14 @@ function AiDemo({ unit }) {
         <View style={styles.demoBubble}>
           <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={2}>
             {answer === '¿Cuánto gasté?'
-              ? 'Hoy llevás $1.850 en 1 movimiento.'
+              ? 'Hoy llevas $1.850 en 1 movimiento.'
               : answer === '¿Qué hábitos me faltan?'
                 ? 'Te falta 1 hábito hoy: Tomar 2 L de agua.'
-                : 'Tenés 1 cosa por delante: 18:30 Entrega del proyecto.'}
+                : 'Tienes 1 cosa por delante: 18:30 Entrega del proyecto.'}
           </Text>
         </View>
       ) : (
-        <Text style={styles.demoEmpty}>Tocá una sugerencia para ver una respuesta.</Text>
+        <Text style={styles.demoEmpty}>Toca una sugerencia para ver una respuesta.</Text>
       )}
     </DemoFrame>
   );
@@ -590,13 +636,32 @@ const styles = themedStyles({
   },
 
   body: { flex: 1, gap: spacing.md },
-  // The pager spans the whole window: no horizontal padding here, or `pagingEnabled` would
-  // measure a page narrower than the slides and clip the right edge.
-  pager: { flexGrow: 0, marginHorizontal: -layout.gutter },
+  // The pager is the only full-bleed element of the screen: it is a direct child of a body that
+  // has *no* horizontal padding, so its own width is exactly the window width and each page can
+  // be `width` wide. A padding here (or a negative margin on the list) would make
+  // `pagingEnabled` snap off-centre and clip the slides — the bug this layout avoids.
+  // It does grow, so the footer stays pinned to the bottom whatever the slide heights are.
+  pager: { flexGrow: 1 },
+  // Stretch, not centre: pages take the full height of the list so the scroll inside them has a
+  // bounded box to work with.
+  pagerContent: { alignItems: 'stretch' },
   // Each page is exactly `width` wide; the gutter lives in here.
-  slidePage: { flexGrow: 0 },
-  slide: { paddingHorizontal: layout.gutter, gap: spacing.md, paddingTop: spacing.md },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  slidePage: { flexGrow: 0, flexShrink: 0, height: '100%' },
+  slideScroll: { flex: 1 },
+  slide: {
+    paddingHorizontal: layout.gutter,
+    gap: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+  },
+  slideBody: { gap: spacing.md },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingHorizontal: layout.gutter,
+  },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
   brandMark: { ...typography.title, color: colors.accent },
   brandName: { ...typography.bodyStrong, color: colors.text },
@@ -655,7 +720,9 @@ const styles = themedStyles({
   pointTip: { ...typography.caption, color: colors.textSecondary, lineHeight: 17 },
   pointHint: { fontSize: 16, fontWeight: '800', lineHeight: 18 },
 
-  footer: { gap: spacing.md },
+  // The pager grows, so the controls already sit at the bottom of the screen; the padding here is
+  // the gutter the body deliberately does not carry.
+  footer: { gap: spacing.md, paddingHorizontal: layout.gutter },
   dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   dot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.surfacePlus },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

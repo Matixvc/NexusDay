@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 import { KEYS, loadValue, saveValue } from '../services/storage';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
-import { setPreferredCalendar } from '../services/calendar';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
 import { resyncReminders } from '../services/reminders';
@@ -19,7 +18,7 @@ const AppDataContext = createContext(null);
 
 const UNKNOWN_PERMISSION = { status: 'unknown', granted: false, canAskAgain: true, checked: false };
 
-const DEFAULT_SETTINGS = { displayName: '', preferredCalendarId: null, privacyEnabled: true };
+const DEFAULT_SETTINGS = { displayName: '', privacyEnabled: true };
 
 /**
  * First-run tutorial.
@@ -76,7 +75,6 @@ export function AppDataProvider({ children }) {
       const next = stored && typeof stored === 'object' ? { ...DEFAULT_SETTINGS, ...stored } : DEFAULT_SETTINGS;
       setSettings(next);
       setSettingsLoaded(true);
-      if (next.preferredCalendarId) setPreferredCalendar(next.preferredCalendarId);
 
       // v1.0 stored the name inside the settings blob; adopt it once as the canonical one.
       const name = String(savedName || '').trim() || String(next.displayName || '').trim();
@@ -98,7 +96,6 @@ export function AppDataProvider({ children }) {
       saveValue(KEYS.settings, next);
       return next;
     });
-    if (patch?.preferredCalendarId !== undefined) setPreferredCalendar(patch.preferredCalendarId);
   }, []);
 
   /** Preferred name for the dashboard greeting (also written by the first-run tutorial). */
@@ -153,7 +150,7 @@ export function AppDataProvider({ children }) {
       }
     });
 
-    // Permission is often flipped from the OS settings screen (the "Activá los
+    // Permission is often flipped from the OS settings screen (the "Activa los
     // avisos" card sends people there), so re-read it whenever the app returns.
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active' && active) refreshPermission();

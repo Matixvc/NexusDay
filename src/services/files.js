@@ -262,7 +262,7 @@ export function describeShareStatus(status) {
 
 const PICK_MESSAGES = {
   unsupported: 'Este dispositivo no permite importar documentos.',
-  error: 'No se pudo copiar el documento al app.',
+  error: 'No se pudo copiar el documento a la app.',
 };
 
 export function describePickStatus(status) {

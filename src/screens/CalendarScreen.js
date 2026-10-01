@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { themedStyles, calendarTheme, colors, spacing, typography } from '../theme/theme';
@@ -19,14 +19,15 @@ import { ColorPicker, PickerTrigger, TextArea, TextField } from '../components/u
 import { DateField } from '../components/ui/DateField';
 import { TimeField } from '../components/ui/TimeField';
 import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
+import { SwitchRow } from '../components/ui/Switch';
 import { EVENT_REMINDERS, dropReminder, syncEventReminder } from '../services/reminders';
-import * as CalendarSync from '../services/calendar';
-import { describeShareStatus } from '../services/files';
+import { plural } from '../utils/text';
 import {
   compareDateTime,
   daysFromToday,
   formatDateLong,
   formatTime,
+  isPastDateTime,
   relativeDayLabel,
   todayKey,
 } from '../utils/dates';
@@ -39,7 +40,6 @@ const BLANK = () => ({
   leadMinutes: 30,
   color: colors.accent,
   notificationId: null,
-  calendarEventId: null,
 });
 
 function reminderLabel(leadMinutes) {
@@ -86,15 +86,12 @@ export default function CalendarScreen() {
   } = useAppData();
 
   const today = todayKey();
-  const calendarAvailable = CalendarSync.isAvailable();
   const [selected, setSelected] = useState(today);
   const [sheet, setSheet] = useState(null);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [info, setInfo] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   const marks = useMemo(() => buildMarks(events, selected), [events, selected]);
 
@@ -120,10 +117,14 @@ export default function CalendarScreen() {
 
   const remindersArmed = useMemo(() => events.filter((event) => event.notificationId).length, [events]);
 
-  /** Agenda items that never made it to the device calendar (created before the bridge, or skipped). */
-  const pendingSync = useMemo(() => events.filter((event) => !event.calendarEventId), [events]);
-
-  const openCreate = useCallback(() => setSheet({ mode: 'create', values: BLANK() }), []);
+  /**
+   * Opens the editor for a new event with the day currently shown in the grid already picked:
+   * choosing a day and then being sent back to today meant typing the same date twice.
+   */
+  const openCreate = useCallback(
+    () => setSheet({ mode: 'create', values: { ...BLANK(), dateKey: selected } }),
+    [selected],
+  );
 
   const openEdit = useCallback((event) => {
     setSheet({
@@ -137,7 +138,6 @@ export default function CalendarScreen() {
         leadMinutes: event.leadMinutes ?? -1,
         color: event.color || colors.accent,
         notificationId: event.notificationId || null,
-        calendarEventId: event.calendarEventId || null,
       },
     });
   }, []);
@@ -149,6 +149,36 @@ export default function CalendarScreen() {
 
   const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.title.trim());
 
+  // The moment the sheet points at, already gone by the clock? Nothing can be announced about
+  // it, so the switch shows *why* it refuses to go on instead of scheduling a notification the
+  // OS would drop on the floor.
+  const momentIsPast = sheet ? isPastDateTime(sheet.values.dateKey, sheet.values.time) : false;
+  const reminderOn = sheet ? !momentIsPast && (sheet.values.leadMinutes ?? -1) !== -1 : false;
+  // Remembered so switching the warning back on restores the lead that was chosen instead of
+  // silently downgrading everybody to 30 minutes.
+  const lastLead = useRef(30);
+
+  const setReminder = useCallback(
+    (on) => {
+      const current = sheet?.values.leadMinutes ?? -1;
+      if (on) {
+        setValue({ leadMinutes: current === -1 ? lastLead.current : current });
+        return;
+      }
+      lastLead.current = current === -1 ? 30 : current;
+      setValue({ leadMinutes: -1 });
+    },
+    [setValue, sheet?.values.leadMinutes],
+  );
+
+  const pickLead = useCallback(
+    (leadMinutes) => {
+      if (leadMinutes !== -1) lastLead.current = leadMinutes;
+      setValue({ leadMinutes });
+    },
+    [setValue],
+  );
+
   const save = async () => {
     if (!canSave) return;
     const { mode, id, values } = sheet;
@@ -157,65 +187,32 @@ export default function CalendarScreen() {
       dateKey: values.dateKey,
       time: values.time,
       notes: values.notes.trim(),
-      leadMinutes: values.leadMinutes,
+      // Belt and braces with the switch above: an event edited into the past must not keep,
+      // nor ask for, a reminder that can never fire.
+      leadMinutes: isPastDateTime(values.dateKey, values.time) ? -1 : values.leadMinutes,
       color: values.color,
     };
 
     setSaving(true);
     const result = await syncEventReminder(payload, values.notificationId);
 
-    const stored =
-      mode === 'edit'
-        ? { id, ...payload }
-        : addEvent({ ...payload, notificationId: result.notificationId, calendarEventId: null });
-    if (mode === 'edit') updateEvent(id, { ...payload, notificationId: result.notificationId });
-    else setSelected(values.dateKey);
-
-    // The agenda is the source of truth; the device event is a mirror that may fail
-    // (permissions, no accounts) without losing anything locally.
-    const synced = await CalendarSync.syncEvent({
-      ...payload,
-      id: stored.id,
-      calendarEventId: values.calendarEventId || null,
-    });
-    if (synced.calendarEventId && synced.calendarEventId !== values.calendarEventId) {
-      updateEvent(stored.id, { calendarEventId: synced.calendarEventId });
+    if (mode === 'edit') {
+      updateEvent(id, { ...payload, notificationId: result.notificationId });
+    } else {
+      addEvent({ ...payload, notificationId: result.notificationId });
+      setSelected(values.dateKey);
     }
 
     setSaving(false);
-    setNotice(result.notice || CalendarSync.describeCalendarStatus(synced.status, synced.canAskAgain));
+    setNotice(result.notice);
     setSheet(null);
   };
 
   const confirmDelete = async () => {
     const target = events.find((event) => event.id === confirmId);
-    if (target) {
-      await dropReminder(target);
-      if (target.calendarEventId) await CalendarSync.removeEvent(target);
-    }
+    if (target) await dropReminder(target);
     removeEvent(confirmId);
     setConfirmId(null);
-  };
-
-  /** Bulk "añadir al calendario": pushes every agenda item the device does not know yet. */
-  const pushToCalendar = async () => {
-    setSyncing(true);
-    const result = await CalendarSync.syncAllEvents(pendingSync);
-    result.patches.forEach(({ id, calendarEventId }) => updateEvent(id, { calendarEventId }));
-    const message = CalendarSync.describeSyncResult(result);
-    if (result.status === 'ok') setInfo(message);
-    else setNotice(message);
-    setSyncing(false);
-  };
-
-  /** Offline fallback: hand the user an .ics they can import anywhere. */
-  const exportICS = async () => {
-    const result = await CalendarSync.shareAgendaICS(events, {
-      name: 'agenda.ics',
-      dialogTitle: 'Exportar agenda',
-    });
-    const message = describeShareStatus(result.status);
-    if (message) setNotice(message);
   };
 
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
@@ -225,17 +222,17 @@ export default function CalendarScreen() {
       <Screen
         title="Agenda"
         subtitle={formatDateLong(selected)}
-        headerRight={<Pill label={`${events.length} eventos`} />}
+        headerRight={<Pill label={plural(events.length, 'evento')} />}
       >
         {showPermissionCard ? (
           <Card accent={colors.warning}>
             <Text style={typography.bodyStrong}>
-              {permission.canAskAgain ? 'Activá los recordatorios' : 'Recordatorios bloqueados'}
+              {permission.canAskAgain ? 'Activa los recordatorios' : 'Recordatorios bloqueados'}
             </Text>
             <Text style={[typography.small, styles.bannerText]}>
               {permission.canAskAgain
                 ? 'Sin permisos la agenda se guarda igual, pero no te avisa cuando se acerca un evento.'
-                : 'Dalos desde Ajustes → Aplicaciones → NexusDay → Notificaciones para volver a usarlos.'}
+                : 'Actívalos desde Ajustes → Aplicaciones → NexusDay → Notificaciones para volver a usarlos.'}
             </Text>
             {permission.canAskAgain ? (
               <View style={styles.bannerActions}>
@@ -249,18 +246,10 @@ export default function CalendarScreen() {
           </Card>
         ) : null}
 
-        {notice || info ? (
+        {notice ? (
           <View style={styles.noticeRow}>
-            {notice ? <Notice text={notice} tone="danger" /> : null}
-            {info ? <Notice text={info} tone="info" /> : null}
-            <TextButton
-              label="OK"
-              tone="ghost"
-              onPress={() => {
-                setNotice(null);
-                setInfo(null);
-              }}
-            />
+            <Notice text={notice} tone="danger" />
+            <TextButton label="OK" tone="ghost" onPress={() => setNotice(null)} />
           </View>
         ) : null}
 
@@ -282,28 +271,6 @@ export default function CalendarScreen() {
           <Stat value={remindersArmed} label="con aviso" accent={colors.accent} />
           <Stat value={pastCount} label="pasados" />
         </View>
-
-        <Card accent={colors.accent} style={styles.syncCard}>
-          <Text style={typography.bodyStrong}>Calendario del teléfono</Text>
-          <Text style={[typography.small, styles.syncText]}>
-            {calendarAvailable && pendingSync.length
-              ? `${pendingSync.length} evento(s) de la agenda todavía no están en tu calendario.`
-              : calendarAvailable
-                ? 'Toda la agenda ya está copiada a tu calendario.'
-                : 'Este dispositivo no expone su calendario; siempre puedes exportar la agenda.'}
-          </Text>
-          <View style={styles.syncActions}>
-            {calendarAvailable && pendingSync.length ? (
-              <PrimaryButton
-                label={syncing ? 'Añadiendo…' : 'Añadir al calendario'}
-                onPress={pushToCalendar}
-                disabled={syncing}
-                style={styles.syncButton}
-              />
-            ) : null}
-            <TextButton label="Exportar .ics" tone="ghost" onPress={exportICS} />
-          </View>
-        </Card>
 
         <SectionTitle
           title={relativeDayLabel(selected)}
@@ -369,16 +336,33 @@ export default function CalendarScreen() {
             <DateField label="Día" value={sheet.values.dateKey} onChange={(dateKey) => setValue({ dateKey })} />
             <TimeField label="Hora" value={sheet.values.time} onChange={(time) => setValue({ time })} />
             <View style={styles.leadWrap}>
-              <PickerTrigger
-                label="Recordatorio"
-                value={reminderLabel(sheet.values.leadMinutes)}
-                onPress={() => setLeadSheetOpen(true)}
-                trailing={
-                  <Text style={styles.leadHint}>
-                    {sheet.values.notificationId ? '● programado' : ''}
-                  </Text>
+              <SwitchRow
+                title="Avisarme"
+                value={reminderOn}
+                onValueChange={setReminder}
+                // A past moment cannot announce itself; saying so beats a switch that silently
+                // refuses to move.
+                disabled={momentIsPast || !notificationsSupported}
+                hint={
+                  !notificationsSupported
+                    ? 'Este dispositivo no puede enviar notificaciones.'
+                    : momentIsPast
+                      ? 'La fecha ya pasó: elige una futura para poder avisar.'
+                      : reminderOn
+                        ? `Te aviso ${reminderLabel(sheet.values.leadMinutes).toLowerCase()}.`
+                        : 'Sin aviso: el evento se guarda igual.'
                 }
               />
+              {reminderOn ? (
+                <PickerTrigger
+                  label="¿Cuánto antes?"
+                  value={reminderLabel(sheet.values.leadMinutes)}
+                  onPress={() => setLeadSheetOpen(true)}
+                  trailing={
+                    sheet.values.notificationId ? <Text style={styles.leadHint}>● programado</Text> : null
+                  }
+                />
+              ) : null}
             </View>
             <TextArea
               label="Notas (opcional)"
@@ -398,7 +382,7 @@ export default function CalendarScreen() {
         title="¿Cuándo te aviso?"
         options={EVENT_REMINDERS}
         value={sheet?.values.leadMinutes}
-        onSelect={(leadMinutes) => setValue({ leadMinutes })}
+        onSelect={pickLead}
       />
 
       <ConfirmSheet
@@ -441,7 +425,6 @@ function EventRow({ event, onPress, showDay }) {
                 tone={armed ? 'accent' : 'warning'}
               />
             ) : null}
-            {event.calendarEventId ? <Pill label="✓ en calendario" /> : null}
           </View>
         </View>
       </View>
@@ -457,10 +440,6 @@ const styles = themedStyles({
   calendarCard: { paddingVertical: spacing.sm, marginBottom: spacing.sm },
   calendar: { backgroundColor: 'transparent' },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
-  syncCard: { gap: 6 },
-  syncText: { lineHeight: 18 },
-  syncActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
-  syncButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
   eventCard: { paddingVertical: spacing.md },
   eventRow: { flexDirection: 'row', gap: spacing.lg },
   eventTime: { width: 62, gap: 2 },

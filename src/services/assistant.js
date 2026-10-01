@@ -1,6 +1,6 @@
 import { categoryOf, formatMoney, sumAmounts } from '../utils/money';
 import { formatDateShort, formatTime } from '../utils/dates';
-import { normalizeText } from '../utils/text';
+import { normalizeText, plural } from '../utils/text';
 import { buildDashboard, habitStreak } from './dashboard';
 
 /**
@@ -21,7 +21,8 @@ export const ASSISTANT_SUGGESTIONS = [
   '¿Qué hábitos me faltan?',
   '¿Cuántas notas tengo?',
   '¿Quién cumple años pronto?',
-  '¿Cómo programo un recordatorio?',
+  '¿Cómo programo un aviso?',
+  'Crea una nota de la reunión',
 ];
 
 /**
@@ -61,14 +62,14 @@ const INTENTS = [
       if (!dashboard.nextUp.length) {
         return {
           title: 'Hoy estás libre',
-          body: `No quedan actividades para hoy (${dashboard.weekdayLabel}). Buen momento para adelantar notas o cargar un gasto.`,
+          body: `No quedan actividades para hoy (${dashboard.weekdayLabel}). Buen momento para adelantar notas o registrar un gasto.`,
           route: 'Horario',
           routeLabel: 'Abrir horario',
         };
       }
       const first = dashboard.nextUp[0];
       return {
-        title: dashboard.nextUp.length === 1 ? 'Tenés una cosa por delante' : `Tenés ${dashboard.nextUp.length} cosas por delante`,
+        title: dashboard.nextUp.length === 1 ? 'Tienes una cosa por delante' : `Tienes ${dashboard.nextUp.length} cosas por delante`,
         body: bullets(dashboard.nextUp.map((item) => `· ${item.time} — ${item.title} (${item.detail})`)),
         route: first.kind === 'event' ? 'Agenda' : 'Horario',
         routeLabel: first.kind === 'event' ? 'Abrir agenda' : 'Abrir horario',
@@ -86,10 +87,10 @@ const INTENTS = [
       }, {});
       const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0];
       return {
-        title: `Llevás ${formatMoney(dashboard.spentMonth)} este mes`,
+        title: `Llevas ${formatMoney(dashboard.spentMonth)} este mes`,
         body: bullets([
-          `· Hoy: ${formatMoney(dashboard.spentToday)} en ${dashboard.todayExpenses.length} movimiento(s).`,
-          top ? `${categoryOf(top[0]).emoji} Donde más gastás: ${top[0]} (${formatMoney(top[1])}).` : null,
+          `· Hoy: ${formatMoney(dashboard.spentToday)} en ${plural(dashboard.todayExpenses.length, 'movimiento')}.`,
+          top ? `${categoryOf(top[0]).emoji} Donde más gastas: ${top[0]} (${formatMoney(top[1])}).` : null,
           `· Total registrado: ${formatMoney(sumAmounts(expenses))}.`,
         ]),
         route: 'Gastos',
@@ -103,8 +104,8 @@ const INTENTS = [
     answer: ({ dashboard, habits }) => {
       if (!habits.length) {
         return {
-          title: 'Todavía no cargaste hábitos',
-          body: 'Creá tus rutinas en Hábitos para marcarlas por día y ver la racha.',
+          title: 'Todavía no registraste hábitos',
+          body: 'Crea tus rutinas en Hábitos para marcarlas por día y ver la racha.',
           route: 'Hábitos',
           routeLabel: 'Abrir hábitos',
         };
@@ -114,11 +115,13 @@ const INTENTS = [
         .sort((a, b) => b.streak - a.streak)[0];
       return {
         title: dashboard.pendingHabits.length
-          ? `Te faltan ${dashboard.pendingHabits.length} hábito(s) hoy`
+          ? dashboard.pendingHabits.length === 1
+            ? 'Te falta 1 hábito hoy'
+            : `Te faltan ${plural(dashboard.pendingHabits.length, 'hábito')} hoy`
           : 'Hábitos al día ✅',
         body: bullets([
           dashboard.pendingHabits.length ? listHabits(dashboard.pendingHabits) : `Marcaste los ${habits.length}.`,
-          best && best.streak > 0 ? `· Mejor racha: ${best.habit.name} con ${best.streak} día(s).` : null,
+          best && best.streak > 0 ? `· Mejor racha: ${best.habit.name} con ${plural(best.streak, 'día')}.` : null,
         ]),
         route: 'Hábitos',
         routeLabel: 'Abrir hábitos',
@@ -131,11 +134,11 @@ const INTENTS = [
     answer: ({ dashboard, notes }) => {
       const latest = notes.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
       return {
-        title: `Tenés ${dashboard.notesCount} nota(s)`,
+        title: dashboard.notesCount ? `Tienes ${plural(dashboard.notesCount, 'nota')}` : 'Todavía no tienes notas',
         body: bullets([
           `· Fijadas arriba: ${dashboard.pinnedNotes}.`,
           latest ? `· Última editada: “${latest.title}”.` : null,
-          '· Al editar una nota podés grabar audio o adjuntar un documento.',
+          '· Al editar una nota puedes grabar audio o adjuntar un documento.',
         ]),
         route: 'Notas',
         routeLabel: 'Abrir notas',
@@ -150,16 +153,16 @@ const INTENTS = [
       if (!next) {
         return {
           title: 'Sin cumpleaños a la vista',
-          body: 'No hay aniversarios en los próximos 30 días. Cargalos en Cumpleaños para recibir el aviso.',
+          body: 'No hay aniversarios en los próximos 30 días. Regístralos en Cumpleaños para recibir el aviso.',
           route: 'Cumpleaños',
           routeLabel: 'Abrir cumpleaños',
         };
       }
       return {
-        title: `${next.emoji || '🎂'} ${next.name} cumple en ${next.inDays} día(s)`,
+        title: `${next.emoji || '🎂'} ${next.name} ${next.inDays === 0 ? 'cumple hoy 🎉' : `cumple en ${plural(next.inDays, 'día')}`}`,
         body: bullets([
           `· Fecha: ${formatDateShort(next.dateKey)} a las ${formatTime(next.time || '09:00')}.`,
-          next.daysBefore ? `· Aviso programado ${next.daysBefore} día(s) antes.` : '· Sin aviso previo programado.',
+          next.daysBefore ? `· Aviso programado ${plural(next.daysBefore, 'día')} antes.` : '· Sin aviso previo programado.',
         ]),
         route: 'Cumpleaños',
         routeLabel: 'Abrir cumpleaños',
@@ -172,26 +175,26 @@ const INTENTS = [
     answer: () => ({
       title: 'Así se programan los avisos',
       body: bullets([
-        '· Agenda: creá o editá un evento y elegí el aviso en “¿Cuándo te aviso?”.',
+        '· Agenda: crea o edita un evento y elige el aviso en “¿Cuándo te aviso?”.',
         '· Horario y Cumpleaños tienen su propio campo de aviso.',
-        '· Si el sistema los bloqueó, activalos en Ajustes › Notificaciones.',
+        '· Si el sistema los bloqueó, actívalos en Ajustes › Notificaciones.',
       ]),
-      route: 'Ajustes',
-      routeLabel: 'Abrir ajustes',
+      route: 'Agenda',
+      routeLabel: 'Abrir agenda',
     }),
   },
   {
     id: 'calendar',
     match: (text) => has(text, ['calendario', 'sincroniz', 'ics', 'exportar']),
     answer: () => ({
-      title: 'Calendario del teléfono',
+      title: 'Exportar la agenda',
       body: bullets([
-        '· En Agenda tocá “Añadir al calendario” para copiar tus eventos.',
-        '· Cada evento recuerda su id, así que se actualiza en vez de duplicarse.',
-        '· También podés exportar todo como archivo .ics y abrirlo en cualquier app.',
+        '· NexusDay no escribe en la agenda del teléfono: los eventos viven solo en la app.',
+        '· En Horario está “Exportar .ics”: genera un archivo con el día y lo abres donde quieras.',
+        '· Los avisos se programan desde Agenda, Horario y Cumpleaños.',
       ]),
-      route: 'Agenda',
-      routeLabel: 'Abrir agenda',
+      route: 'Horario',
+      routeLabel: 'Abrir horario',
     }),
   },
 ];
@@ -216,10 +219,11 @@ export function answerQuestion(question, data = {}) {
         title: 'Eso está fuera de NexusDay',
         body: bullets([
           'Soy el asistente de este teléfono: no tengo internet ni conocimiento general.',
-          'Lo que sí hago es consultar y gestionar tus datos guardados:',
+          'Lo que sí hago es leer y escribir tus datos guardados:',
+          '· Y cumplo órdenes: “crea una nota de la reunión”, “gasté 1.250 en comida”.',
           '· Notas con voz y adjuntos · Agenda y calendario · Horario semanal',
           '· Hábitos y rachas · Gastos por categoría · Cumpleaños y avisos',
-          '· Y el tema de acento que elegís en Ajustes.',
+          '· Y el tema de acento que eliges en Ajustes.',
         ]),
         route: 'Inicio',
         routeLabel: 'Ir al inicio',
@@ -229,8 +233,8 @@ export function answerQuestion(question, data = {}) {
     return {
       id: 'fallback',
       question: String(question),
-      title: 'Puedo ayudarte con tus datos del app',
-      body: bullets(['Probá con alguna de estas preguntas:', ...ASSISTANT_SUGGESTIONS.map((item) => `· ${item}`)]),
+      title: 'Puedo ayudarte con tus datos de la app',
+      body: bullets(['Prueba con alguna de estas preguntas:', ...ASSISTANT_SUGGESTIONS.map((item) => `· ${item}`)]),
       route: null,
       routeLabel: null,
     };
@@ -240,7 +244,7 @@ export function answerQuestion(question, data = {}) {
       id: 'error',
       question: String(question),
       title: 'No pude leer tus datos',
-      body: 'Volvé a intentar en unos segundos.',
+      body: 'Vuelve a intentar en unos segundos.',
       route: null,
       routeLabel: null,
     };

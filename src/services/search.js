@@ -1,4 +1,4 @@
-import { normalizeText, oneLine } from '../utils/text';
+import { normalizeText, oneLine, plural } from '../utils/text';
 import { formatMoney, categoryOf } from '../utils/money';
 import { formatDateShort, relativeDayLabel } from '../utils/dates';
 import { habitStreak } from './dashboard';
@@ -103,7 +103,7 @@ export function searchEverything(
       typeLabel: SEARCH_SOURCES.habit.label,
       icon: SEARCH_SOURCES.habit.icon,
       title: habit.name,
-      subtitle: streak ? `Racha de ${streak} día(s)` : 'Sin racha todavía',
+      subtitle: streak ? `Racha de ${plural(streak, 'día')}` : 'Sin racha todavía',
       color: habit.color,
       recency: '',
       score: match.score,

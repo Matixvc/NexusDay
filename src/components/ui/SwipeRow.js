@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { useSwipeLockActions } from '../../context/SwipeLockContext';
@@ -32,10 +32,36 @@ const ACTIVE_OFFSET_X = 8; // px of horizontal travel that arms the row
 const FAIL_OFFSET_Y = 12; // px of vertical travel that hands the gesture to the list
 const ACTION_WIDTH = 96; // px that must be travelled to fire the action
 const MAX_TRAVEL = 108;
+/** px of travel over which an action strip fades in — it is invisible while the row is shut. */
+const ACTION_FADE = 48;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction }) {
   const translateX = useMemo(() => new Animated.Value(0), []);
   const { acquireSwipe } = useSwipeLockActions();
+  // True only between the grant and the settle of one gesture: that is the single moment the
+  // action strips are worth tapping (see `Action`).
+  const [armed, setArmed] = useState(false);
+
+  // The strips live behind the card, so at rest their square corners would poke out of the
+  // card's rounded ones and every row would look permanently "open". They are painted in with
+  // the finger instead: 0 opacity at rest, full opacity once the row is meaningfully apart.
+  const fades = useMemo(
+    () => ({
+      left: translateX.interpolate({
+        inputRange: [0, ACTION_FADE],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+      }),
+      right: translateX.interpolate({
+        inputRange: [-ACTION_FADE, 0],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      }),
+    }),
+    [translateX],
+  );
 
   const { panHandlers, settle } = useMemo(() => {
     // Per-responder mutable state. It lives *inside* the memo on purpose: it is only ever
@@ -50,6 +76,9 @@ function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction
         gesture.release();
         gesture.release = null;
       }
+      // The strips fade out with the row, and from this frame on they stop accepting taps:
+      // an action is fired by the release below, never by pressing a fading sliver.
+      setArmed(false);
       Animated.spring(translateX, {
         toValue: 0,
         useNativeDriver: true,
@@ -73,6 +102,7 @@ function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
         gesture.release = acquireSwipe();
+        setArmed(true);
       },
       onPanResponderMove: (event, move) => {
         // Rubber-band past MAX_TRAVEL so the row feels like it resists instead of stopping.
@@ -118,8 +148,8 @@ function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction
     <View style={[styles.wrap, style]}>
       {leftAction || rightAction ? (
         <>
-          {leftAction ? <Action side="left" {...leftAction} /> : null}
-          {rightAction ? <Action side="right" {...rightAction} /> : null}
+          {leftAction ? <Action side="left" opacity={fades.left} armed={armed} {...leftAction} /> : null}
+          {rightAction ? <Action side="right" opacity={fades.right} armed={armed} {...rightAction} /> : null}
         </>
       ) : null}
 
@@ -130,18 +160,26 @@ function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction
   );
 }
 
-function Action({ side, label, color, onPress }) {
+function Action({ side, label, color, onPress, opacity, armed }) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
+      // While the row is shut the strip is invisible but still laid out; hit-testing it would
+      // let a tap land on an action nobody asked for. Only the open row answers to touches.
+      pointerEvents={armed ? 'auto' : 'none'}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={[styles.action, side === 'left' ? styles.actionLeft : styles.actionRight, { backgroundColor: color }]}
+      accessibilityHidden={!armed}
+      style={[
+        styles.action,
+        side === 'left' ? styles.actionLeft : styles.actionRight,
+        { backgroundColor: color, opacity },
+      ]}
     >
       <Text style={[styles.actionLabel, { color: colors.accentInk }]} numberOfLines={1}>
         {label}
       </Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

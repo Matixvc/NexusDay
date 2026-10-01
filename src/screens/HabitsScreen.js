@@ -23,6 +23,7 @@ import SwipeRow from '../components/ui/SwipeRow';
 import { HABIT_REMINDERS, dropReminder, syncHabitReminder } from '../services/reminders';
 import { habitStreak, lastDays, pendingHabits } from '../services/dashboard';
 import { success as successHaptic } from '../services/haptics';
+import { plural } from '../utils/text';
 import { WEEKDAYS, fromDateKey, todayKey, weekdayIndex } from '../utils/dates';
 
 const EMOJIS = ['💧', '📚', '🏃', '🧘', '🥗', '😴', '✍️', '🎯'];
@@ -109,7 +110,7 @@ export default function HabitsScreen() {
     <>
       <Screen
         title="Hábitos"
-        subtitle="Marcá cada día y mirá cómo crece la racha."
+        subtitle="Marca cada día y mira cómo crece la racha."
         headerRight={<Pill label={`${habits.length} hábitos`} />}
       >
         <View style={styles.statsRow}>
@@ -130,7 +131,7 @@ export default function HabitsScreen() {
           <EmptyState
             emoji="🌱"
             title="Todavía no hay hábitos"
-            hint="Sumá uno (agua, lectura, ejercicio) y marcalo cada día desde acá."
+            hint="Agrega uno (agua, lectura, ejercicio) y márcalo cada día desde aquí."
           />
         ) : (
           habits.map((habit) => (
@@ -247,7 +248,7 @@ const HabitRow = memo(function HabitRow({ habit, today, week, focused, onToggle,
               {habit.name}
             </Text>
             <Text style={typography.caption}>
-              {`Racha: ${habitStreak(habit, today)} día(s) · Semana: ${
+              {`Racha: ${plural(habitStreak(habit, today), 'día')} · Semana: ${
                 week.filter((key) => marks.includes(key)).length
               }/7`}
             </Text>

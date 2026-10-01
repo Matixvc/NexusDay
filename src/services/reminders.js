@@ -157,7 +157,7 @@ export async function syncHabitReminder({ id, name, emoji, marks, remindAt }, ex
 
   const result = await Notif.scheduleAt({
     title: `${emoji || '✅'} ${name}`,
-    body: 'Tocá “✓ Completar” para marcarlo sin abrir el app.',
+    body: 'Toca “✓ Completar” para marcarlo sin abrir la app.',
     date: buildDateTime(today, remindAt),
     data: { kind: 'habit', itemId: id },
   });

@@ -24,6 +24,7 @@ import { Switch } from '../components/ui/Switch';
 import { authenticate, describePrivacyFailure } from '../services/privacy';
 import { EXPENSE_CATEGORIES, categoryOf, formatMoney, parseAmount, sumAmounts } from '../utils/money';
 import { relativeDayLabel, todayKey } from '../utils/dates';
+import { plural } from '../utils/text';
 
 const MAX_ROWS = 8;
 
@@ -73,7 +74,7 @@ export default function ExpensesScreen() {
   const submit = () => {
     const value = parseAmount(amount);
     if (value <= 0) {
-      setError('Escribí un monto mayor a 0.');
+      setError('Escribe un monto mayor a 0.');
       return;
     }
     addExpense({ dateKey: today, amount: value, category, note: note.trim(), createdAt: Date.now() });
@@ -106,7 +107,7 @@ export default function ExpensesScreen() {
         openEdit(expense);
         return;
       }
-      const result = await authenticate({ promptMessage: 'Desbloqueá el gasto privado' });
+      const result = await authenticate({ promptMessage: 'Desbloquea el gasto privado' });
       if (result.ok) {
         setUnlockError(null);
         openEdit(expense);
@@ -144,8 +145,8 @@ export default function ExpensesScreen() {
     <>
       <Screen
         title="Gastos"
-        subtitle="Cargá lo que gastás en dos toques."
-        headerRight={<Pill label={`${expenses.length} movimientos`} />}
+        subtitle="Registra lo que gastas en dos toques."
+        headerRight={<Pill label={plural(expenses.length, 'movimiento')} />}
       >
         {unlockError ? <Notice text={unlockError} tone="danger" /> : null}
 
@@ -228,7 +229,7 @@ export default function ExpensesScreen() {
           <EmptyState
             emoji="💸"
             title="Sin gastos cargados"
-            hint="Anotá el primero arriba y vas a ver los totales del día y del mes."
+            hint="Anota el primero arriba y vas a ver los totales del día y del mes."
           />
         ) : (
           visible.map((expense) => (

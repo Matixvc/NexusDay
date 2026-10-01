@@ -6,29 +6,48 @@ import { useAppData } from '../context/AppDataContext';
 import { Card, Chip, ChipScroller, Pill, PrimaryButton, TextButton } from '../components/ui/primitives';
 import { Glyph } from '../navigation/TabGlyphs';
 import { ASSISTANT_SUGGESTIONS, answerQuestion } from '../services/assistant';
+import { applyCommand, detectCommand } from '../services/assistantCommands';
+import { shareAgendaICS } from '../services/agendaExport';
+import { describeShareStatus } from '../services/files';
 
 /**
  * Nexus AI — panel del asistente.
  *
  * Es un chat local: cada pregunta se resuelve con `answerQuestion`, que lee las
  * colecciones ya guardadas en el dispositivo. No hay red, ni API key, ni envío de
- * datos; el propio texto de la pantalla lo aclara. El alcance es el app —notas,
+ * datos; el propio texto de la pantalla lo aclara. Además escribe: `applyCommand` ejecuta las órdenes. El alcance es la app —notas,
  * agenda, horario, hábitos, gastos— y una pregunta fuera de tema devuelve al usuario
  * a las funciones del dispositivo.
  */
 export default function AssistantScreen({ navigation }) {
-  const { events, activities, birthdays, notes, habits, expenses } = useAppData();
+  const { events, activities, birthdays, notes, habits, expenses, addNote, addEvent, addExpense } = useAppData();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const [question, setQuestion] = useState('');
   const [log, setLog] = useState([]);
 
-  const ask = (suggestion) => {
+  /** El .ics lo abre el sistema: la respuesta del chat llega cuando el sheet se cierra. */
+  const shareICS = async () => {
+    const result = await shareAgendaICS(events, { name: 'nexusday-agenda.ics', dialogTitle: 'Compartir agenda' });
+    const problem = describeShareStatus(result?.status);
+    return problem
+      ? { title: 'No se pudo compartir', body: `${problem} También puedes usar “Exportar .ics” en Horario.`, route: 'Horario', routeLabel: 'Abrir horario' }
+      : { title: 'Agenda lista 📤', body: 'Te preparé el archivo .ics con tus eventos. Ábrelo donde quieras.', route: 'Horario', routeLabel: 'Abrir horario' };
+  };
+
+  /**
+   * Una orden ("crea una nota de la reunión") se ejecuta sobre las colecciones; lo demás es
+   * una pregunta y se responde leyendo los datos. Los dos terminan en la misma burbuja.
+   */
+  const ask = async (suggestion) => {
     const value = String(suggestion ?? question).trim();
     if (!value) return;
-    const answer = answerQuestion(value, { events, activities, birthdays, notes, habits, expenses });
-    if (!answer) return;
-    setLog((prev) => [...prev, answer].slice(-8));
+    const command = detectCommand(value);
+    const answer = command
+      ? await applyCommand(command, { addNote, addEvent, addExpense, shareICS })
+      : answerQuestion(value, { events, activities, birthdays, notes, habits, expenses });
+    if (!answer?.title) return;
+    setLog((prev) => [...prev, { id: `a-${Date.now()}`, question: value, ...answer }].slice(-8));
     setQuestion('');
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   };
@@ -50,7 +69,7 @@ export default function AssistantScreen({ navigation }) {
               Nexus AI
             </Text>
             <Text style={[typography.subtitle, styles.headerSubtitle]} numberOfLines={2}>
-              Asistente local: contesta con los datos de tu app, sin conexión ni cuentas.
+              Asistente local: contesta y anota con los datos de tu app, sin conexión ni cuentas.
             </Text>
           </View>
           <Pressable
@@ -81,9 +100,9 @@ export default function AssistantScreen({ navigation }) {
       >
         {log.length === 0 ? (
           <Card accent={colors.accent} style={styles.intro}>
-            <Text style={typography.bodyStrong}>¿Qué querés saber?</Text>
+            <Text style={typography.bodyStrong}>¿Qué quieres saber?</Text>
             <Text style={[typography.small, styles.introText]}>
-              Puedo resumirte el día, decirte cuánto llevás gastado, qué hábitos te faltan o cuándo cumple años
+              Puedo resumirte el día, decirte cuánto llevas gastado, qué hábitos te faltan o cuándo cumple años
               alguien.
             </Text>
           </Card>
@@ -107,7 +126,7 @@ export default function AssistantScreen({ navigation }) {
           </View>
         ))}
 
-        <Text style={styles.suggestionsTitle}>Probá con</Text>
+        <Text style={styles.suggestionsTitle}>Prueba con</Text>
         <ChipScroller horizontal={false}>
           {ASSISTANT_SUGGESTIONS.map((suggestion) => (
             <Chip key={suggestion} label={suggestion} onPress={() => ask(suggestion)} />
@@ -119,7 +138,7 @@ export default function AssistantScreen({ navigation }) {
         <TextInput
           value={question}
           onChangeText={setQuestion}
-          placeholder="Escribí tu pregunta…"
+          placeholder="Escribe tu pregunta…"
           placeholderTextColor={colors.textMuted}
           style={styles.input}
           onSubmitEditing={() => ask()}

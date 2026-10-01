@@ -67,17 +67,17 @@ const REASONS = {
   unsupported: 'Este dispositivo no admite autenticación del sistema.',
   'no-hardware': 'El teléfono no tiene lector de huella ni reconocimiento facial.',
   'not-enrolled': 'No hay huella o rostro configurado: se usará el PIN del teléfono.',
-  'missing-native-module': 'expo-local-authentication necesita una development build.',
+  'missing-native-module': 'expo-local-authentication necesita una versión de desarrollo de la app.',
   cancelled: 'Autenticación cancelada.',
-  fallback: 'No se pudo autenticar. Probá de nuevo.',
-  error: 'Error de autenticación: intentá otra vez.',
+  fallback: 'No se pudo autenticar. Prueba de nuevo.',
+  error: 'Error de autenticación: intenta otra vez.',
 };
 
 /**
  * Shows the native prompt. Resolves `{ ok, reason }` and never throws, so callers can simply
  * branch on `ok`. `disableDeviceFallback: false` keeps the device passcode as the fallback.
  */
-export async function authenticate({ promptMessage = 'Desbloqueá para ver el contenido privado', cancelLabel = 'Cancelar' } = {}) {
+export async function authenticate({ promptMessage = 'Desbloquea para ver el contenido privado', cancelLabel = 'Cancelar' } = {}) {
   const capability = await getCapability();
   // Only "this device cannot authenticate at all" stops here. When there is no biometric
   // enrolled the prompt below is still shown: the OS then asks for the device passcode.
@@ -111,7 +111,7 @@ export async function describeCapability() {
   if (capability.available) return `Activo · ${capability.label}`;
   if (capability.reason === 'not-enrolled') return 'Sin datos biométricos · usará el PIN';
   if (capability.reason === 'unsupported' || capability.reason === 'missing-native-module') {
-    return 'Requiere development build';
+    return 'Requiere una versión de desarrollo';
   }
   return 'Se usará el PIN del teléfono';
 }

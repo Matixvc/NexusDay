@@ -28,6 +28,7 @@ export const KEYS = {
   settings: `${NAMESPACE}/settings`,
   onboarding: `${NAMESPACE}/onboarding`,
   accent: `${NAMESPACE}/accent`,
+  surface: `${NAMESPACE}/surface`,
   userName: `${NAMESPACE}/user_name`,
   tabConfig: `${NAMESPACE}/tab_config`,
 };

@@ -86,6 +86,10 @@ export function buildDashboard({
     .slice()
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
 
+  // Everything the calendar holds for today, over or pending alike: the greeting has to answer
+  // "¿cuánto tengo hoy?", and counting only the weekly schedule ignored every dated event.
+  const todayEvents = events.filter((event) => event.dateKey === today);
+
   const upcomingEvents = events
     .filter((event) => compareDateTime(event, { dateKey: today, time: currentTime }) >= 0)
     .slice()
@@ -122,6 +126,10 @@ export function buildDashboard({
     weekdayLabel: WEEKDAYS[dayIndex].long,
     greeting: greetingForHour(now.getHours()),
     todayActivities,
+    todayEvents,
+    // What the greeting answers with: everything scheduled for today, weekly blocks and dated
+    // events together, whether or not the clock already went past them.
+    todayCommitments: todayActivities.length + todayEvents.length,
     upcomingEvents,
     nextUp,
     pendingHabits: pendingHabits(habits, today),

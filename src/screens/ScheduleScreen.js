@@ -19,8 +19,9 @@ import {
 import { ColorPicker, TextField } from '../components/ui/inputs';
 import { TimeField } from '../components/ui/TimeField';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
-import * as CalendarSync from '../services/calendar';
+import { nextDateKey, shareAgendaICS } from '../services/agendaExport';
 import { describeShareStatus } from '../services/files';
+import { plural } from '../utils/text';
 import {
   WEEKDAYS,
   formatDateLong,
@@ -51,10 +52,10 @@ export default function ScheduleScreen() {
   const [confirmId, setConfirmId] = useState(null);
   const [info, setInfo] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [pushing, setPushing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const calendarAvailable = CalendarSync.isAvailable();
-  const calendarWeeks = 4;
+  /** Weeks of the weekly slot that go into the exported .ics file. */
+  const exportWeeks = 4;
 
   const dayLabel = WEEKDAYS[day].long;
   const isToday = day === todayIndex;
@@ -129,11 +130,11 @@ export default function ScheduleScreen() {
     setSheet(null);
   };
 
-  /** The weekly slot expanded into concrete dates for the next `calendarWeeks` weeks. */
-  const concreteActivities = (weekCount = calendarWeeks) => {
+  /** The weekly slot expanded into concrete dates for the next `exportWeeks` weeks. */
+  const concreteActivities = (weekCount = exportWeeks) => {
     const list = [];
     for (let week = 0; week < weekCount; week += 1) {
-      const dateKey = CalendarSync.nextDateKey(WEEKDAYS[day].dow, new Date(), week);
+      const dateKey = nextDateKey(WEEKDAYS[day].dow, new Date(), week);
       dayActivities.forEach((item) => {
         list.push({
           id: `${item.id}-${dateKey}`,
@@ -148,26 +149,15 @@ export default function ScheduleScreen() {
     return list;
   };
 
-  const pushToCalendar = async () => {
-    setPushing(true);
-    const result = await CalendarSync.syncActivities({
-      activities: dayActivities.map(({ title, start, end, location }) => ({ title, start, end, location })),
-      dayIndex: day,
-      weeks: calendarWeeks,
-    });
-    const message = CalendarSync.describeSyncResult(result);
-    if (result.status === 'ok') setInfo(message);
-    else setNotice(message);
-    setPushing(false);
-  };
-
   const exportICS = async () => {
-    const result = await CalendarSync.shareAgendaICS(concreteActivities(), {
+    setExporting(true);
+    const result = await shareAgendaICS(concreteActivities(), {
       name: `horario-${WEEKDAYS[day].short.toLowerCase()}.ics`,
       dialogTitle: 'Exportar el horario',
     });
     const message = describeShareStatus(result.status);
     if (message) setNotice(message);
+    setExporting(false);
   };
 
   return (
@@ -212,20 +202,15 @@ export default function ScheduleScreen() {
         {dayActivities.length ? (
           <Card accent={colors.accent} style={styles.syncCard}>
             <Text style={[typography.small, styles.syncText]}>
-              {calendarAvailable
-                ? `Pasá las ${dayActivities.length} actividades de los ${dayLabel.toLowerCase()} a tu calendario: se crean las próximas ${calendarWeeks} semanas.`
-                : 'Este dispositivo no expone su calendario; igual podés exportar este día en formato .ics.'}
+              {`Exporta ${plural(dayActivities.length, 'la actividad', 'las actividades')} de los ${dayLabel.toLowerCase()} de las próximas ${exportWeeks} semanas en un archivo .ics, para abrirlo donde quieras.`}
             </Text>
             <View style={styles.syncActions}>
-              {calendarAvailable ? (
-                <PrimaryButton
-                  label={pushing ? 'Añadiendo…' : 'Pasarlo al calendario'}
-                  onPress={pushToCalendar}
-                  disabled={pushing}
-                  style={styles.syncButton}
-                />
-              ) : null}
-              <TextButton label="Exportar .ics" tone="ghost" onPress={exportICS} />
+              <PrimaryButton
+                label={exporting ? 'Exportando…' : 'Exportar .ics'}
+                onPress={exportICS}
+                disabled={exporting}
+                style={styles.syncButton}
+              />
             </View>
           </Card>
         ) : null}
@@ -249,7 +234,7 @@ export default function ScheduleScreen() {
           <EmptyState
             emoji="🗓️"
             title={`Nada el ${dayLabel.toLowerCase()}`}
-            hint="Sumá una materia, un turno o un entrenamiento y se repite todas las semanas en este día."
+            hint="Agrega una materia, un turno o un entrenamiento y se repite todas las semanas en este día."
           />
         ) : (
           dayActivities.map((item) => (

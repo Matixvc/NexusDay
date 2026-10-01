@@ -32,7 +32,7 @@ fully usable offline.
 | 🧭 **Nine swipeable sections** | A custom tab bar you can reorder and hide |
 | 🎙️ **Voice notes** | Record, attach and play audio memos inside a note |
 | 🔐 **Biometric lock** | Face ID / fingerprint / PIN on private notes and expenses |
-| 🧠 **Nexus AI** | An offline intent matcher — no API key, no network |
+| 🧠 **Nexus AI** | Offline Q&A **and commands** — writes notes, events and expenses without an API key or network |
 | 🎨 **4 neon themes** | Switch the accent of the entire UI instantly |
 
 </div>
@@ -122,7 +122,7 @@ cleanly for the active state, scale to any density, and cost ~0 KB of binary siz
 | Files | `expo-file-system` (SDK 57 class API) · `expo-sharing` · `expo-document-picker` |
 | Security | `expo-local-authentication` (Face ID / fingerprint / PIN) |
 | Haptics | `expo-haptics` — wrapped in a never-throwing, no-op-on-failure service |
-| Calendar | `expo-calendar` · `react-native-calendars` |
+| Calendar | `react-native-calendars` — the app never writes to the device calendar |
 | Notifications | `expo-notifications` (with inline completion actions) |
 | Delivery | **EAS Build** (Cloud Native Generation) |
 
@@ -203,12 +203,12 @@ runner, a headless environment).
 | **Interactive onboarding** | 5-step swipeable tutorial; on first run it **wipes the sample data** so you never inherit someone else's schedule. Replayable from Settings without touching your data. | `OnboardingScreen.js` |
 | **Dynamically customizable navigation** | Reorder the 9 tabs and hide the ones you don't use. Home is always pinned first. Hidden tabs stay reachable via global search and can be restored with one tap from a "pin" slot. | `services/tabs.js`, `RootNavigator.js` |
 | **Global search** | One field ranks matches across notes, events, habits and expenses by prefix-match, field weight and recency. Tapping a result navigates **and highlights** the exact item. | `services/search.js`, `useFocusId.js` |
-| **Private notes & expenses** | Per-item biometric lock. Private content is also **excluded from search results, the dashboard and any summary text** — the lock protects the content, not just the record. | `services/privacy.js` |
+| **Private notes & expenses** | Per-item biometric lock. Private content is also **excluded from search results and from any summary text** — the lock protects the content, not just the record. | `services/privacy.js` |
 | **Neon accent modes** | 4 themes, instant runtime repaint via the mutable style registry (see above). Also retints the calendar and navigation themes. | `theme/accents.js`, `theme.js` |
 | **Haptic feedback** | Native tactile response wired through `expo-haptics`: a light impact on primary actions, a selection tick when flipping a switch, a success pulse when a habit is ticked, and a medium impact when a swipe action fires. | `services/haptics.js` |
 | **Voice notes** | Record in-app (mono, 64 kbps, metered level bar), replayed inline with a progress bar. The finished take is moved out of the cache into permanent storage only when accepted. | `hooks/useRecorder.js`, `ui/media.js` |
 | **Swipe gestures** | Swipe a row left/right to pin, lock, share or delete, with an `expo-local-authentication` prompt for destructive actions. | `ui/SwipeRow.js` |
-| **Offline assistant (Nexus AI)** | An intent matcher that answers "¿Qué tengo hoy?" / "¿Cuánto gasté este mes?" from data already on the device. **No API key, no network call** — and the UI says so explicitly. | `services/assistant.js` |
+| **Offline assistant (Nexus AI)** | An intent matcher that answers "¿Qué tengo hoy?" / "¿Cuánto gasté este mes?" from data already on the device, plus a command layer that *writes*: "crea una nota de la reunión", "agenda el médico el martes a las 8:30", "gasté 1.250 en comida" create a note, an event or an expense. **No API key, no network call** — and the UI says so explicitly. When a sentence is ambiguous nothing is written. | `services/assistant.js`, `services/assistantCommands.js` |
 | **Smart notifications** | Reminders re-arm automatically after reboots or app updates, and a "✓ Complete" button in the shade applies the habit tick to the live collection. | `services/reminders.js`, `notifications.js` |
 | **Calendar bridge** | Copies events to the native calendar and exports to `.ics` through the system share sheet. | `services/calendar.js` |
 | **Multi-format money** | Parses `1.234,56` and `1234.56` alike; formats as es-AR (`$ 1.850,50`) while writing machine-readable decimals to exports. | `utils/money.js` |
@@ -408,7 +408,7 @@ risk register — lives in **[`ROADMAP_V1.2.md`](ROADMAP_V1.2.md)**.
   from search results, dashboard aggregates and any summary text.
 - The assistant is a local intent matcher — there is no API key in the repository and no
   request leaves the device.
-- Ejecting the app deletes everything it owns.
+- Uninstalling the app deletes everything it owns.
 
 ---
 

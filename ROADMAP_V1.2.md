@@ -3,7 +3,7 @@
 
 > **Documento estratégico. No aplica cambios en el código.**
 > Base: `v1.1.0` · Expo SDK `~57.0.26` · React Native `0.86.3` · React `19.2.3`
-> Rol: Lead Mobile Architect · Idioma de producto y código: español (es-AR)
+> Rol: Lead Mobile Architect · Idioma de producto: español neutro (tono global, sin voseo)
 
 ---
 
@@ -243,7 +243,7 @@ del producto y con `assistant.js` (que ya es un matcher de intents local, sin AP
 export function buildDailyBriefing({
   events, activities, habits, notes, birthdays, expenses, now = new Date(),
 }) => {
-  headline:   string,     // "Tenés 3 cosas por delante y 1 hábito pendiente"
+  headline:   string,     // "Tienes 3 cosas por delante y 1 hábito pendiente"
   highlights: [{ tone, label, value, route, focusId }],
   priority:   'high' | 'medium' | 'low' | 'calm',
   score:      number,     // 0..100, uso interno para ordenar las reglas
@@ -765,7 +765,7 @@ que hoy tiene **cero** librerías de validación. Devuelve `{ valid, errors, war
 
 - `format === 'nexusday.backup'` — si no, **rechazar**.
 - `version > SUPPORTED_BACKUP_VERSION` → **rechazar con mensaje explícito**
-  ("Creado por una versión más nueva de NexusDay. Actualizá la app para restaurarlo").
+  ("Creado por una versión más nueva de NexusDay. Actualiza la app para restaurarlo").
   Esto evita que un restore parcial destruya datos.
 - Cada colección debe ser un array; cada item debe tener `id` string.
 - Tipos numéricos saneados: `amount` → `Number(x) || 0` (usa `parseAmount` de
@@ -1057,7 +1057,7 @@ Una funcionalidad de v1.2.0 está terminada cuando:
 - [ ] Toda función nueva de `src/services/` es ** pura, sin efectos y testeable de forma aislada.
 - [ ] Todo componente nuevo registra sus estilos con `themedStyles()` para que `applyAccent()` los repinte.
 - [ ] Todo elemento interactivo nuevo tiene `accessibilityRole` y `accessibilityLabel` en español.
-- [ ] La UI está **en español (es-AR)**, con `formatMoney` para importes y `relativeDayLabel` para fechas.
+- [ ] La UI está **en español neutro** (sin voseo ni localismos), con `formatMoney` para importes y `relativeDayLabel` para fechas.
 - [ ] Ningún dato `private: true` aparece en texto compartido, exportación ni resumen.
 - [ ] Los errores de I/O degradan con un `Notice` explicativo, nunca con una pantalla en blanco.
 

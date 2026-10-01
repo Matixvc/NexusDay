@@ -1,37 +1,47 @@
 import { Platform } from 'react-native';
 import { DarkTheme } from '@react-navigation/native';
-import { getAccentTheme } from './accents';
+import { DEFAULT_ACCENT_ID, getAccentTheme, isAccentId, resolveAccent } from './accents';
+import { DEFAULT_SURFACE_ID, findTokenCollisions, getSurfaceMode, isSurfaceId } from './surfaces';
 
 /**
- * `accent`, `accentSoft` and `accentInk` are the only tokens a theme can change, and they
- * are mutated in place by `applyAccent` so every module holding a reference to `colors`
- * (screens, primitives, the navigation theme) picks the new value up.
+ * Which theme is painted right now, and how to repaint it.
+ *
+ * Styles are built once when their module is imported, so switching a theme cannot rebuild
+ * them. Instead every token is a *value* inside the frozen sheets, and `applyTheme` swaps the
+ * old value for the new one in place (`repaint`) while mutating `colors` for the components
+ * that read it during render. That is why the token values of a mode must never repeat: the
+ * swap identifies a property by its colour string, so `warningSoft` sharing `accentSoft`'s
+ * value would repaint the wrong property. `findTokenCollisions` watches that invariant.
  */
-export const colors = {
-  background: '#0a0a0a',
-  elevated: '#101012',
-  surface: '#151518',
-  surfaceAlt: '#1d1d21',
-  surfacePlus: '#27272d',
-  border: '#26262b',
-  borderStrong: '#35353d',
-  text: '#f5f5f7',
-  // Contrast is measured against `background` (#0a0a0a):
-  //   textSecondary #cccccc -> 12.33:1   textMuted #a0a0a0 -> 7.57:1
-  // Both clear WCAG AA (4.5:1) with a wide margin, and they stay above 6:1 even on the
-  // raised panels (#1d1d21). The previous muted grey (#6d6d78) was only 3.87:1 — it failed
-  // AA outright and dropped to 3.29:1 on `surfaceAlt`, which is what made the secondary
-  // copy in the tutorial and the settings captions so hard to read.
-  textSecondary: '#cccccc',
-  textMuted: '#a0a0a0',
-  accent: '#4fd1c5',
-  accentInk: '#04211e',
-  accentSoft: 'rgba(79, 209, 197, 0.13)',
-  danger: '#ff6b6b',
-  dangerSoft: 'rgba(255, 107, 107, 0.12)',
-  warning: '#fbbf24',
-  overlay: 'rgba(0, 0, 0, 0.72)',
-};
+const applied = { accentId: DEFAULT_ACCENT_ID, surfaceId: DEFAULT_SURFACE_ID };
+
+/** The keys `applyTheme` can swap; `overlay`, `palette` and the scales never change per mode. */
+const TOKEN_KEYS = [
+  ...Object.keys(getSurfaceMode(DEFAULT_SURFACE_ID).tokens),
+  'accent',
+  'accentSoft',
+  'accentInk',
+];
+
+function resolveTokens(ids) {
+  const surface = getSurfaceMode(ids.surfaceId);
+  // Only the trio, never the whole accent entry: `alt` and `swatch` are preview decoration and
+  // must not land in `colors`, where a duplicate value would confuse the repaint.
+  const { accent, accentSoft, accentInk } = resolveAccent(getAccentTheme(ids.accentId), surface.id);
+  return { ...surface.tokens, accent, accentSoft, accentInk };
+}
+
+/**
+ * `overlay` is deliberately outside the palettes: a scrim that dims the page behind a sheet
+ * has to stay dark even in light mode, or the sheet loses all separation from the content.
+ */
+export const colors = Object.assign({ overlay: 'rgba(0, 0, 0, 0.72)' }, resolveTokens(applied));
+
+if (__DEV__) {
+  const clashes = findTokenCollisions(colors);
+  if (clashes.length) console.warn(`[theme] tokens duplicados: ${clashes.join(' | ')}`);
+}
+
 
 export const palette = [
   '#4fd1c5',
@@ -140,11 +150,11 @@ export const calendarTheme = {
 };
 
 /**
- * Runtime accent.
+ * Runtime theming.
  *
- * Styles are declared once at import time, so switching the accent cannot rebuild them:
- * every `themedStyles(...)` object is registered here and `applyAccent` repaints the
- * accent-derived values in place.
+ * Styles are declared once at import time, so switching a theme cannot rebuild them: every
+ * `themedStyles(...)` object is registered here and `applyTheme` repaints the token values in
+ * place — the accent trio *and* the whole surface palette (backgrounds, borders, text, scrims).
  *
  * `themedStyles` deliberately does NOT go through `StyleSheet.create`: in `__DEV__` that
  * call freezes every entry (`Object.freeze(obj[key])`), and a frozen style would make the
@@ -159,8 +169,10 @@ export function themedStyles(styles) {
   return styles;
 }
 
-// The navigation and calendar themes are plain objects, not StyleSheets, but they carry
-// the same accent tokens, so they are registered too.
+// Typography and the navigation/calendar themes are plain objects rather than style sheets,
+// but they carry token colours too. Register them all: miss `typography` and the light mode
+// would go on painting white text over white cards.
+styleRegistry.add(typography);
 styleRegistry.add(navigationTheme);
 styleRegistry.add(calendarTheme);
 
@@ -182,21 +194,68 @@ function repaint(node, mapping, depth = 0) {
 }
 
 /**
- * Swaps the accent tokens everywhere: the shared `colors` object (for inline styles read
- * during render) and every registered style object. Returns the resolved theme.
+ * Builds the old-value → new-value table for the swap. A token only needs repainting when its
+ * string actually differs, which is also what lets an accent change leave 60 sheets untouched.
  */
-export function applyAccent(accentId) {
-  const theme = getAccentTheme(accentId);
-  const mapping = {
-    [colors.accent]: theme.accent,
-    [colors.accentSoft]: theme.accentSoft,
-    [colors.accentInk]: theme.accentInk,
-  };
-
-  colors.accent = theme.accent;
-  colors.accentSoft = theme.accentSoft;
-  colors.accentInk = theme.accentInk;
-
-  styleRegistry.forEach((styles) => repaint(styles, mapping));
-  return theme;
+function buildRepaintMap(resolved) {
+  const changes = {};
+  const clashes = [];
+  TOKEN_KEYS.forEach((key) => {
+    const from = colors[key];
+    const to = resolved[key];
+    if (typeof from !== 'string' || typeof to !== 'string' || from === to) return;
+    if (changes[from] && changes[from] !== to) clashes.push(`${key} (${from})`);
+    changes[from] = to;
+  });
+  return { changes, clashes };
 }
+
+/**
+ * Paints a theme — accent and surface together — synchronously: the shared `colors` object,
+ * every registered style sheet and the navigation/calendar themes are all changed before this
+ * returns, so the press that picked the option is the press that shows it. Nothing here waits
+ * for storage, animates, or defers to the next frame.
+ *
+ * Unknown ids are ignored instead of trusted, which is what keeps a stale or corrupted storage
+ * value from blanking the interface.
+ */
+export function applyTheme(patch = {}) {
+  const next = {
+    accentId: isAccentId(patch.accentId) ? patch.accentId : applied.accentId,
+    surfaceId: isSurfaceId(patch.surfaceId) ? patch.surfaceId : applied.surfaceId,
+  };
+  const resolved = resolveTokens(next);
+  const { changes, clashes } = buildRepaintMap(resolved);
+  if (__DEV__ && clashes.length) {
+    console.warn(`[theme] dos tokens comparten color y el repintado es ambiguo: ${clashes.join(' | ')}`);
+  }
+
+  Object.assign(colors, resolved);
+  styleRegistry.forEach((styles) => repaint(styles, changes));
+
+  applied.accentId = next.accentId;
+  applied.surfaceId = next.surfaceId;
+
+  // `dark` is the one thing the colour swap cannot carry: react-navigation reads the flag
+  // itself to decide whether its own defaults go light or dark.
+  navigationTheme.dark = getSurfaceMode(applied.surfaceId).dark;
+  navigationTheme.colors.background = colors.background;
+
+  return { ...applied };
+}
+
+/** Kept for call sites that only know about accents; equivalent to `applyTheme({ accentId })`. */
+export function applyAccent(accentId) {
+  return applyTheme({ accentId });
+}
+
+/** The ids painted right now — what hydration writes back when nothing else changed. */
+export function currentThemeIds() {
+  return { ...applied };
+}
+
+/** The surface the app is painted on: `{ id, label, hint, dark, statusBar, swatch, tokens }`. */
+export function currentSurface() {
+  return getSurfaceMode(applied.surfaceId);
+}
+

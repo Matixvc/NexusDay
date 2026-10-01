@@ -28,13 +28,23 @@ export default function App() {
       <ThemeProvider>
         <AppDataProvider>
           <SwipeLockProvider>
-            <StatusBar style="light" />
+            <AppStatusBar />
             <AppShell />
           </SwipeLockProvider>
         </AppDataProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );
+}
+
+/**
+ * The status bar icons follow the surface: light over graphite and pure black, dark over the
+ * white mode. `animated={false}` because a theme swap is meant to land in the same frame as
+ * the rest of the interface rather than fade into it.
+ */
+function AppStatusBar() {
+  const { statusBar } = useAccentTheme();
+  return <StatusBar style={statusBar} animated={false} />;
 }
 
 /**

@@ -15,7 +15,7 @@ import { formatBytes } from '../../services/files';
  * instead of crashing the screen with a hook that cannot resolve.
  */
 
-const UNAVAILABLE = 'La grabación de audio requiere una development build con expo-audio.';
+const UNAVAILABLE = 'La grabación de audio requiere una versión de desarrollo de la app con expo-audio.';
 
 /**
  * Grabar → detener → guardar. `value` is the descriptor stored on the note
@@ -79,7 +79,7 @@ function VoiceRecorderControls({ label, value, onChange, prefix, hint }) {
               ? formatSeconds(recorder.durationMs / 1000)
               : attached
                 ? `${formatSeconds((Number(attached.durationMs) || 0) / 1000)} · ${formatBytes(attached.size)}`
-                : 'La nota se guarda dentro del app'}
+                : 'La nota se guarda dentro de la app'}
           </Text>
         </View>
 

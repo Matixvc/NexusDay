@@ -23,3 +23,14 @@ export function oneLine(text, max = 80) {
   const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
+
+/**
+ * `plural(1, 'día', 'días')` → `1 día`, `plural(3, 'día', 'días')` → `3 días`.
+ *
+ * Exists so the UI never shows `1 cosa(s)`: every count gets the noun it deserves. The third
+ * argument may be omitted when adding an `s` is enough.
+ */
+export function plural(count, singular, pluralWord) {
+  const total = Number(count) || 0;
+  return `${total} ${total === 1 ? singular : pluralWord ?? `${singular}s`}`;
+}

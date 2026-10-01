@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
-import { ACCENT_THEMES } from '../theme/accents';
+import { ACCENT_THEMES, getAccentTheme, resolveAccent } from '../theme/accents';
+import { SURFACE_MODES, getSurfaceMode } from '../theme/surfaces';
 import { isLockedTab, tabByName } from '../navigation/tabs';
 import { DEFAULT_TAB_CONFIG, moveTab, setTabHidden } from '../services/tabs';
 import { authenticate, describeCapability, describePrivacyFailure } from '../services/privacy';
 import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButton } from '../components/ui/primitives';
-import { PickerTrigger, TextField } from '../components/ui/inputs';
-import { ConfirmSheet, OptionSheet } from '../components/ui/Sheet';
+import { TextField } from '../components/ui/inputs';
+import { ConfirmSheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
+import { plural } from '../utils/text';
 import {
   FOLDERS,
   clearFolder,
@@ -25,19 +27,10 @@ import {
   getMicrophonePermission,
   requestMicrophonePermission,
 } from '../services/audio';
-import {
-  describeCalendarStatus,
-  forgetCalendars,
-  getPermission as getCalendarPermission,
-  isAvailable as calendarAvailable,
-  listCalendarOptions,
-  requestPermission as requestCalendarPermission,
-  setPreferredCalendar,
-} from '../services/calendar';
 
 const PERMISSION_TONE = { granted: 'accent', unknown: 'neutral', denied: 'warning' };
 
-/** Nombre configurado en app.json (el app se puede renombrar sin tocar la copia). */
+/** Nombre configurado en app.json (la app se puede renombrar sin tocar la copia). */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 function permissionPill(permission, labels) {
@@ -48,7 +41,7 @@ function permissionPill(permission, labels) {
 }
 
 export default function SettingsScreen() {
-  const { accentId, setAccentId } = useAccentTheme();
+  const { accentId, setAccentId, surfaceId, setSurfaceId } = useAccentTheme();
   const {
     activities,
     events,
@@ -79,9 +72,6 @@ export default function SettingsScreen() {
   // `nameDraft` stays null until the user types, so the persisted name appears as soon as
   // the context hydrates without an effect that mirrors state into state.
   const [nameDraft, setNameDraft] = useState(null);
-  const [calendarPermission, setCalendarPermission] = useState(null);
-  const [calendars, setCalendars] = useState([]);
-  const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
   const [micPermission, setMicPermission] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -107,16 +97,9 @@ export default function SettingsScreen() {
 
   /** Fires the native prompt once, so the user can verify the lock before relying on it. */
   const testPrivacy = async () => {
-    const result = await authenticate({ promptMessage: 'Probá el desbloqueo de NexusDay' });
+    const result = await authenticate({ promptMessage: 'Prueba el desbloqueo de NexusDay' });
     setPrivacyNotice(result.ok ? 'Autenticación correcta.' : describePrivacyFailure(result.reason));
   };
-
-  const loadCalendar = useCallback(async () => {
-    if (!calendarAvailable()) return;
-    const [current, options] = await Promise.all([getCalendarPermission(), listCalendarOptions()]);
-    setCalendarPermission(current);
-    setCalendars(options);
-  }, []);
 
   /** Async on purpose: keeps the size read out of the effect's synchronous body. */
   const refreshStorage = useCallback(async () => {
@@ -137,12 +120,11 @@ export default function SettingsScreen() {
       const mic = await getMicrophonePermission();
       if (!alive) return;
       setMicPermission(mic);
-      await loadCalendar();
     })();
     return () => {
       alive = false;
     };
-  }, [loadCalendar, refreshStorage]);
+  }, [refreshStorage]);
 
   /**
    * Writes the name to its single source of truth and echoes it into the settings blob.
@@ -161,25 +143,6 @@ export default function SettingsScreen() {
   const askNotifications = async () => {
     await requestNotifications();
     setInfo('Estado de avisos actualizado.');
-  };
-
-  const askCalendar = async () => {
-    const result = await requestCalendarPermission();
-    setCalendarPermission(result);
-    if (result.granted) {
-      forgetCalendars();
-      await loadCalendar();
-      setInfo('Acceso al calendario concedido.');
-    } else {
-      setNotice(describeCalendarStatus(result.status, result.canAskAgain));
-    }
-  };
-
-  const chooseCalendar = (calendarId) => {
-    setPreferredCalendar(calendarId);
-    updateSettings({ preferredCalendarId: calendarId });
-    const chosen = calendars.find((item) => item.id === calendarId);
-    setInfo(chosen ? `Los eventos nuevos se van a guardar en ${chosen.title}.` : null);
   };
 
   const askMicrophone = async () => {
@@ -202,7 +165,6 @@ export default function SettingsScreen() {
   };
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
-  const preferred = calendars.find((item) => item.id === settings?.preferredCalendarId);
   const storageTotal = storage ? storage.attachments + storage.recordings + storage.exports : 0;
   const totalItems =
     activities.length + events.length + birthdays.length + notes.length + habits.length + expenses.length;
@@ -240,14 +202,18 @@ export default function SettingsScreen() {
           <TextButton label="Guardar saludo" onPress={saveName} />
         </Card>
 
-        <SectionTitle title="Tema" count={ACCENT_THEMES.length} />
+        <SectionTitle title="Tema" count={ACCENT_THEMES.length + SURFACE_MODES.length} />
         <Card style={styles.card}>
+          <Text style={styles.fieldLabel}>Acento</Text>
           <Text style={typography.caption}>
             El acento tiñe botones, la solapa activa, los chips y el calendario. Se guarda en el
-            dispositivo y se aplica al instante.
+            dispositivo y se aplica al instante, con el mismo toque.
           </Text>
           <View style={styles.themeGrid}>
             {ACCENT_THEMES.map((option) => {
+              // The preview shows the variant the accent actually takes on the current surface:
+              // promising a mint chip and delivering a dark teal one would be a lie.
+              const preview = resolveAccent(option, surfaceId);
               const selected = option.id === accentId;
               return (
                 <Pressable
@@ -258,12 +224,12 @@ export default function SettingsScreen() {
                   accessibilityLabel={`${option.label}. ${option.hint}`}
                   style={({ pressed }) => [
                     styles.themeCard,
-                    selected ? { borderColor: option.accent } : null,
+                    selected ? { borderColor: preview.accent } : null,
                     pressed ? styles.pressed : null,
                   ]}
                 >
                   <View style={styles.themeSwatches}>
-                    <View style={[styles.themeSwatch, { backgroundColor: option.accent }]} />
+                    <View style={[styles.themeSwatch, { backgroundColor: preview.accent }]} />
                     <View style={[styles.themeSwatch, styles.themeSwatchAlt, { backgroundColor: option.alt }]} />
                   </View>
                   <Text style={styles.themeLabel} numberOfLines={1}>
@@ -276,6 +242,56 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.fieldLabel}>Modo de pantalla</Text>
+          <Text style={typography.caption}>
+            El fondo sobre el que se pinta todo lo demás. Negro puro deja los píxeles apagados en
+            las pantallas AMOLED; claro es blanco real, con textos oscuros de verdad.
+          </Text>
+          <View style={styles.surfaceRow}>
+            {SURFACE_MODES.map((mode) => {
+              const selected = mode.id === surfaceId;
+              return (
+                <Pressable
+                  key={mode.id}
+                  onPress={() => setSurfaceId(mode.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${mode.label}. ${mode.hint}`}
+                  style={({ pressed }) => [
+                    styles.surfaceCard,
+                    selected ? { borderColor: colors.accent } : null,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  {/* The miniature is painted with the *previewed* mode's own tokens, which is
+                      the one place a colour may be read straight off the palette: it has to show
+                      what the screen would look like, not what it currently looks like. */}
+                  <View
+                    style={[
+                      styles.surfacePreview,
+                      { backgroundColor: mode.tokens.background, borderColor: mode.tokens.border },
+                    ]}
+                  >
+                    <View style={[styles.surfaceBar, { backgroundColor: mode.tokens.text }]} />
+                    <View
+                      style={[
+                        styles.surfaceBar,
+                        styles.surfaceBarShort,
+                        { backgroundColor: resolveAccent(getAccentTheme(accentId), mode.id).accent },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.surfaceLabel} numberOfLines={1}>
+                    {mode.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={typography.caption}>{getSurfaceMode(surfaceId).hint}</Text>
         </Card>
 
         <SectionTitle title="Permisos" />
@@ -303,38 +319,6 @@ export default function SettingsScreen() {
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Calendario del teléfono</Text>
-              <Text style={typography.caption}>Copia tus eventos a la app Calendario.</Text>
-            </View>
-            {permissionPill(
-              calendarAvailable() ? calendarPermission : { status: 'unsupported', granted: false, canAskAgain: false },
-              { granted: 'Conectado', missing: 'Sin permiso', blocked: 'Bloqueado' },
-            )}
-          </View>
-          <PickerTrigger
-            label="Calendario destino"
-            value={preferred?.title}
-            placeholder={calendarAvailable() ? 'Automático (recomendado)' : 'No disponible'}
-            onPress={() => setCalendarSheetOpen(true)}
-          />
-          <View style={styles.actions}>
-            {calendarAvailable() && !calendarPermission?.granted ? (
-              <PrimaryButton label="Permitir acceso" onPress={askCalendar} style={styles.actionButton} />
-            ) : null}
-            <TextButton
-              label="Recargar"
-              tone="ghost"
-              onPress={() => {
-                forgetCalendars();
-                loadCalendar();
-              }}
-            />
-          </View>
-        </Card>
-
-        <Card style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Micrófono</Text>
               <Text style={typography.caption}>Necesario para las notas de voz.</Text>
             </View>
@@ -354,7 +338,7 @@ export default function SettingsScreen() {
             <Stat value={formatBytes(storage?.exports || 0)} label="Exportados" />
           </View>
           <Text style={typography.caption}>
-            Los adjuntos y las notas de voz viven en el sandbox del app; los archivos exportados (.ics) son
+            Los adjuntos y las notas de voz viven en el almacenamiento interno de la app; los archivos exportados (.ics) son
             temporales y se pueden borrar sin riesgo.
           </Text>
           <View style={styles.actions}>
@@ -366,12 +350,12 @@ export default function SettingsScreen() {
         <SectionTitle title="Datos locales" count={totalItems} />
         <Card style={styles.card}>
           <View style={styles.pillWrap}>
-            <Pill label={`${activities.length} actividades`} />
-            <Pill label={`${events.length} eventos`} />
-            <Pill label={`${birthdays.length} cumpleaños`} />
-            <Pill label={`${notes.length} notas`} />
-            <Pill label={`${habits.length} hábitos`} />
-            <Pill label={`${expenses.length} gastos`} />
+            <Pill label={plural(activities.length, 'actividad')} />
+            <Pill label={plural(events.length, 'evento')} />
+            <Pill label={plural(birthdays.length, 'cumpleaños')} />
+            <Pill label={plural(notes.length, 'nota')} />
+            <Pill label={plural(habits.length, 'hábito')} />
+            <Pill label={plural(expenses.length, 'gasto')} />
           </View>
           <Text style={typography.caption}>
             Todo se guarda en el teléfono con AsyncStorage: no hay cuentas, servidores ni sincronización en la nube.
@@ -382,7 +366,7 @@ export default function SettingsScreen() {
         <SectionTitle title="Personalizar Navegación" count={tabConfig.order.length} />
         <Card style={styles.card}>
           <Text style={typography.caption}>
-            Reordená las solapas con las flechas y apagá las que no uses. Inicio y Ajustes quedan fijos con
+            Reordena las solapas con las flechas y apaga las que no uses. Inicio y Ajustes quedan fijos con
             candado: son la única forma de volver atrás y de deshacer estos cambios. Las ocultas siguen
             accesibles desde la búsqueda global de Inicio.
           </Text>
@@ -469,7 +453,7 @@ export default function SettingsScreen() {
             <PrimaryButton label="Probar autenticación" onPress={testPrivacy} style={styles.actionButton} />
           </View>
           <Text style={typography.caption}>
-            Se usa la autenticación del propio teléfono (huella, Face ID o PIN): el app nunca guarda datos
+            Se usa la autenticación del propio teléfono (huella, Face ID o PIN): la app nunca guarda datos
             biométricos.
           </Text>
         </Card>
@@ -499,26 +483,11 @@ export default function SettingsScreen() {
             <Pill label="Local-first" tone="accent" />
           </View>
           <Text style={[typography.caption, styles.aboutText]}>
-            La grabación de voz, el calendario y los avisos usan módulos nativos, así que el app necesita una
-            development build (npx expo run:android o eas build --profile development) para esas funciones.
+            La grabación de voz y los avisos usan módulos nativos, así que la app necesita una
+            versión de desarrollo (npx expo run:android o eas build --profile development) para esas funciones.
           </Text>
         </Card>
       </Screen>
-
-      <OptionSheet
-        visible={calendarSheetOpen}
-        onClose={() => setCalendarSheetOpen(false)}
-        title="Calendario destino"
-        options={[
-          { label: 'Automático (recomendado)', value: '' },
-          ...calendars.map((item) => ({
-            label: item.primary ? `${item.title} · principal` : item.title,
-            value: item.id,
-          })),
-        ]}
-        value={settings?.preferredCalendarId || ''}
-        onSelect={chooseCalendar}
-      />
 
       <ConfirmSheet
         visible={confirmWipe}
@@ -559,6 +528,29 @@ const styles = themedStyles({
   themeSwatch: { width: 18, height: 18, borderRadius: radius.pill },
   themeSwatchAlt: { width: 10, height: 10 },
   themeLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
+  // Surface picker: three miniature screens side by side, wide enough to read the label under
+  // them and narrow enough to stay on one line on a 320 dp phone.
+  surfaceRow: { flexDirection: 'row', gap: spacing.sm },
+  surfaceCard: {
+    flex: 1,
+    minWidth: 92,
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  surfacePreview: {
+    height: 46,
+    gap: spacing.xs,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+  },
+  surfaceBar: { height: 5, width: '70%', borderRadius: radius.pill },
+  surfaceBarShort: { width: '42%' },
+  surfaceLabel: { ...typography.bodyStrong, fontSize: 12.5, color: colors.text },
   tabRow: {
     flexDirection: 'row',
     alignItems: 'center',
