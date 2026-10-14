@@ -102,7 +102,10 @@ const styles = themedStyles({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
   },
-  leading: { width: 22, height: 22 },
+  // The leading slot is a fixed square that centres the glyph on both axes. A fixed width
+  // alone left the magnifier riding high (it carries a negative offset in TabGlyphs), which
+  // read as a stray dot detached from the field; centring the box removes any drift.
+  leading: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, fontSize: 15, color: colors.text, minHeight: 48, paddingVertical: spacing.md },
   clear: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.65 },

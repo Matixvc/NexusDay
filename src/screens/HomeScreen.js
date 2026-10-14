@@ -168,7 +168,7 @@ export default function HomeScreen({ navigation }) {
         <SearchField
           value={query}
           onChangeText={setQuery}
-          placeholder="Buscar en notas, eventos, hábitos y gastos"
+          placeholder="Buscar notas, asignaturas, eventos o gastos..."
         />
 
         {searching ? (

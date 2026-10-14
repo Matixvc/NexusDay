@@ -18,7 +18,7 @@ const AppDataContext = createContext(null);
 
 const UNKNOWN_PERMISSION = { status: 'unknown', granted: false, canAskAgain: true, checked: false };
 
-const DEFAULT_SETTINGS = { displayName: '', privacyEnabled: true };
+const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true };
 
 /**
  * First-run tutorial.
@@ -167,10 +167,10 @@ export function AppDataProvider({ children }) {
   // were saved before permission was granted. Runs once per session, after
   // hydration, and retries when permission flips to granted.
   const resyncedOnce = useRef(false);
-  const pendingRef = useRef({ events: [], birthdays: [] });
+  const pendingRef = useRef({ events: [], birthdays: [], activities: [] });
 
   useEffect(() => {
-    pendingRef.current = { events: events.items, birthdays: birthdays.items };
+    pendingRef.current = { events: events.items, birthdays: birthdays.items, activities: activities.items };
   });
 
   const allHydrated =
@@ -220,18 +220,19 @@ export function AppDataProvider({ children }) {
 
     let active = true;
     resyncReminders({ ...pendingRef.current, habits: habits.items }).then(
-      ({ eventPatches, birthdayPatches, habitPatches }) => {
+      ({ eventPatches, birthdayPatches, habitPatches, activityPatches = [] }) => {
         if (!active) return;
         eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
         birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
         habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
+        activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
       },
     );
 
     return () => {
       active = false;
     };
-  }, [allHydrated, permission.granted, events, birthdays, habits]);
+  }, [allHydrated, permission.granted, events, birthdays, habits, activities]);
 
   const value = useMemo(
     () => ({

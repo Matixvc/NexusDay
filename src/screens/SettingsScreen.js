@@ -13,7 +13,9 @@ import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButt
 import { TextField } from '../components/ui/inputs';
 import { ConfirmSheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
-import { plural } from '../utils/text';
+import { Accordion } from '../components/ui/Accordion';
+import { initials } from '../utils/initials';
+import { tap as tapHaptic, select as selectHaptic } from '../services/haptics';
 import {
   FOLDERS,
   clearFolder,
@@ -40,6 +42,16 @@ function permissionPill(permission, labels) {
   return <Pill label={label} tone={tone} />;
 }
 
+/** "Nunca" o una fecha legible del último respaldo de Google (epoch ms → texto). */
+function formatSyncDate(timestamp) {
+  if (!timestamp) return 'Nunca';
+  const d = new Date(Number(timestamp));
+  if (Number.isNaN(d.getTime())) return 'Nunca';
+  const date = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${date} · ${time}`;
+}
+
 export default function SettingsScreen() {
   const { accentId, setAccentId, surfaceId, setSurfaceId } = useAccentTheme();
   const {
@@ -58,7 +70,6 @@ export default function SettingsScreen() {
     tabConfig,
     setTabConfig,
     permission,
-    refreshPermission,
     requestNotifications,
     notificationsSupported,
   } = useAppData();
@@ -72,6 +83,7 @@ export default function SettingsScreen() {
   // `nameDraft` stays null until the user types, so the persisted name appears as soon as
   // the context hydrates without an effect that mirrors state into state.
   const [nameDraft, setNameDraft] = useState(null);
+  const [careerDraft, setCareerDraft] = useState(null);
   const [micPermission, setMicPermission] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -79,6 +91,17 @@ export default function SettingsScreen() {
 
   const name = nameDraft ?? userName ?? '';
   const setName = setNameDraft;
+  const career = careerDraft ?? settings?.career ?? '';
+  const setCareer = setCareerDraft;
+
+  // Estado del ecosistema Google (interfaz preparada): conexión, última sincronización y si el
+  // respaldo de notas en Drive/Keep está vinculado. Sin backend real; se persiste en settings
+  // para que la tarjeta muestre un estado coherente entre sesiones.
+  const google = {
+    connected: Boolean(settings?.googleConnected),
+    lastSync: settings?.googleLastSync || null,
+    drive: Boolean(settings?.googleDrive),
+  };
 
   // expo-file-system's folder helpers are synchronous, so they are read once and refreshed
   // explicitly (cleanup button) instead of on every render.
@@ -136,9 +159,38 @@ export default function SettingsScreen() {
   const saveName = () => {
     const next = name.trim();
     setUserName(next);
-    updateSettings({ displayName: next });
+    updateSettings({ displayName: next, career: career.trim() });
     setInfo(next ? `Listo, te voy a saludar como ${next}.` : 'Se quitó el nombre del saludo.');
   };
+
+  /** Guarda solo la carrera/ocupación, sin tocar el nombre del saludo. */
+  const saveCareer = () => {
+    updateSettings({ career: career.trim() });
+    setInfo(career.trim() ? 'Carrera guardada.' : 'Se quitó la carrera.');
+  };
+
+  /**
+   * Conecta o desconecta la cuenta de Google (interfaz preparada). No hay backend: el estado
+   * se guarda en `settings` para que la tarjeta refleje la elección entre sesiones. Al conectar
+   * se sella la fecha de esta "sincronización".
+   */
+  const toggleGoogle = useCallback(() => {
+    tapHaptic();
+    if (google.connected) {
+      updateSettings({ googleConnected: false, googleLastSync: null, googleDrive: false });
+      setInfo('Se desconectó la cuenta de Google.');
+    } else {
+      updateSettings({ googleConnected: true, googleLastSync: Date.now(), googleDrive: google.drive });
+      setInfo('Cuenta de Google vinculada (demostración).');
+    }
+  }, [google.connected, google.drive, updateSettings]);
+
+  /** "Sincronizar ahora": sella la fecha del último respaldo y da feedback. */
+  const syncNow = useCallback(() => {
+    tapHaptic();
+    updateSettings({ googleConnected: true, googleLastSync: Date.now() });
+    setInfo('Sincronización completada (demostración).');
+  }, [updateSettings]);
 
   const askNotifications = async () => {
     await requestNotifications();
@@ -189,8 +241,28 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
+        {/* ── Perfil enriquecido ─────────────────────────────────────────────────────── */}
         <SectionTitle title="Perfil" />
         <Card style={styles.card}>
+          <View style={styles.profileRow}>
+            <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+              <Text style={[styles.avatarText, { color: colors.accentInk }]}>{initials(name, 'N')}</Text>
+            </View>
+            <View style={styles.profileBody}>
+              <Text style={typography.bodyStrong} numberOfLines={1}>
+                {name.trim() || 'Sin nombre aún'}
+              </Text>
+              <Text style={typography.caption} numberOfLines={1}>
+                {career.trim() || 'Agrega tu carrera u ocupación'}
+              </Text>
+              <View style={styles.pillWrap}>
+                <Pill label={`${notes.length} notas`} />
+                <Pill label={`${events.length} eventos`} />
+                <Pill label={`${habits.length} hábitos`} />
+              </View>
+            </View>
+          </View>
+
           <TextField
             label="¿Cómo te llamo?"
             value={name}
@@ -199,7 +271,67 @@ export default function SettingsScreen() {
             maxLength={20}
             onSubmitEditing={saveName}
           />
-          <TextButton label="Guardar saludo" onPress={saveName} />
+          <TextField
+            label="Carrera u ocupación"
+            value={career}
+            onChangeText={setCareer}
+            placeholder="Ej. Ingeniería en Sistemas"
+            maxLength={40}
+            onSubmitEditing={saveCareer}
+          />
+          <TextButton label="Guardar perfil" onPress={saveName} />
+        </Card>
+
+        {/* ── Ecosistema Google (interfaz preparada) ────────────────────────────────── */}
+        <SectionTitle title="Cuenta y Sincronización con Google" />
+        <Card style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Estado de la cuenta</Text>
+              <Text style={typography.caption}>
+                {google.connected
+                  ? 'Vinculada · sincroniza Google Calendar y respalda notas en Drive/Keep.'
+                  : 'Sin vincular. Conecta para sincronizar tu agenda y respaldar tus notas.'}
+              </Text>
+            </View>
+            <Pill label={google.connected ? 'Conectada' : 'Desconectada'} tone={google.connected ? 'accent' : 'neutral'} />
+          </View>
+
+          <View style={styles.rowBetween}>
+            <Text style={typography.small}>Último respaldo</Text>
+            <Text style={[typography.small, styles.strong]}>{formatSyncDate(google.lastSync)}</Text>
+          </View>
+
+          <View style={styles.actions}>
+            <PrimaryButton
+              label={google.connected ? 'Desvincular cuenta' : 'Vincular con Google'}
+              onPress={toggleGoogle}
+              style={styles.actionButton}
+            />
+            {google.connected ? (
+              <TextButton label="Sincronizar ahora" tone="ghost" onPress={syncNow} />
+            ) : null}
+          </View>
+
+          {google.connected ? (
+            <View style={styles.privateRow}>
+              <View style={styles.privateBody}>
+                <Text style={typography.bodyStrong}>Respaldar notas en Drive / Keep</Text>
+                <Text style={styles.privateHint}>Guarda una copia de tus notas en la nube.</Text>
+              </View>
+              <Switch
+                value={google.drive}
+                onValueChange={(value) => updateSettings({ googleDrive: value })}
+                label="Respaldar notas"
+                hideLabel
+              />
+            </View>
+          ) : null}
+
+          <Text style={typography.caption}>
+            Módulo en preparación: la vinculación real llegará en una próxima versión. Por ahora tus
+            datos se guardan solo en este dispositivo.
+          </Text>
         </Card>
 
         <SectionTitle title="Tema" count={ACCENT_THEMES.length + SURFACE_MODES.length} />
@@ -218,7 +350,11 @@ export default function SettingsScreen() {
               return (
                 <Pressable
                   key={option.id}
-                  onPress={() => setAccentId(option.id)}
+                  onPress={() => {
+                    // El mismo toque que los demás selectores de Ajustes.
+                    selectHaptic();
+                    setAccentId(option.id);
+                  }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   accessibilityLabel={`${option.label}. ${option.hint}`}
@@ -256,7 +392,11 @@ export default function SettingsScreen() {
               return (
                 <Pressable
                   key={mode.id}
-                  onPress={() => setSurfaceId(mode.id)}
+                  onPress={() => {
+                    // El mismo toque que el selector de acento.
+                    selectHaptic();
+                    setSurfaceId(mode.id);
+                  }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   accessibilityLabel={`${mode.label}. ${mode.hint}`}
@@ -294,72 +434,102 @@ export default function SettingsScreen() {
           <Text style={typography.caption}>{getSurfaceMode(surfaceId).hint}</Text>
         </Card>
 
-        <SectionTitle title="Permisos" />
-        <Card style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Notificaciones</Text>
-              <Text style={typography.caption}>Avisos de eventos, clases y cumpleaños.</Text>
-            </View>
-            {permissionPill(
-              notificationsSupported
-                ? { status: permission.checked ? permission.status : 'unknown', granted: permission.granted, canAskAgain: permission.canAskAgain }
-                : { status: 'unsupported', granted: false, canAskAgain: false },
-              { granted: 'Activas', missing: 'Sin activar', blocked: 'Bloqueadas' },
-            )}
-          </View>
-          <View style={styles.actions}>
-            {notificationsSupported && !permission.granted ? (
-              <PrimaryButton label="Permitir" onPress={askNotifications} style={styles.actionButton} />
-            ) : null}
-            <TextButton label="Revisar estado" tone="ghost" onPress={refreshPermission} />
-          </View>
-        </Card>
-
-        <Card style={styles.card}>
+        {/* ── Permisos y Seguridad (acordeón) ───────────────────────────────────────── */}
+        <SectionTitle title="Permisos y Seguridad" />
+        <Accordion title="Permisos del sistema" subtitle="Micrófono, notificaciones, calendario y ubicación." icon="🔐" defaultOpen>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Micrófono</Text>
               <Text style={typography.caption}>Necesario para las notas de voz.</Text>
             </View>
-            {permissionPill(micPermission, { granted: 'Listo', missing: 'Sin permiso', blocked: 'Bloqueado' })}
+            <View style={styles.permissionRight}>
+              {permissionPill(micPermission, { granted: 'Activo', missing: 'Inactivo', blocked: 'Bloqueado' })}
+              {!micPermission?.granted ? (
+                <TextButton label="Permitir" tone="ghost" onPress={askMicrophone} />
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Notificaciones</Text>
+              <Text style={typography.caption}>Avisos de eventos, clases y cumpleaños.</Text>
+            </View>
+            <View style={styles.permissionRight}>
+              {permissionPill(
+                notificationsSupported
+                  ? { status: permission.checked ? permission.status : 'unknown', granted: permission.granted, canAskAgain: permission.canAskAgain }
+                  : { status: 'unsupported', granted: false, canAskAgain: false },
+                { granted: 'Activo', missing: 'Inactivo', blocked: 'Bloqueado' },
+              )}
+              {notificationsSupported && !permission.granted ? (
+                <TextButton label="Permitir" tone="ghost" onPress={askNotifications} />
+              ) : null}
+            </View>
+          </View>
+
+          {/* Calendario y ubicación no se usan aún: se muestran como "no gestionadas" con la UI
+              lista, sin dependencias nativas nuevas. */}
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Calendario</Text>
+              <Text style={typography.caption}>Aún no lo usa NexusDay.</Text>
+            </View>
+            <Pill label="Inactivo" tone="neutral" />
+          </View>
+
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Ubicación</Text>
+              <Text style={typography.caption}>Aún no la usa NexusDay.</Text>
+            </View>
+            <Pill label="Inactivo" tone="neutral" />
+          </View>
+        </Accordion>
+
+        <Accordion title="Desbloqueo biométrico" subtitle={privacyLabel} icon="🛡️">
+          {privacyNotice ? <Notice text={privacyNotice} /> : null}
+          <View style={styles.privateRow}>
+            <View style={styles.privateBody}>
+              <Text style={typography.bodyStrong}>Pedir huella, rostro o PIN</Text>
+              <Text style={styles.privateHint}>Al abrir notas y gastos marcados como privados.</Text>
+            </View>
+            <Switch
+              value={Boolean(settings.privacyEnabled)}
+              onValueChange={(value) => updateSettings({ privacyEnabled: value })}
+              label="Desbloqueo biométrico"
+              hideLabel
+            />
           </View>
           <View style={styles.actions}>
-            {!micPermission?.granted ? (
-              <PrimaryButton label="Permitir" onPress={askMicrophone} style={styles.actionButton} />
-            ) : null}
+            <PrimaryButton label="Probar autenticación" onPress={testPrivacy} style={styles.actionButton} />
           </View>
-        </Card>
-        <SectionTitle title="Almacenamiento" count={formatBytes(storageTotal)} />
+        </Accordion>
+
+        {/* ── Gestión de Datos y Almacenamiento (unificada) ─────────────────────────── */}
+        <SectionTitle title="Gestión de Datos y Almacenamiento" count={totalItems} />
         <Card style={styles.card}>
           <View style={styles.statsRow}>
             <Stat value={formatBytes(storage?.attachments || 0)} label="Adjuntos" />
             <Stat value={formatBytes(storage?.recordings || 0)} label="Notas de voz" />
-            <Stat value={formatBytes(storage?.exports || 0)} label="Exportados" />
+            <Stat value={formatBytes(storageTotal)} label="Peso total" />
+          </View>
+          <View style={styles.pillWrap}>
+            <Pill label={`${activities.length} actividades`} />
+            <Pill label={`${events.length} eventos`} />
+            <Pill label={`${birthdays.length} cumpleaños`} />
+            <Pill label={`${notes.length} notas`} />
+            <Pill label={`${habits.length} hábitos`} />
+            <Pill label={`${expenses.length} gastos`} />
           </View>
           <Text style={typography.caption}>
-            Los adjuntos y las notas de voz viven en el almacenamiento interno de la app; los archivos exportados (.ics) son
-            temporales y se pueden borrar sin riesgo.
+            Todo se guarda en el teléfono con AsyncStorage: no hay cuentas ni servidores. Los adjuntos
+            y las notas de voz viven en el almacenamiento interno de la app.
           </Text>
           <View style={styles.actions}>
             <PrimaryButton label="Limpiar exportados" onPress={clearExports} style={styles.actionButton} />
             <TextButton label="Recalcular" tone="ghost" onPress={refreshStorage} />
           </View>
-        </Card>
-
-        <SectionTitle title="Datos locales" count={totalItems} />
-        <Card style={styles.card}>
-          <View style={styles.pillWrap}>
-            <Pill label={plural(activities.length, 'actividad')} />
-            <Pill label={plural(events.length, 'evento')} />
-            <Pill label={plural(birthdays.length, 'cumpleaños')} />
-            <Pill label={plural(notes.length, 'nota')} />
-            <Pill label={plural(habits.length, 'hábito')} />
-            <Pill label={plural(expenses.length, 'gasto')} />
-          </View>
-          <Text style={typography.caption}>
-            Todo se guarda en el teléfono con AsyncStorage: no hay cuentas, servidores ni sincronización en la nube.
-          </Text>
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
@@ -423,41 +593,6 @@ export default function SettingsScreen() {
           <TextButton label="Restablecer barra" tone="ghost" onPress={() => setTabConfig(DEFAULT_TAB_CONFIG)} />
         </Card>
 
-        <SectionTitle title="Seguridad" />
-        <Card style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Seguridad biométrica / PIN</Text>
-              <Text style={typography.caption}>{privacyLabel}</Text>
-            </View>
-            <Pill label="Nativo" tone="accent" />
-          </View>
-          <View style={styles.privateRow}>
-            <View style={styles.privateBody}>
-              <Text style={typography.bodyStrong}>Pedir desbloqueo al abrir privados</Text>
-              <Text style={[typography.caption, styles.privateHint]}>
-                Las notas y los gastos marcados con 🔒 se abren solo después de la autenticación del sistema.
-              </Text>
-            </View>
-              <Switch
-                value={settings?.privacyEnabled !== false}
-                onValueChange={(value) => updateSettings({ privacyEnabled: value })}
-                // The title above already names the control; repeating it as visible text is
-                // what made the row cramped. The label stays for screen readers.
-                hideLabel
-                label="Pedir desbloqueo al abrir privados"
-              />
-          </View>
-          {privacyNotice ? <Notice text={privacyNotice} /> : null}
-          <View style={styles.actions}>
-            <PrimaryButton label="Probar autenticación" onPress={testPrivacy} style={styles.actionButton} />
-          </View>
-          <Text style={typography.caption}>
-            Se usa la autenticación del propio teléfono (huella, Face ID o PIN): la app nunca guarda datos
-            biométricos.
-          </Text>
-        </Card>
-
         <SectionTitle title="Ayuda" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
@@ -494,8 +629,8 @@ export default function SettingsScreen() {
         onClose={() => setConfirmWipe(false)}
         onConfirm={wipe}
         title="¿Borrar todos los datos?"
-        message="Se eliminan actividades, eventos, cumpleaños, notas, hábitos y gastos guardados en el dispositivo."
-        confirmLabel="Borrar todo"
+        message="¿Estás seguro de que quieres eliminar estos datos? Esta acción no se puede deshacer."
+        confirmLabel="Sí, eliminar"
       />
     </>
   );
@@ -510,6 +645,22 @@ const styles = themedStyles({
   actionButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  strong: { fontWeight: '700', color: colors.text },
+
+  // Perfil enriquecido.
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontSize: 24, fontWeight: '800', letterSpacing: 0.5 },
+  profileBody: { flex: 1, gap: 3 },
+
+  // Permisos (dentro del acordeón).
+  permissionRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
   aboutText: { lineHeight: 17 },
   pressed: { opacity: 0.7 },
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

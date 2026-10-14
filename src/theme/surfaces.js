@@ -1,121 +1,94 @@
 /**
- * Screen surfaces (Ajustes › Modo de pantalla).
+ * Bases de pantalla (Ajustes › Modo de pantalla).
  *
- * An accent tints the interface; the *surface* decides what it is painted on top of. Three
- * modes ship: the original graphite dark, pure black for AMOLED panels (the background is
- * literally #000000, so those pixels switch off) and a real light mode built on #ffffff.
+ * El acento tiñe la interfaz; la *base* decide sobre qué se pinta. Se envían exactamente dos:
+ * el **Oscuro puro (AMOLED)**, con fondo `#000000` real para que los píxeles se apaguen, y el
+ * **Claro puro**, blanco `#ffffff` de verdad. Ambas declaran los mismos nombres de token, así
+ * que el resto de la app nunca bifurca: sigue leyendo `colors.surface`, `colors.textMuted`… y
+ * `applyTheme` los repinta.
  *
- * Every mode declares the same token names, so the rest of the app never branches: it keeps
- * reading `colors.surface`, `colors.textMuted`, `colors.scrim`… and `applyTheme` repaints
- * them. Text tones are chosen *per mode* — the greys that read at 7:1 over black fall under
- * 2:1 over white — which is why contrast lives here and not in `typography`.
+ * Los tonos de texto se eligen *por base* — los grises que se leen a 7:1 sobre negro caen bajo
+ * 2:1 sobre blanco — así que el contraste vive aquí y no en `typography`.
  *
- * Value uniqueness inside a mode matters: `applyTheme` repaints the registered style sheets
- * by swapping old colour strings for new ones, so two tokens that shared a value in the same
- * mode would be indistinguishable at swap time. `findTokenCollisions` keeps that invariant
- * honest if a palette is ever edited.
+ * La unicidad de valores dentro de una base importa: `applyTheme` repinta las hojas de estilo
+ * congeladas intercambiando cadenas de color, así que dos tokens que compartieran valor en la
+ * misma base serían indistinguibles al intercambiar. `findTokenCollisions` vigila ese
+ * invariante si una paleta se edita.
  *
- * Pure data with no imports on purpose: `theme.js` reads it, so any file can import it too.
+ * Data pura, sin imports a propósito: `theme.js` la lee, así que cualquier archivo puede
+ * importarla también.
  */
 export const SURFACE_MODES = [
   {
-    id: 'dark',
-    label: 'Oscuro grafito',
-    hint: 'El original de NexusDay: gris grafito suave, sin fatiga nocturna.',
-    dark: true,
-    statusBar: 'light',
-    swatch: ['#151518', '#f4f4f6'],
-    tokens: {
-      background: '#090909',
-      elevated: '#101012',
-      surface: '#151518',
-      surfaceAlt: '#1d1d21',
-      surfacePlus: '#27272d',
-      border: '#26262b',
-      borderStrong: '#35353d',
-      text: '#f4f4f6',
-      // Measured against `background` (#090909): textSecondary 12.6:1, textMuted 7.7:1 —
-      // both clear WCAG AA on every panel of the mode.
-      textSecondary: '#cccccc',
-      textMuted: '#a0a0a0',
-      scrim: 'rgba(9, 9, 9, 0.69)',
-      scrimStrong: 'rgba(9, 9, 9, 0.85)',
-      scrimMax: 'rgba(9, 9, 9, 0.93)',
-      panel: 'rgba(21, 21, 24, 0.8)',
-      panelStrong: 'rgba(21, 21, 24, 0.95)',
-      warning: '#fbbf24',
-      warningSoft: 'rgba(251, 191, 36, 0.14)',
-      danger: '#ff6b6b',
-      dangerSoft: 'rgba(255, 107, 107, 0.12)',
-    },
-  },
-  {
     id: 'amoled',
-    label: 'Negro puro (AMOLED)',
-    hint: 'Fondo #000000: los píxeles se apagan y la batería rinde más.',
+    label: 'Oscuro puro (AMOLED)',
+    hint: 'Fondo #000000 real: los píxeles se apagan y la batería rinde más.',
     dark: true,
     statusBar: 'light',
-    swatch: ['#000000', '#ffffff'],
+    swatch: ['#000000', '#F5F5F7'],
     tokens: {
       background: '#000000',
-      elevated: '#050506',
-      surface: '#0b0b0d',
-      surfaceAlt: '#121215',
-      surfacePlus: '#1b1b1f',
-      border: '#1a1a1e',
-      borderStrong: '#2a2a30',
-      text: '#ffffff',
-      // Over pure black the greys step up a notch so secondary copy stays above 6:1.
-      textSecondary: '#d6d6da',
-      textMuted: '#a8a8b0',
+      elevated: '#08080B',
+      surface: '#0D0D11',
+      surfaceAlt: '#15151C',
+      surfacePlus: '#202028',
+      border: '#1E1E26',
+      borderStrong: '#2E2E3A',
+      text: '#F5F5F7',
+      // Medido sobre `surface` (#0D0D11): textSecondary 9.1:1, textMuted 6.6:1 — ambos superan
+      // WCAG AA sobre cada panel de la base.
+      textSecondary: '#C7C7CF',
+      textMuted: '#9A9AA6',
       scrim: 'rgba(0, 0, 0, 0.69)',
       scrimStrong: 'rgba(0, 0, 0, 0.85)',
       scrimMax: 'rgba(0, 0, 0, 0.93)',
-      panel: 'rgba(11, 11, 13, 0.8)',
-      panelStrong: 'rgba(11, 11, 13, 0.95)',
-      // Over pure black the feedback hues lift a touch so a warning still reads at 8:1.
-      warning: '#ffca4d',
-      warningSoft: 'rgba(255, 202, 77, 0.16)',
-      danger: '#ff7b86',
-      dangerSoft: 'rgba(255, 123, 134, 0.16)',
+      panel: 'rgba(13, 13, 17, 0.82)',
+      panelStrong: 'rgba(13, 13, 17, 0.96)',
+      // Sobre el negro puro los tonos de aviso suben un punto para seguir legibles.
+      warning: '#FFC400',
+      warningSoft: 'rgba(255, 196, 0, 0.16)',
+      danger: '#FF4D5E',
+      dangerSoft: 'rgba(255, 77, 94, 0.16)',
     },
   },
   {
     id: 'light',
-    label: 'Claro',
+    label: 'Claro puro',
     hint: 'Blanco #ffffff real: textos oscuros y bordes suaves, no un negro invertido.',
     dark: false,
     statusBar: 'dark',
-    swatch: ['#ffffff', '#141419'],
+    swatch: ['#FFFFFF', '#111115'],
     tokens: {
-      background: '#ffffff',
-      // A light mode cannot stack panels the way a dark one does (there is nowhere brighter
-      // to go), so the layering inverts: the page is white and cards step down in grey.
-      elevated: '#f7f7f9',
-      surface: '#fdfdfe',
-      surfaceAlt: '#f1f1f4',
-      surfacePlus: '#e5e5ea',
-      border: '#e3e3e8',
-      borderStrong: '#c9c9d2',
-      text: '#141419',
-      textSecondary: '#3f3f46',
-      textMuted: '#5f5f68',
+      background: '#FFFFFF',
+      // Un modo claro no apila paneles como uno oscuro (no hay nada más brillante a dónde ir),
+      // así que el eje se invierte: la página es blanca y las tarjetas bajan a gris.
+      elevated: '#FAFAFC',
+      surface: '#F4F5F8',
+      surfaceAlt: '#EBEDF2',
+      surfacePlus: '#DFE2E9',
+      border: '#E2E4EA',
+      borderStrong: '#C9CCD6',
+      text: '#111115',
+      // Calculado sobre `surface` (#F4F5F8): textSecondary 9.6:1, textMuted 5.3:1 — ambos
+      // limpian WCAG AA a plena luz.
+      textSecondary: '#3F3F48',
+      textMuted: '#62626E',
       scrim: 'rgba(255, 255, 255, 0.69)',
       scrimStrong: 'rgba(255, 255, 255, 0.85)',
       scrimMax: 'rgba(255, 255, 255, 0.93)',
-      panel: 'rgba(253, 253, 254, 0.8)',
-      panelStrong: 'rgba(253, 253, 254, 0.95)',
-      // Amber and coral tuned for daylight: `#fbbf24` text over white is 1.9:1, so the light
-      // mode uses their burnt counterparts (5.9:1 and 5.4:1).
-      warning: '#a15c00',
+      panel: 'rgba(244, 245, 248, 0.85)',
+      panelStrong: 'rgba(244, 245, 248, 0.97)',
+      // Ámbar y coral afinados para la luz del día: `#FFC400` sobre blanco es 1.4:1, así que la
+      // base clara usa sus contrapartes tostadas (4.6:1 y 5.0:1).
+      warning: '#A15C00',
       warningSoft: 'rgba(161, 92, 0, 0.12)',
-      danger: '#c02334',
-      dangerSoft: 'rgba(192, 35, 52, 0.12)',
+      danger: '#C40024',
+      dangerSoft: 'rgba(196, 0, 36, 0.12)',
     },
   },
 ];
 
-export const DEFAULT_SURFACE_ID = 'dark';
+export const DEFAULT_SURFACE_ID = 'amoled';
 
 const SURFACE_INDEX = new Map(SURFACE_MODES.map((mode) => [mode.id, mode]));
 

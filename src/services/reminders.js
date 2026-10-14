@@ -1,13 +1,22 @@
 import * as Notif from './notifications';
-import { buildDateTime, fromDateKey, nextYearlyOccurrence, parseTime, todayKey } from '../utils/dates';
+import {
+  WEEKDAYS,
+  buildDateTime,
+  fromDateKey,
+  nextYearlyOccurrence,
+  parseTime,
+  toDateKey,
+  todayKey,
+} from '../utils/dates';
 
 /** Lead times for calendar events, in minutes. -1 = no reminder. */
 export const EVENT_REMINDERS = [
   { label: 'Sin aviso', value: -1 },
   { label: 'A la hora', value: 0 },
-  { label: '10 min antes', value: 10 },
+  { label: '15 min antes', value: 15 },
   { label: '30 min antes', value: 30 },
   { label: '1 h antes', value: 60 },
+  { label: '2 h antes', value: 120 },
   { label: '1 día antes', value: 1440 },
 ];
 
@@ -30,6 +39,22 @@ export const HABIT_REMINDERS = [
   { label: '18:00', value: '18:00' },
   { label: '21:00', value: '21:00' },
   { label: '22:30', value: '22:30' },
+];
+
+/**
+ * Aviso previo de una clase del horario, en minutos. -1 = sin aviso.
+ *
+ * Una clase es un bloque semanal sin fecha, así que su recordatorio es un *one-shot* para la
+ * próxima ocurrencia (reconstruido en cada arranque por `resyncReminders`): nunca fue un
+ * recordatorio recurrente semanal, porque `expo-notifications` aquí solo expone disparos
+ * puntuales.
+ */
+export const CLASS_REMINDERS = [
+  { label: 'Desactivado', value: -1 },
+  { label: '15 min antes', value: 15 },
+  { label: '30 min antes', value: 30 },
+  { label: '1 hora antes', value: 60 },
+  { label: '2 horas antes', value: 120 },
 ];
 
 const NOTICES = {
@@ -79,16 +104,72 @@ export async function syncEventReminder({ id, title, notes, dateKey, time, leadM
 }
 
 /**
- * Android drops scheduled notifications after a reboot or an app update, and
- * anything saved while permission was still off never got an id in the first
- * place. This re-arms only what is missing — items that already hold a
- * notificationId are left untouched — and past dates fail quietly, so it is
- * safe to run once per app start.
+ * Fecha y hora de la próxima ocurrencia de una clase semanal que no esté suspendida.
+ *
+ * Una asignatura del horario tiene `day` (0 = lunes) y `start`, sin fecha. Aquí se busca el
+ * próximo `Date` que caiga en ese día de la semana, a esa hora, saltando los días marcados en
+ * `suspended` (un mapa `{ 'YYYY-MM-DD': true }`). Devuelve `null` si no hay ocurrencia en las
+ * próximas 8 semanas (por ejemplo, una clase suspendida indefinidamente).
  */
-export async function resyncReminders({ events = [], birthdays = [], habits = [] }) {
+export function nextClassOccurrence({ day, start, suspended = {} }, from = new Date()) {
+  const dow = WEEKDAYS[Number(day)]?.dow;
+  if (dow == null) return null;
+  const { hour, minute } = parseTime(start || '09:00');
+
+  for (let offset = 0; offset < 56; offset += 1) {
+    const candidate = new Date(from);
+    candidate.setHours(hour, minute, 0, 0);
+    candidate.setDate(candidate.getDate() + offset);
+    // Solo el día de la semana de la clase cuenta; el resto se descarta.
+    if (candidate.getDay() !== dow) continue;
+    // Una ocurrencia ya pasada hoy tampoco avisa: se busca la siguiente.
+    if (candidate.getTime() <= from.getTime()) continue;
+    if (suspended[toDateKey(candidate)]) continue;
+    return candidate;
+  }
+  return null;
+}
+
+/**
+ * Recordatorio one-shot para una clase del horario, en la próxima ocurrencia no suspendida.
+ * Siempre cancela `existingId` primero, igual que el resto de sincronizadores.
+ */
+export async function syncClassReminder({ id, title, day, start, location, leadMinutes, suspended }, existingId) {
+  await Notif.cancel(existingId);
+
+  if (leadMinutes === -1 || leadMinutes == null) {
+    return { notificationId: null, notice: null };
+  }
+
+  const when = nextClassOccurrence({ day, start, suspended });
+  if (!when) return { notificationId: null, notice: null };
+  when.setMinutes(when.getMinutes() - leadMinutes);
+
+  const result = await Notif.scheduleAt({
+    title: `📚 ${title}`,
+    body: location ? `${location} · empieza a las ${start}.` : `Empieza a las ${start}.`,
+    date: when,
+    data: { kind: 'class', itemId: id },
+  });
+
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
+  return { notificationId: null, notice: describe(result.status, result) };
+}
+
+/**
+ * Rearma en cada arranque lo que quedó sin recordatorio.
+ *
+ * Android descarga las notificaciones programadas tras un reinicio o una actualización, y lo
+ * guardado con los permisos aún apagados nunca recibió un id. Esto rearma solo lo que falta —
+ * los ítems que ya tienen `notificationId` se dejan intactos — y las fechas pasadas fallan en
+ * silencio, así que es seguro ejecutarlo una vez por arranque. Los recordatorios de clase y de
+ * hábito son one-shot: deben reconstruirse aquí o quedarían mudos tras el que ya disparó.
+ */
+export async function resyncReminders({ events = [], birthdays = [], habits = [], activities = [] }) {
   const eventPatches = [];
   const birthdayPatches = [];
   const habitPatches = [];
+  const activityPatches = [];
 
   for (const event of events) {
     if (event.notificationId || (event.leadMinutes ?? -1) === -1) continue;
@@ -108,7 +189,15 @@ export async function resyncReminders({ events = [], birthdays = [], habits = []
     if (notificationId) habitPatches.push({ id: habit.id, notificationId });
   }
 
-  return { eventPatches, birthdayPatches, habitPatches };
+  // Class reminders are one-shots for the next occurrence, so they must be re-armed every
+  // start — exactly like habits — or the class would go silent after the one that fired.
+  for (const activity of activities) {
+    if (activity.notificationId || (activity.leadMinutes ?? -1) === -1) continue;
+    const { notificationId } = await syncClassReminder(activity, null);
+    if (notificationId) activityPatches.push({ id: activity.id, notificationId });
+  }
+
+  return { eventPatches, birthdayPatches, habitPatches, activityPatches };
 }
 
 /**

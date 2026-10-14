@@ -9,12 +9,12 @@ import { addDaysToKey, todayKey } from '../utils/dates';
 
 export function seedActivities() {
   return [
-    { id: 'seed-act-1', day: 0, title: 'Cálculo I', start: '08:00', end: '10:00', location: 'Aula B-204', color: '#4fd1c5' },
-    { id: 'seed-act-2', day: 0, title: 'Algoritmos', start: '10:30', end: '12:00', location: 'Lab 3', color: '#8b5cf6' },
-    { id: 'seed-act-3', day: 1, title: 'Gym', start: '19:00', end: '20:15', location: 'Centro', color: '#f59e0b' },
-    { id: 'seed-act-4', day: 2, title: 'Inglés', start: '16:00', end: '17:30', location: 'Online', color: '#38bdf8' },
-    { id: 'seed-act-5', day: 3, title: 'Proyecto final', start: '14:00', end: '16:00', location: 'Biblioteca', color: '#ec4899' },
-    { id: 'seed-act-6', day: 4, title: 'Cálculo I', start: '08:00', end: '10:00', location: 'Aula B-204', color: '#4fd1c5' },
+    { id: 'seed-act-1', day: 0, title: 'Cálculo I', start: '08:00', end: '10:00', location: 'Aula B-204', color: '#00E5FF', leadMinutes: -1, suspended: {}, notificationId: null },
+    { id: 'seed-act-2', day: 0, title: 'Algoritmos', start: '10:30', end: '12:00', location: 'Lab 3', color: '#D500F9', leadMinutes: -1, suspended: {}, notificationId: null },
+    { id: 'seed-act-3', day: 1, title: 'Gym', start: '19:00', end: '20:15', location: 'Centro', color: '#FFC400', leadMinutes: -1, suspended: {}, notificationId: null },
+    { id: 'seed-act-4', day: 2, title: 'Inglés', start: '16:00', end: '17:30', location: 'Online', color: '#2979FF', leadMinutes: -1, suspended: {}, notificationId: null },
+    { id: 'seed-act-5', day: 3, title: 'Proyecto final', start: '14:00', end: '16:00', location: 'Biblioteca', color: '#FF1744', leadMinutes: -1, suspended: {}, notificationId: null },
+    { id: 'seed-act-6', day: 4, title: 'Cálculo I', start: '08:00', end: '10:00', location: 'Aula B-204', color: '#00E5FF', leadMinutes: -1, suspended: {}, notificationId: null },
   ];
 }
 
@@ -74,19 +74,41 @@ export function seedNotes() {
   return [
     {
       id: 'seed-note-1',
+      kind: 'text',
       title: 'Pendientes de la semana',
       body:
         '· Resumen de Cálculo (temas 4 y 5)\n· Pulir la intro del proyecto\n· Cotizar el viaje\n· Comprar regalo para Camila',
-      color: '#a3e635',
+      items: [],
+      tags: ['#Importante', '#Personal'],
+      color: '#00E676',
       pinned: true,
       createdAt: now - 86400000 * 3,
       updatedAt: now - 3600000 * 5,
     },
     {
       id: 'seed-note-2',
+      kind: 'checklist',
+      title: 'Checklist del proyecto',
+      body: '',
+      items: [
+        { id: 'seed-chk-1', text: 'Definir el alcance', done: true },
+        { id: 'seed-chk-2', text: 'Bosquejar pantallas', done: true },
+        { id: 'seed-chk-3', text: 'Escribir la documentación', done: false },
+      ],
+      tags: ['#Estudio'],
+      color: '#00E5FF',
+      pinned: false,
+      createdAt: now - 86400000 * 9,
+      updatedAt: now - 86400000 * 2,
+    },
+    {
+      id: 'seed-note-3',
+      kind: 'text',
       title: 'Ideas',
-      body: 'Exportar el horario a PDF y sincronizarlo con el calendario del celu.',
-      color: '#4fd1c5',
+      body: 'Sincronizar el horario con la agenda del celu y añadir gráficos de gastos.',
+      items: [],
+      tags: ['#Ideas'],
+      color: '#D500F9',
       pinned: false,
       createdAt: now - 86400000 * 9,
       updatedAt: now - 86400000 * 2,

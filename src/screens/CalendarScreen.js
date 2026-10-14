@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
-import { themedStyles, calendarTheme, colors, spacing, typography } from '../theme/theme';
+import { themedStyles, calendarTheme, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
+  Chip,
   EmptyState,
   Fab,
   Notice,
@@ -21,23 +22,30 @@ import { TimeField } from '../components/ui/TimeField';
 import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
 import { SwitchRow } from '../components/ui/Switch';
 import { EVENT_REMINDERS, dropReminder, syncEventReminder } from '../services/reminders';
+import { EVENT_CATEGORIES, categoryOf } from '../services/eventCategories';
 import { plural } from '../utils/text';
 import {
   compareDateTime,
   daysFromToday,
   formatDateLong,
+  formatDuration,
   formatTime,
+  fromDateKey,
   isPastDateTime,
+  minutesBetween,
   relativeDayLabel,
   todayKey,
+  weekdayIndex,
 } from '../utils/dates';
 
 const BLANK = () => ({
   title: '',
   dateKey: todayKey(),
   time: '18:00',
+  endTime: '19:00',
   notes: '',
-  leadMinutes: 30,
+  category: 'Personal',
+  leadMinutes: -1,
   color: colors.accent,
   notificationId: null,
 });
@@ -80,6 +88,7 @@ export default function CalendarScreen() {
     addEvent,
     updateEvent,
     removeEvent,
+    activities,
     permission,
     requestNotifications,
     notificationsSupported,
@@ -99,6 +108,39 @@ export default function CalendarScreen() {
     () => events.filter((event) => event.dateKey === selected).slice().sort(compareDateTime),
     [events, selected],
   );
+
+  /**
+   * Línea de tiempo del día seleccionado: los eventos de esa fecha y las clases del horario
+   * semanal que caen ese día de la semana, fusionados y ordenados por hora. Una clase cuya
+   * sesión de esa fecha está suspendida se omite, igual que en el Horario.
+   */
+  const dayTimeline = useMemo(() => {
+    const dayOfWeek = weekdayIndex(fromDateKey(selected));
+    const classes = activities
+      .filter((activity) => Number(activity.day) === dayOfWeek)
+      .filter((activity) => !activity.suspended?.[selected])
+      .map((activity) => ({
+        kind: 'class',
+        id: `class-${activity.id}`,
+        title: activity.title,
+        time: activity.start,
+        endTime: activity.end,
+        location: activity.location,
+        color: activity.color,
+      }));
+    const dated = dayEvents.map((event) => ({
+      kind: 'event',
+      id: `event-${event.id}`,
+      event,
+      title: event.title,
+      time: event.time,
+      endTime: event.endTime,
+      notes: event.notes,
+      category: event.category,
+      color: event.color,
+    }));
+    return [...classes, ...dated].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  }, [activities, dayEvents, selected]);
 
   const upcoming = useMemo(
     () =>
@@ -134,7 +176,9 @@ export default function CalendarScreen() {
         title: event.title,
         dateKey: event.dateKey,
         time: event.time,
+        endTime: event.endTime || '',
         notes: event.notes || '',
+        category: event.category || 'Personal',
         leadMinutes: event.leadMinutes ?? -1,
         color: event.color || colors.accent,
         notificationId: event.notificationId || null,
@@ -182,15 +226,21 @@ export default function CalendarScreen() {
   const save = async () => {
     if (!canSave) return;
     const { mode, id, values } = sheet;
+    const category = categoryOf(values.category);
+    // El color sigue a la categoría salvo que el usuario lo haya cambiado a mano; así la
+    // línea de tiempo y los puntos del calendario pintan cada evento con el tono de su tipo.
+    const color = values.color && values.color !== colors.accent ? values.color : category.color;
     const payload = {
       title: values.title.trim(),
       dateKey: values.dateKey,
       time: values.time,
+      endTime: values.endTime || '',
       notes: values.notes.trim(),
+      category: category.id,
       // Belt and braces with the switch above: an event edited into the past must not keep,
       // nor ask for, a reminder that can never fire.
       leadMinutes: isPastDateTime(values.dateKey, values.time) ? -1 : values.leadMinutes,
-      color: values.color,
+      color,
     };
 
     setSaving(true);
@@ -266,29 +316,35 @@ export default function CalendarScreen() {
           />
         </Card>
 
+        <SectionTitle
+          title="Línea de tiempo del día"
+          count={dayTimeline.length}
+          right={<TextButton label="+ Nuevo" onPress={openCreate} />}
+        />
+
+        {dayTimeline.length === 0 ? (
+          <EmptyState
+            emoji="🌙"
+            title="Día libre"
+            hint="No hay clases ni eventos este día. Toca + para agendar algo con su recordatorio."
+          />
+        ) : (
+          <View style={styles.timeline}>
+            {dayTimeline.map((item) => (
+              <TimelineRow
+                key={item.id}
+                item={item}
+                onPress={item.kind === 'event' ? () => openEdit(item.event) : undefined}
+              />
+            ))}
+          </View>
+        )}
+
         <View style={styles.statsRow}>
           <Stat value={dayEvents.length} label="ese día" />
           <Stat value={remindersArmed} label="con aviso" accent={colors.accent} />
           <Stat value={pastCount} label="pasados" />
         </View>
-
-        <SectionTitle
-          title={relativeDayLabel(selected)}
-          count={dayEvents.length}
-          right={<TextButton label="+ Nuevo" onPress={openCreate} />}
-        />
-
-        {dayEvents.length === 0 ? (
-          <EmptyState
-            emoji="🌙"
-            title="Día libre"
-            hint="Toca + para agendar algo en esta fecha con su recordatorio."
-          />
-        ) : (
-          dayEvents.map((event) => (
-            <EventRow key={event.id} event={event} onPress={() => openEdit(event)} />
-          ))
-        )}
 
         {upcoming.length > 0 ? <SectionTitle title="Se acercan" count={upcoming.length} /> : null}
         {upcoming.map((event) => (
@@ -334,7 +390,35 @@ export default function CalendarScreen() {
               maxLength={60}
             />
             <DateField label="Día" value={sheet.values.dateKey} onChange={(dateKey) => setValue({ dateKey })} />
-            <TimeField label="Hora" value={sheet.values.time} onChange={(time) => setValue({ time })} />
+            <TimeField label="Hora de inicio" value={sheet.values.time} onChange={(time) => setValue({ time })} />
+            <TimeField
+              label="Hora de fin (opcional)"
+              value={sheet.values.endTime || sheet.values.time}
+              onChange={(endTime) => setValue({ endTime })}
+              hint={
+                sheet.values.endTime && minutesBetween(sheet.values.time, sheet.values.endTime) > 0
+                  ? `Duración: ${formatDuration(minutesBetween(sheet.values.time, sheet.values.endTime))}`
+                  : 'Opcional: cuánto dura el evento.'
+              }
+            />
+            <View style={styles.categoryWrap}>
+              <Text style={typography.overline}>Categoría</Text>
+              <View style={styles.categoryRow}>
+                {EVENT_CATEGORIES.map((option) => {
+                  const selectedCat = (sheet.values.category || 'Personal') === option.id;
+                  return (
+                    <Chip
+                      key={option.id}
+                      label={`${option.emoji} ${option.label}`}
+                      compact
+                      color={option.color}
+                      selected={selectedCat}
+                      onPress={() => setValue({ category: option.id, color: option.color })}
+                    />
+                  );
+                })}
+              </View>
+            </View>
             <View style={styles.leadWrap}>
               <SwitchRow
                 title="Avisarme"
@@ -396,6 +480,63 @@ export default function CalendarScreen() {
   );
 }
 
+/**
+ * Una fila de la Línea de Tiempo del Día: una clase del horario o un evento de la agenda,
+ * con su hora a la izquierda y un punto de color que la conecta a la línea vertical. Las
+ * clases no son pulsables (su edición vive en el Horario); los eventos abren su editor.
+ */
+function TimelineRow({ item, onPress }) {
+  const isClass = item.kind === 'class';
+  const category = !isClass && item.category ? categoryOf(item.category) : null;
+  const tint = item.color || colors.accent;
+  const detail = isClass
+    ? item.location || 'Clase'
+    : category
+      ? `${category.emoji} ${category.label}`
+      : item.notes || '';
+  const timeRange = item.endTime && item.endTime !== item.time ? `${formatTime(item.time)}–${formatTime(item.endTime)}` : formatTime(item.time);
+
+  const body = (
+    <View style={styles.timelineRow}>
+      <View style={styles.timelineTimeCol}>
+        <Text style={[styles.timelineTime, typography.tabular]}>{formatTime(item.time)}</Text>
+        {item.endTime && item.endTime !== item.time ? (
+          <Text style={[styles.timelineEnd, typography.tabular]}>{formatTime(item.endTime)}</Text>
+        ) : null}
+      </View>
+      <View style={styles.timelineTrack}>
+        <View style={[styles.timelineDot, { backgroundColor: tint }]} />
+        <View style={[styles.timelineLine, { borderColor: colors.border }]} />
+      </View>
+      <View style={styles.timelineBody}>
+        <View style={styles.timelineTitleRow}>
+          <Text style={typography.bodyStrong} numberOfLines={1}>
+            {isClass ? '📚 ' : ''}
+            {item.title}
+          </Text>
+          {isClass ? <Pill label="clase" /> : null}
+        </View>
+        {detail ? (
+          <Text style={[typography.small, styles.timelineDetail]} numberOfLines={1}>
+            {timeRange} · {detail}
+          </Text>
+        ) : (
+          <Text style={[typography.small, styles.timelineDetail]} numberOfLines={1}>
+            {timeRange}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+
+  if (!onPress) return body;
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => (pressed ? styles.pressed : null)}>
+      {body}
+    </Pressable>
+  );
+}
+
 function EventRow({ event, onPress, showDay }) {
   const past = daysFromToday(event.dateKey) < 0;
   const armed = Boolean(event.notificationId);
@@ -450,5 +591,27 @@ const styles = themedStyles({
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 2 },
   leadWrap: { gap: spacing.xs },
   leadHint: { fontSize: 11, fontWeight: '700', color: colors.accent },
+
+  // Categorías del formulario.
+  categoryWrap: { gap: spacing.sm },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+
+  // Línea de tiempo del día.
+  timeline: { gap: 0 },
+  timelineRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },
+  timelineTimeCol: { width: 46, alignItems: 'flex-end', paddingTop: 2, gap: 1 },
+  timelineTime: { fontSize: 13.5, fontWeight: '700', color: colors.text },
+  timelineEnd: { fontSize: 11.5, fontWeight: '500', color: colors.textMuted },
+  timelineTrack: { width: 12, alignItems: 'center', paddingTop: 6 },
+  timelineDot: { width: 10, height: 10, borderRadius: radius.pill },
+  timelineLine: { flex: 1, width: 2, borderLeftWidth: 1, borderStyle: 'dashed', marginTop: 2 },
+  timelineBody: {
+    flex: 1,
+    gap: 2,
+    paddingBottom: spacing.lg,
+  },
+  timelineTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  timelineDetail: { color: colors.textMuted },
+  pressed: { opacity: 0.7 },
 });
 

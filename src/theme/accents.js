@@ -1,85 +1,112 @@
 /**
- * Neon accent themes offered in Ajustes › Tema.
+ * Acentos de color secundario ofrecidos en Ajustes › Tema.
  *
- * `accent` is the single colour the whole UI tints with (active tab, buttons, chips,
- * calendar highlights); `accentSoft` is its translucent version used for fills and
- * `accentInk` the readable colour drawn *on top of* the accent. `alt` is decoration only
- * (theme previews, onboarding artwork).
+ * `accent` es el color con el que se tiñe toda la interfaz (solapa activa, botones, chips,
+ * calendario); `accentSoft` es su versión translúcida para rellenos y `accentInk` el color
+ * legible que se dibuja *encima* del acento. `alt` es solo decoración (vistas previas).
  *
- * Every theme also declares a `light` variant. Tints tuned for a graphite page turn muddy
- * over white (a mint `#4fd1c5` on `#ffffff` barely reaches 1.6:1), so the light surface gets
- * darker members of the same family, and their `accentInk` flips to a pale ink: dark text
- * sitting on a dark accent is how labels end up invisible.
+ * Los seis acentos funcionan sobre las dos bases (oscuro puro y claro puro). Los valores
+ * base están afinados para el fondo negro; cada tema declara además una variante `light`,
+ * porque un verde neón `#00E676` sobre blanco no alcanza contraste legible — la base clara
+ * usa el miembro oscuro de la misma familia y su `accentInk` invierte a tinta pálida.
  *
- * Pure data with no imports on purpose: `theme.js` reads it, so every other file can
- * import it too without creating a cycle.
+ * Data pura, sin imports a propósito: `theme.js` la lee y cualquier otro archivo puede
+ * importarla sin crear un ciclo.
  */
 export const ACCENT_THEMES = [
   {
-    id: 'cyan',
-    label: 'Cyan / Violeta',
-    hint: 'El original de NexusDay: turquesa frío con detalle violeta.',
-    accent: '#4fd1c5',
-    accentSoft: 'rgba(79, 209, 197, 0.13)',
-    accentInk: '#04211e',
-    alt: '#8b5cf6',
+    id: 'verde',
+    label: 'Verde',
+    hint: 'Verde brillante y enérgico, ideal para productividad.',
+    accent: '#00E676',
+    accentSoft: 'rgba(0, 230, 118, 0.14)',
+    accentInk: '#00210F',
+    alt: '#69F0AE',
     light: {
-      accent: '#0a6f62',
-      accentSoft: 'rgba(10, 111, 98, 0.12)',
-      accentInk: '#f2fffd',
+      accent: '#00875A',
+      accentSoft: 'rgba(0, 135, 90, 0.12)',
+      accentInk: '#ECFFF5',
     },
   },
   {
-    id: 'emerald',
-    label: 'Esmeralda Cyberpunk',
-    hint: 'Verde ácido de terminal, contraste máximo sobre negro.',
-    accent: '#00f5a0',
-    accentSoft: 'rgba(0, 245, 160, 0.14)',
-    accentInk: '#00251a',
-    alt: '#22d3ee',
+    id: 'cian',
+    label: 'Cian',
+    hint: 'Cian fresco y moderno, el clásico de NexusDay.',
+    accent: '#00E5FF',
+    accentSoft: 'rgba(0, 229, 255, 0.14)',
+    accentInk: '#00252B',
+    alt: '#84FFFF',
     light: {
-      accent: '#05704f',
-      accentSoft: 'rgba(5, 112, 79, 0.12)',
-      accentInk: '#effff9',
+      accent: '#007A99',
+      accentSoft: 'rgba(0, 122, 153, 0.12)',
+      accentInk: '#EBFAFF',
     },
   },
   {
-    id: 'gold',
-    label: 'Sunset Gold',
-    hint: 'Ámbar cálido de atardecer para botones y textos.',
-    accent: '#ffb020',
-    accentSoft: 'rgba(255, 176, 32, 0.14)',
-    accentInk: '#2b1a00',
-    alt: '#ff6b6b',
+    id: 'azul',
+    label: 'Azul',
+    hint: 'Azul intenso y confiable para el día a día.',
+    accent: '#2979FF',
+    accentSoft: 'rgba(41, 121, 255, 0.16)',
+    accentInk: '#06122E',
+    alt: '#82B1FF',
     light: {
-      accent: '#8a5600',
-      accentSoft: 'rgba(138, 86, 0, 0.12)',
-      accentInk: '#fff8ec',
+      accent: '#0033CC',
+      accentSoft: 'rgba(0, 51, 204, 0.12)',
+      accentInk: '#EEF3FF',
     },
   },
   {
-    id: 'oled',
-    label: 'OLED Monocromo',
-    hint: 'Blanco sobre negro puro: sin color, máximo contraste.',
-    accent: '#f5f5f7',
-    accentSoft: 'rgba(245, 245, 247, 0.12)',
-    accentInk: '#0a0a0a',
-    alt: '#8a8a94',
+    id: 'rojo',
+    label: 'Rojo',
+    hint: 'Rojo vivo para urgente y por hacer.',
+    accent: '#FF1744',
+    accentSoft: 'rgba(255, 23, 68, 0.15)',
+    accentInk: '#2A0007',
+    alt: '#FF8A80',
     light: {
-      accent: '#1b1b20',
-      accentSoft: 'rgba(27, 27, 32, 0.1)',
-      accentInk: '#f6f6fa',
+      accent: '#C40024',
+      accentSoft: 'rgba(196, 0, 36, 0.12)',
+      accentInk: '#FFEDEF',
+    },
+  },
+  {
+    id: 'amarillo',
+    label: 'Amarillo',
+    hint: 'Amarillo cálido que destaca sin gritar.',
+    accent: '#FFC400',
+    accentSoft: 'rgba(255, 196, 0, 0.16)',
+    accentInk: '#2B1D00',
+    alt: '#FFE57F',
+    light: {
+      accent: '#8A6100',
+      accentSoft: 'rgba(138, 97, 0, 0.12)',
+      accentInk: '#FFF8E6',
+    },
+  },
+  {
+    id: 'purpura',
+    label: 'Púrpura',
+    hint: 'Púrpura creativo para ideas y proyectos.',
+    accent: '#D500F9',
+    accentSoft: 'rgba(213, 0, 249, 0.16)',
+    accentInk: '#22002B',
+    alt: '#EA80FC',
+    light: {
+      accent: '#8E00A8',
+      accentSoft: 'rgba(142, 0, 168, 0.12)',
+      accentInk: '#FCE9FF',
     },
   },
 ];
 
-export const DEFAULT_ACCENT_ID = 'cyan';
+export const DEFAULT_ACCENT_ID = 'cian';
 
 export function isAccentId(value) {
   return ACCENT_THEMES.some((theme) => theme.id === value);
 }
 
-/** Always resolves: an unknown or missing id falls back to the default theme. */
+/** Siempre resuelve: un id desconocido o ausente cae en el tema por defecto. */
 export function getAccentTheme(id) {
   return (
     ACCENT_THEMES.find((theme) => theme.id === id) ||
@@ -88,9 +115,10 @@ export function getAccentTheme(id) {
 }
 
 /**
- * Picks the trio that belongs on a given surface: the base values are the dark ones, a light
- * page swaps in its darker variants. `swatch` is what the Ajustes preview paints — the theme's
- * own hue regardless of mode, because the grid shows every option at once.
+ * Elige el trío que corresponde a una base: los valores base son los de fondo oscuro, una
+ * base clara usa sus variantes más oscuras. `swatch` es lo que pinta la vista previa de
+ * Ajustes — el tono propio del tema sin importar la base, porque la cuadrícula muestra
+ * todas las opciones a la vez.
  */
 export function resolveAccent(theme, surfaceId) {
   if (surfaceId === 'light') {
