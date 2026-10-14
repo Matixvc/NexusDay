@@ -192,6 +192,26 @@ export function AppDataProvider({ children }) {
   }, [activities, events, birthdays, notes, habits, expenses]);
 
   /**
+   * Ajustes › "Importar copia de seguridad": reemplaza cada colección y los ajustes por los
+   * del archivo. Solo se llega acá tras validar el JSON y pasar el ConfirmSheet, porque aquí
+   * no hay vuelta atrás: lo anterior queda descartado (y persistido) en el mismo instante.
+   */
+  const restoreBackup = useCallback(
+    (backup = {}) => {
+      if (Array.isArray(backup.activities)) activities.replaceAll(backup.activities);
+      if (Array.isArray(backup.events)) events.replaceAll(backup.events);
+      if (Array.isArray(backup.birthdays)) birthdays.replaceAll(backup.birthdays);
+      if (Array.isArray(backup.notes)) notes.replaceAll(backup.notes);
+      if (Array.isArray(backup.habits)) habits.replaceAll(backup.habits);
+      if (Array.isArray(backup.expenses)) expenses.replaceAll(backup.expenses);
+      if (backup.settings && typeof backup.settings === 'object') updateSettings(backup.settings);
+      if (typeof backup.userName === 'string') setUserName(backup.userName);
+      if (backup.tabConfig) setTabConfig(backup.tabConfig);
+    },
+    [activities, events, birthdays, notes, habits, expenses, updateSettings, setUserName, setTabConfig],
+  );
+
+  /**
    * Tutorial finished. On the first run this also wipes the sample data, so the user
    * starts from a completely blank app instead of inheriting somebody else's schedule.
    */
@@ -219,18 +239,24 @@ export function AppDataProvider({ children }) {
     resyncedOnce.current = true;
 
     let active = true;
-    resyncReminders({ ...pendingRef.current, habits: habits.items }).then(
-      ({ eventPatches, birthdayPatches, habitPatches, activityPatches = [] }) => {
-        if (!active) return;
-        eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
-        birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
-        habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
-        activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
-      },
-    );
+    // 350 ms de gracia: las ediciones en cascada re-entran a este effect y un
+    // re-arranque inmediato cancelaría y reprogramaría avisos sin necesidad.
+    // El cleanup cancela el timer si el contexto cambia antes de tiempo.
+    const timer = setTimeout(() => {
+      resyncReminders({ ...pendingRef.current, habits: habits.items }).then(
+        ({ eventPatches, birthdayPatches, habitPatches, activityPatches = [] }) => {
+          if (!active) return;
+          eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
+          birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
+          habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
+          activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
+        },
+      );
+    }, 350);
 
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [allHydrated, permission.granted, events, birthdays, habits, activities]);
 
@@ -282,6 +308,7 @@ export function AppDataProvider({ children }) {
       settingsLoaded,
       updateSettings,
       clearAllData,
+      restoreBackup,
 
       permission,
       refreshPermission,
@@ -300,6 +327,7 @@ export function AppDataProvider({ children }) {
       settingsLoaded,
       updateSettings,
       clearAllData,
+      restoreBackup,
       tutorial,
       finishTutorial,
       replayTutorial,

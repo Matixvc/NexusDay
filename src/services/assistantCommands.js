@@ -1,14 +1,17 @@
 import { colors } from '../theme/theme';
 import { EXPENSE_CATEGORIES, formatMoney, parseAmount } from '../utils/money';
 import { WEEKDAYS, addDaysToKey, formatDateShort, pad2, todayKey } from '../utils/dates';
+import { fuzzyFind, plural } from '../utils/text';
+import { NOTE_KINDS, makeCheckItem } from './notes';
+import { habitStreak } from './dashboard';
 
 /**
  * Nexus AI — comandos que *hacen* algo.
  *
  * `assistant.js` lee los datos; este módulo es la otra mitad: reconoce una orden escrita
- * ("crea una nota de la reunión", "agenda el médico el martes a las 8:30", "gasté 12,50 en
- * comida") y la ejecuta sobre las colecciones de `AppDataContext`. La pantalla pasa los
- * escritores por parámetro, así que el parseo queda puro y se puede probar sin React.
+ * ("crea una nota de la reunión", "marca el hábito agua", "suspende la clase de cálculo") y
+ * la ejecuta sobre las colecciones de `AppDataContext`. La pantalla pasa los escritores por
+ * parámetro, así que el parseo queda puro y se puede probar sin React.
  *
  * Regla de oro: si algo no está claro, no se escribe nada. Ante la duda el asistente responde
  * con lo que sabe hacer (`CAPABILITIES`) en vez de inventar una nota o un evento a medias.
@@ -17,12 +20,17 @@ import { WEEKDAYS, addDaysToKey, formatDateShort, pad2, todayKey } from '../util
 /** Lo que Nexus puede hacer solo, en el orden en que se ofrece en la ayuda. */
 export const CAPABILITIES = [
   { verb: 'crea una nota de …', detail: 'la guarda en Notas al instante.' },
-  { verb: 'agenda … el martes a las 8:30', detail: 'crea el evento en Agenda (sin aviso: eso lo activas tú).' },
+  { verb: 'crea la lista de compras: pan, leche', detail: 'genera una nota con casillas por tachar.' },
+  { verb: 'agenda … el martes a las 8:30', detail: 'crea el evento en Agenda, con categoría deducida del título.' },
   { verb: 'gasté 1.250 en comida', detail: 'registra el gasto con su categoría.' },
-  { verb: 'pásame la agenda en .ics', detail: 'genera el archivo y te lo comparte.' },
+  { verb: 'marca el hábito agua', detail: 'tacha el hábito de hoy y conserva la racha.' },
+  { verb: 'crea el hábito leer 20 minutos', detail: 'lo agrega a Hábitos listo para marcar.' },
+  { verb: 'suspende la clase de cálculo', detail: 'la marca suspendida solo por hoy.' },
+  { verb: 'agrega física los lunes a las 8', detail: 'crea la asignatura en el Horario.' },
   { verb: '¿qué tengo hoy?', detail: 'te lee la agenda y lo que sigue.' },
   { verb: '¿cuánto gasté este mes?', detail: 'suma tus gastos y dice en qué más vas.' },
   { verb: '¿qué hábitos me faltan?', detail: 'revisa las rachas del día.' },
+  { verb: '¿qué notas tengo en #Estudio?', detail: 'filtra tus notas por etiqueta.' },
 ];
 
 /**
@@ -50,6 +58,20 @@ const NOTE_NOUNS = ['nota', 'notas', 'apunte', 'apuntes', 'anotacion', 'anotacio
 const EVENT_VERBS = ['agenda', 'agendar', 'agendame', 'agendemos', 'programa', 'programar', 'programame', 'recorda', 'recordar', 'recordame'];
 const EXPENSE_HINTS = ['gaste', 'pague', 'compre', 'gasto'];
 
+/** Órdenes sobre hábitos: tachar (siempre) o crear (sin sustantivo de clase/lista). */
+const HABIT_COMPLETE_VERBS = ['marca', 'marcar', 'marcame', 'tacha', 'tachar', 'tachame', 'completa', 'completar', 'completo'];
+const HABIT_CREATE_VERBS = ['crea', 'crear', 'creame', 'agrega', 'agregar', 'agregame', 'anade', 'anadir'];
+const HABIT_NOUNS = ['habito', 'habitos'];
+
+/** Sustantivos de Horario: distinguen una asignatura de una nota o un evento. */
+const CLASS_NOUNS = ['clase', 'clases', 'asignatura', 'asignaturas', 'materia', 'materias', 'ramo', 'ramos', 'curso', 'cursos'];
+const SUSPEND_VERBS = ['suspende', 'suspender', 'suspensa', 'cancela', 'cancelar'];
+const SCHEDULE_VERBS = ['agrega', 'agregar', 'agregame', 'anade', 'anadir', 'crea', 'crear', 'creame'];
+
+/** Checklists: "crea la lista de compras: pan, leche". */
+const LIST_NOUNS = ['lista', 'listas', 'checklist', 'pendientes', 'tareas'];
+const LIST_CREATE_VERBS = [...NOTE_VERBS, 'agrega', 'agregar', 'agregame', 'anade', 'anadir'];
+
 /** Words that mean "I am asking, not ordering". Never run a command on those. */
 const QUESTION_LEADERS = ['que', 'cual', 'cuales', 'cuanto', 'cuanta', 'cuantos', 'como', 'quien', 'quienes', 'donde', 'cuando', 'tengo', 'hay', 'me', 'pode', 'puedo', 'sirve', 'significa'];
 
@@ -63,6 +85,9 @@ const SKIP = new Set([
   'guardar', 'agenda', 'agendar', 'agendame', 'programa', 'programar', 'programame', 'recorda', 'recordar',
   'recordame', 'nota', 'notas', 'apunte', 'apuntes', 'anotacion', 'recordatorio', 'memo', 'habito', 'dia',
   'fecha', 'hs', 'am', 'pm',
+  // Sustantivos de clase y lista: nunca son contenido de un título generado.
+  'clase', 'clases', 'asignatura', 'asignaturas', 'materia', 'materias', 'ramo', 'ramos', 'curso', 'cursos',
+  'lista', 'listas', 'checklist', 'pendientes', 'tareas',
 ]);
 
 /** Raw words paired with their normalized form: titles keep accents, matching stays simple. */
@@ -186,9 +211,33 @@ function readExpense(text) {
   };
 }
 
-/** "pasame la agenda en ics": needs an action verb *and* a word pointing at the agenda. */
-const EXPORT_ACTION = /\b(exporta|exportar|exportame|exportalo|comparte|compartir|pasame|mandame|manda|envia|enviar|genera|generar)\b/;
-const AGENDA_WORDS = /\b(ics|agenda|calendario|eventos|mis eventos|mi dia)\b/;
+/** "pasame la agenda en ics" ya no existe: la agenda se comparte como copia .json desde Ajustes. */
+
+/**
+ * Categoría deducida del título del evento — los mismos ids de `eventCategories.js`.
+ * "parcial de cálculo" es un Examen aunque nadie lo haya elegido a mano.
+ */
+function guessEventCategory(title) {
+  const text = normalizeCommand(title);
+  if (/\b(examen|prueba|parcial|final|defensa|oral)\b/.test(text)) return 'Examen';
+  if (/\b(entrega|entregar|entregable|trabajo|practica|informe|ensayo|tp)\b/.test(text)) return 'Entrega';
+  if (/\b(reunion|comite|junta|entrevista|alignamiento|call)\b/.test(text)) return 'Reunión';
+  if (/\b(medico|consulta|doctor|odontolog|turno|clinica|vacuna)\b/.test(text)) return 'Médico';
+  return 'Personal';
+}
+
+/** `2026-10-14` → día de la semana (0 = domingo), sin pisar la zona horaria del sistema. */
+function dayOfWeek(dateKey) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  return new Date(year || 2026, (month || 1) - 1, day || 1).getDay();
+}
+
+/** `'09:00'` + 60 → `'10:00'` (duración por defecto de una clase nueva). */
+function addMinutes(time, minutes) {
+  const [hour, minute] = String(time).split(':').map(Number);
+  const total = (((hour || 0) * 60 + (minute || 0) + minutes) % 1440 + 1440) % 1440;
+  return `${pad2(Math.floor(total / 60))}:${pad2(total % 60)}`;
+}
 
 /**
  * `detectCommand("agenda el médico el martes 8:30")` →
@@ -213,9 +262,66 @@ export function detectCommand(raw) {
     }
   }
 
-  // Antes que el evento: "pasame la agenda" usa *agenda* como sustantivo, no como verbo.
-  if (EXPORT_ACTION.test(text) && AGENDA_WORDS.test(text)) {
-    return { type: 'export_ics' };
+  // Antes que el evento: "pasame la agenda" ya no genera .ics; la copia vive en Ajustes.
+
+  // "marca el habito agua" — el verbo de tachar no encabeza creaciones, así que va primero.
+  const completeIndex = leadingVerb(parts, HABIT_COMPLETE_VERBS);
+  if (completeIndex !== null && HABIT_NOUNS.some((noun) => text.includes(noun))) {
+    const name = titleAfter(parts, completeIndex, HABIT_NOUNS);
+    if (name) return { type: 'complete_habit', payload: { name } };
+  }
+
+  // "crea el habito leer 20 minutos"
+  const habitIndex = leadingVerb(parts, HABIT_CREATE_VERBS);
+  if (habitIndex !== null && HABIT_NOUNS.some((noun) => text.includes(noun))) {
+    const name = titleAfter(parts, habitIndex, HABIT_NOUNS);
+    if (name) return { type: 'create_habit', payload: { name } };
+  }
+
+  // "suspende la clase de calculo" — se aplica solo a hoy, sobre la asignatura viva.
+  const suspendIndex = leadingVerb(parts, SUSPEND_VERBS);
+  if (suspendIndex !== null && CLASS_NOUNS.some((noun) => text.includes(noun))) {
+    const date = readDate(text);
+    const name = titleAfter(parts, suspendIndex, [...CLASS_NOUNS, ...date.tokens]);
+    if (name) return { type: 'suspend_class', payload: { name } };
+  }
+
+  // "agrega fisica los lunes a las 8" — nueva asignatura en el Horario.
+  const activityIndex = leadingVerb(parts, SCHEDULE_VERBS);
+  if (activityIndex !== null && CLASS_NOUNS.some((noun) => text.includes(noun))) {
+    const date = readDate(text);
+    const clock = readTime(text);
+    const title = titleAfter(parts, activityIndex, [...CLASS_NOUNS, ...date.tokens, ...clock.tokens]);
+    if (title) {
+      const start = clock.time ?? '09:00';
+      return {
+        type: 'create_activity',
+        payload: {
+          title,
+          day: date.dateKey ? dayOfWeek(date.dateKey) : dayOfWeek(todayKey()),
+          start,
+          end: addMinutes(start, 60),
+          guessedDay: !date.dateKey,
+          guessedTime: !clock.time,
+        },
+      };
+    }
+  }
+
+  // "crea la lista de compras: pan, leche y huevos" — el título va antes de los dos puntos.
+  const listIndex = leadingVerb(parts, LIST_CREATE_VERBS);
+  if (listIndex !== null && LIST_NOUNS.some((noun) => text.includes(noun))) {
+    const [head, tail = ''] = String(raw).split(/[:：]/);
+    const headParts = tokenize(head);
+    const headVerb = leadingVerb(headParts, LIST_CREATE_VERBS) ?? 0;
+    const title = titleAfter(headParts, headVerb, [...LIST_NOUNS, ...NOTE_NOUNS]);
+    const items = tail
+      ? tail
+          .split(/\s*(?:,|\by\b)\s*/i)
+          .map((item) => item.trim())
+          .filter((item) => item && !/^(de|del|la|el|los|las)$/.test(item))
+      : [];
+    if (title) return { type: 'create_checklist', payload: { title, items } };
   }
 
   const eventIndex = leadingVerb(parts, EVENT_VERBS);
@@ -234,6 +340,7 @@ export function detectCommand(raw) {
         time: clock.time ?? '09:00',
         guessedDate: !date.dateKey,
         guessedTime: !clock.time,
+        category: guessEventCategory(title),
       },
     };
   }
@@ -263,10 +370,11 @@ function cannot(what) {
 /**
  * Runs a detected command against the live collections.
  *
- * `writers` comes from `useAppData()` — `{ addNote, addEvent, addExpense, shareICS }` — which
+ * `writers` comes from `useAppData()` — `{ addNote, addEvent, addExpense, addHabit,
+ * updateHabit, updateActivity, addActivity, habits, activities, dropReminder }` — which
  * keeps this module free of React and lets the screens show the result as a normal answer
- * bubble. `shareICS` is the only writer that resolves late (the system sheet closes when the
- * user is done), so callers `await applyCommand(...)`.
+ * bubble. Los nombres se resuelven con tolerancia a tipeos (`fuzzyFind`), así que un
+ * "marca el habito calclo" sigue tachando "Cálculo".
  */
 export function applyCommand(command, writers = {}) {
   const payload = command?.payload ?? {};
@@ -280,17 +388,151 @@ export function applyCommand(command, writers = {}) {
     };
   }
 
-  if (command?.type === 'export_ics') {
-    if (!writers.shareICS) return cannot('exportar la agenda');
-    // El sheet de compartir es del sistema: la pantalla devuelve la respuesta cuando se cierra.
-    return writers.shareICS();
+  if (command?.type === 'complete_habit') {
+    const habit = fuzzyFind(payload.name, writers.habits || [], { key: (item) => item.name });
+    if (!habit) {
+      return {
+        title: `No encontré “${payload.name}”`,
+        body: 'No tengo ese hábito en la app. Revisa el nombre o créalo con “crea el hábito …”.',
+        route: 'Hábitos',
+        routeLabel: 'Abrir hábitos',
+      };
+    }
+    if (!writers.updateHabit) return cannot('marcar hábitos');
+    if (Array.isArray(habit.marks) && habit.marks.includes(todayKey())) {
+      return {
+        title: 'Ya estaba marcado ✅',
+        body: `“${habit.name}” lo tachaste hoy. Mañana arranca de nuevo.`,
+        route: 'Hábitos',
+        routeLabel: 'Abrir hábitos',
+      };
+    }
+    const marks = [...(Array.isArray(habit.marks) ? habit.marks : []), todayKey()];
+    writers.dropReminder?.(habit);
+    writers.updateHabit(habit.id, { marks, notificationId: null });
+    const streak = habitStreak({ ...habit, marks });
+    return {
+      title: 'Hábito tachado ✅',
+      body: `“${habit.name}” quedó listo por hoy. ${streak > 0 ? `Racha de ${plural(streak, 'día')}.` : 'Hoy empieza la racha.'}`,
+      route: 'Hábitos',
+      routeLabel: 'Abrir hábitos',
+    };
+  }
+
+  if (command?.type === 'create_habit') {
+    if (!writers.addHabit) return cannot('crear hábitos');
+    const exists = (writers.habits || []).find(
+      (item) => normalizeCommand(item.name) === normalizeCommand(payload.name),
+    );
+    if (exists) {
+      return {
+        title: 'Ese hábito ya existe',
+        body: `“${exists.name}” ya está en Hábitos: márcalo con “marca el hábito …” o desde la pantalla.`,
+        route: 'Hábitos',
+        routeLabel: 'Abrir hábitos',
+      };
+    }
+    writers.addHabit({ name: payload.name, emoji: '✅', color: colors.accent, marks: [] });
+    return {
+      title: 'Hábito creado ✅',
+      body: `“${payload.name}” ya está en Hábitos, listo para marcar. Su racha empieza desde hoy.`,
+      route: 'Hábitos',
+      routeLabel: 'Abrir hábitos',
+    };
+  }
+
+  if (command?.type === 'suspend_class') {
+    const activity = fuzzyFind(payload.name, writers.activities || [], { key: (item) => item.title });
+    if (!activity) {
+      return {
+        title: `No encontré “${payload.name}”`,
+        body: 'No tengo esa asignatura en el Horario. Revisa el nombre o agrégala con “agrega … la clase”.',
+        route: 'Horario',
+        routeLabel: 'Abrir horario',
+      };
+    }
+    if (!writers.updateActivity) return cannot('suspender clases');
+    if (activity.suspended?.[todayKey()]) {
+      return {
+        title: 'Ya estaba suspendida ⏸️',
+        body: `“${activity.title}” ya no cuenta para hoy.`,
+        route: 'Horario',
+        routeLabel: 'Abrir horario',
+      };
+    }
+    writers.updateActivity(activity.id, {
+      suspended: { ...(activity.suspended || {}), [todayKey()]: true },
+    });
+    return {
+      title: 'Clase suspendida ⏸️',
+      body: `“${activity.title}” no cuenta hoy: el Horario y el tablero la marcan como suspendida. Mañana vuelve a la normalidad.`,
+      route: 'Horario',
+      routeLabel: 'Abrir horario',
+    };
+  }
+
+  if (command?.type === 'create_activity') {
+    if (!writers.addActivity) return cannot('crear asignaturas');
+    writers.addActivity({
+      day: payload.day,
+      title: payload.title,
+      start: payload.start,
+      end: payload.end,
+      location: '',
+      color: colors.accent,
+      leadMinutes: -1,
+      suspended: {},
+      notificationId: null,
+    });
+    const guessed = [
+      payload.guessedDay && `lo puse el ${WEEKDAYS[payload.day].long.toLowerCase()}`,
+      payload.guessedTime && 'a las 09:00 porque no indicaste el horario',
+    ].filter(Boolean);
+    return {
+      title: 'Asignatura agregada 📚',
+      body: `“${payload.title}” — ${WEEKDAYS[payload.day].long} de ${payload.start} a ${payload.end}${guessed.length ? ` (${guessed.join(' y ')})` : ''}. Tócala en el Horario para sumarle aula o aviso.`,
+      route: 'Horario',
+      routeLabel: 'Abrir horario',
+    };
+  }
+
+  if (command?.type === 'create_checklist') {
+    if (!writers.addNote) return cannot('crear listas');
+    const items = (payload.items || []).map((text) => makeCheckItem(text));
+    const stamp = Date.now();
+    writers.addNote({
+      kind: NOTE_KINDS.checklist,
+      title: payload.title,
+      body: '',
+      items,
+      tags: [],
+      color: colors.accent,
+      pinned: false,
+      private: false,
+      audio: null,
+      attachment: null,
+      createdAt: stamp,
+      updatedAt: stamp,
+      idPrefix: 'nota',
+    });
+    return {
+      title: 'Lista creada ✅',
+      body: items.length
+        ? `“${payload.title}” con ${plural(items.length, 'tarea')} en Notas: ${items.map((item) => item.text).join(', ')}.`
+        : `“${payload.title}” en Notas. Ábrela para agregarle tareas.`,
+      route: 'Notas',
+      routeLabel: 'Abrir notas',
+    };
   }
 
   if (command?.type === 'create_note') {
     if (!writers.addNote) return cannot('crear notas');
     writers.addNote({
       title: payload.title,
+      kind: NOTE_KINDS.text,
       body: '',
+      items: [],
+      tags: [],
       color: colors.accent,
       pinned: false,
       private: false,
@@ -317,6 +559,7 @@ export function applyCommand(command, writers = {}) {
       notes: '',
       // -1 = sin aviso. Programar un aviso que nadie pidió es exactamente lo que molesta.
       leadMinutes: -1,
+      category: payload.category || 'Personal',
       color: colors.accent,
       createdAt: Date.now(),
       idPrefix: 'ev',

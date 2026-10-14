@@ -66,11 +66,11 @@ const SLIDES = [
     key: 'notes',
     emoji: '🎙️',
     title: 'Notas con voz y adjuntos',
-    body: 'Las notas aceptan audio y documentos, y la agenda se exporta en un archivo .ics.',
+    body: 'Las notas aceptan audio y documentos, con listas y etiquetas; y toda la app se respalda en un archivo .json.',
     points: [
       'Graba una nota de voz y guárdala junto al texto.',
       'Adjunta un documento sin salir de la app.',
-      '“Exportar .ics” te lleva el día a cualquier calendario.',
+      'La copia .json de Ajustes guarda todo lo tuyo para restaurarlo cuando quieras.',
     ],
     tip: 'Toca el micrófono de la demo: la grabación se guarda dentro de la app, nunca sube a la nube.',
     demo: 'note',

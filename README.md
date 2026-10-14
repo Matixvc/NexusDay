@@ -17,8 +17,8 @@
 ## 📱 What is NexusDay?
 
 **NexusDay** is a personal daily-organizer that lives entirely on your phone. It brings
-your class schedule, agenda, birthdays, notes, habits and expenses into a single interface
-— with **no account, no server, and no network calls**.
+your class schedule, agenda, birthdays, notes (checklists and tags included), habits and
+expenses into a single interface — with **no account, no server, and no network calls**.
 
 It is built with **Expo SDK 57 / React Native 0.86**, ships for **iOS and Android**, and is
 fully usable offline.
@@ -28,11 +28,12 @@ fully usable offline.
 | | |
 |---|---|
 | 🗂️ **Six collections, one app** | Schedule, events, birthdays, notes, habits, expenses |
-| 🔍 **Search everything** | One query across notes, events, habits and expenses |
+| 🔍 **Search everything** | One query across notes (text, checklists and tags), events, habits and expenses |
 | 🧭 **Nine swipeable sections** | A custom tab bar you can reorder and hide |
 | 🎙️ **Voice notes** | Record, attach and play audio memos inside a note |
+| 💾 **JSON backup** | Export and restore every collection from Settings — no account, no cloud required |
 | 🔐 **Biometric lock** | Face ID / fingerprint / PIN on private notes and expenses |
-| 🧠 **Nexus AI** | Offline Q&A **and commands** — writes notes, events and expenses without an API key or network |
+| 🧠 **Nexus AI** | Offline Q&A **and commands** — writes notes, checklists, events, habits, classes and expenses without an API key or network |
 | 🎨 **4 neon themes** | Switch the accent of the entire UI instantly |
 
 </div>
@@ -202,16 +203,16 @@ runner, a headless environment).
 |---|---|---|
 | **Interactive onboarding** | 5-step swipeable tutorial; on first run it **wipes the sample data** so you never inherit someone else's schedule. Replayable from Settings without touching your data. | `OnboardingScreen.js` |
 | **Dynamically customizable navigation** | Reorder the 9 tabs and hide the ones you don't use. Home is always pinned first. Hidden tabs stay reachable via global search and can be restored with one tap from a "pin" slot. | `services/tabs.js`, `RootNavigator.js` |
-| **Global search** | One field ranks matches across notes, events, habits and expenses by prefix-match, field weight and recency. Tapping a result navigates **and highlights** the exact item. | `services/search.js`, `useFocusId.js` |
+| **Global search** | One field ranks matches across notes (including checklist items and tags), events (by category), habits and expenses by prefix-match, field weight and recency. Tapping a result navigates **and highlights** the exact item. | `services/search.js`, `useFocusId.js` |
 | **Private notes & expenses** | Per-item biometric lock. Private content is also **excluded from search results and from any summary text** — the lock protects the content, not just the record. | `services/privacy.js` |
 | **Neon accent modes** | 4 themes, instant runtime repaint via the mutable style registry (see above). Also retints the calendar and navigation themes. | `theme/accents.js`, `theme.js` |
 | **Haptic feedback** | Native tactile response wired through `expo-haptics`: a light impact on primary actions, a selection tick when flipping a switch, a success pulse when a habit is ticked, and a medium impact when a swipe action fires. | `services/haptics.js` |
 | **Voice notes** | Record in-app (mono, 64 kbps, metered level bar), replayed inline with a progress bar. The finished take is moved out of the cache into permanent storage only when accepted. | `hooks/useRecorder.js`, `ui/media.js` |
 | **Swipe gestures** | Swipe a row left/right to pin, lock, share or delete, with an `expo-local-authentication` prompt for destructive actions. | `ui/SwipeRow.js` |
-| **Offline assistant (Nexus AI)** | An intent matcher that answers "¿Qué tengo hoy?" / "¿Cuánto gasté este mes?" from data already on the device, plus a command layer that *writes*: "crea una nota de la reunión", "agenda el médico el martes a las 8:30", "gasté 1.250 en comida" create a note, an event or an expense. **No API key, no network call** — and the UI says so explicitly. When a sentence is ambiguous nothing is written. | `services/assistant.js`, `services/assistantCommands.js` |
+| **Offline assistant (Nexus AI)** | An intent matcher that answers "¿Qué tengo hoy?" / "¿Cuánto gasté este mes?" from data already on the device — including suspended classes, checklist progress and tag queries like "¿Qué notas tengo en #Estudio?" — plus a command layer that *writes*: "crea una nota de la reunión", "crea la lista de compras: pan, leche", "marca el hábito agua", "suspende la clase de cálculo", "agenda el parcial el martes a las 8:30" (with the category inferred from the title). Names match fuzzily, and ambiguous sentences write nothing. **No API key, no network call** — and the UI says so explicitly. | `services/assistant.js`, `services/assistantCommands.js` |
 | **Smart notifications** | Reminders re-arm automatically after reboots or app updates, and a "✓ Complete" button in the shade applies the habit tick to the live collection. | `services/reminders.js`, `notifications.js` |
-| **Calendar bridge** | Copies events to the native calendar and exports to `.ics` through the system share sheet. | `services/calendar.js` |
-| **Multi-format money** | Parses `1.234,56` and `1234.56` alike; formats as es-AR (`$ 1.850,50`) while writing machine-readable decimals to exports. | `utils/money.js` |
+| **JSON backup & restore** | "Exportar copia (.json)" serializes the six collections, profile and tab layout into a shareable file; "Importar copia" validates its integrity and restores it behind an explicit confirmation. The Google card's "Sincronizar ahora" seals the last-backup date on a real export. | `SettingsScreen.js`, `services/files.js` |
+| **Multi-format money** | Parses `1.234,56` and `1234.56` alike — plus colloquial amounts like "5k" / "3 lucas" — and formats as es-AR (`$ 1.850,50`) while writing machine-readable decimals to exports. | `utils/money.js` |
 
 > **On haptics:** feedback is **subtle and semantic**, not decorative. Marking a habit done
 > buzzes, *un*-marking stays silent; the vibration means "done", so an accidental un-tick
@@ -247,10 +248,13 @@ nexusday/
     │   └── TabGlyphs.js       # View-drawn icons (no icon font)
     ├── screens/               # One file per section
     ├── services/              # All business logic as pure, testable functions
+    │   ├── assistant.js       # Nexus AI: intents, fuzzy names, tag & checklist answers
+    │   ├── assistantCommands.js # Nexus AI: detect + apply (notes, events, habits, classes)
     │   ├── audio.js           # expo-audio: permissions, sessions, file juggling
-    │   ├── calendar.js        # expo-calendar + .ics export
-    │   ├── dashboard.js       # buildDashboard(), habitStreak(), pendingHabits()
-    │   ├── files.js           # expo-file-system SDK 57 class API
+    │   ├── dashboard.js       # buildDashboard(), habitStreak(), suspended classes
+    │   ├── eventCategories.js # Category palette for Agenda events
+    │   ├── files.js           # expo-file-system SDK 57 class API + JSON backup I/O
+    │   ├── notes.js           # Note model: checklists, tags, previews
     │   ├── notifications.js
     │   ├── privacy.js         # expo-local-authentication
     │   ├── reminders.js
@@ -281,7 +285,7 @@ single component.
 | Xcode 16+ / Android Studio | latest | Only for local native builds |
 
 > ⚠️ **NexusDay needs a development build for some features.**
-> Voice recording, the calendar bridge, notifications, biometrics and haptics are **native
+> Voice recording, notifications, biometrics and haptics are **native
 > modules**. In Expo Go those controls degrade into an explanatory notice instead of
 > crashing, but to use them you must build the app:
 >
@@ -391,7 +395,7 @@ Credentials are stored in EAS servers — **no keystore is ever committed**.
 | Version | Scope |
 |---|---|
 | **v1.1.0** *(current)* | Interactive onboarding, customizable tabs, biometric lock, swipe gestures |
-| **v1.2.0** | Modular dashboard widgets, smart daily summary, spending & habit analytics, background audio player with waveform, JSON/CSV backup & restore |
+| **v1.2.0** | Modular dashboard widgets, smart daily summary, spending & habit analytics, background audio player with waveform, CSV export per collection |
 | **v1.3.0** | Encrypted backups with passphrase, scheduled exports |
 | **v1.4.0** | Migration to Expo Router |
 

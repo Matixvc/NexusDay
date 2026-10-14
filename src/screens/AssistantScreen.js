@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
@@ -7,50 +7,107 @@ import { Card, Chip, ChipScroller, Pill, PrimaryButton, TextButton } from '../co
 import { Glyph } from '../navigation/TabGlyphs';
 import { ASSISTANT_SUGGESTIONS, answerQuestion } from '../services/assistant';
 import { applyCommand, detectCommand } from '../services/assistantCommands';
-import { shareAgendaICS } from '../services/agendaExport';
-import { describeShareStatus } from '../services/files';
+import { toggleCheckItem } from '../services/notes';
+import { dropReminder } from '../services/reminders';
+import { success as successHaptic } from '../services/haptics';
+import { todayKey } from '../utils/dates';
 
 /**
  * Nexus AI — panel del asistente.
  *
  * Es un chat local: cada pregunta se resuelve con `answerQuestion`, que lee las
  * colecciones ya guardadas en el dispositivo. No hay red, ni API key, ni envío de
- * datos; el propio texto de la pantalla lo aclara. Además escribe: `applyCommand` ejecuta las órdenes. El alcance es la app —notas,
- * agenda, horario, hábitos, gastos— y una pregunta fuera de tema devuelve al usuario
+ * datos; el propio texto de la pantalla lo aclara. Además escribe: `applyCommand` ejecuta
+ * las órdenes, y algunas respuestas traen chips accionables (tachar un hábito o una tarea
+ * de una lista) que se ejecutan en un toque desde la misma burbuja. El alcance es la app
+ * —notas, agenda, horario, hábitos, gastos— y una pregunta fuera de tema devuelve al usuario
  * a las funciones del dispositivo.
  */
 export default function AssistantScreen({ navigation }) {
-  const { events, activities, birthdays, notes, habits, expenses, addNote, addEvent, addExpense } = useAppData();
+  const {
+    events,
+    activities,
+    birthdays,
+    notes,
+    habits,
+    expenses,
+    addNote,
+    addEvent,
+    addExpense,
+    addHabit,
+    updateHabit,
+    updateActivity,
+    updateNote,
+  } = useAppData();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const [question, setQuestion] = useState('');
   const [log, setLog] = useState([]);
 
-  /** El .ics lo abre el sistema: la respuesta del chat llega cuando el sheet se cierra. */
-  const shareICS = async () => {
-    const result = await shareAgendaICS(events, { name: 'nexusday-agenda.ics', dialogTitle: 'Compartir agenda' });
-    const problem = describeShareStatus(result?.status);
-    return problem
-      ? { title: 'No se pudo compartir', body: `${problem} También puedes usar “Exportar .ics” en Horario.`, route: 'Horario', routeLabel: 'Abrir horario' }
-      : { title: 'Agenda lista 📤', body: 'Te preparé el archivo .ics con tus eventos. Ábrelo donde quieras.', route: 'Horario', routeLabel: 'Abrir horario' };
-  };
-
   /**
    * Una orden ("crea una nota de la reunión") se ejecuta sobre las colecciones; lo demás es
    * una pregunta y se responde leyendo los datos. Los dos terminan en la misma burbuja.
    */
-  const ask = async (suggestion) => {
+  const ask = (suggestion) => {
     const value = String(suggestion ?? question).trim();
     if (!value) return;
     const command = detectCommand(value);
     const answer = command
-      ? await applyCommand(command, { addNote, addEvent, addExpense, shareICS })
+      ? applyCommand(command, {
+          addNote,
+          addEvent,
+          addExpense,
+          addHabit,
+          updateHabit,
+          updateActivity,
+          habits,
+          activities,
+          dropReminder,
+        })
       : answerQuestion(value, { events, activities, birthdays, notes, habits, expenses });
     if (!answer?.title) return;
     setLog((prev) => [...prev, { id: `a-${Date.now()}`, question: value, ...answer }].slice(-8));
     setQuestion('');
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   };
+
+  /**
+   * Chip dentro de una respuesta: tacha un hábito de hoy o un ítem de una lista checklist.
+   * El chip ejecutado desaparece de la burbuja — la acción ya quedó aplicada.
+   */
+  const runAction = useCallback(
+    (entryId, action) => {
+      if (action.kind === 'habit') {
+        const habit = habits.find((item) => item.id === action.id);
+        if (!habit) return;
+        const marks = Array.isArray(habit.marks) ? habit.marks : [];
+        if (marks.includes(todayKey())) return;
+        successHaptic();
+        dropReminder(habit);
+        updateHabit(habit.id, { marks: [...marks, todayKey()], notificationId: null });
+      } else if (action.kind === 'checkitem') {
+        const note = notes.find((item) => item.id === action.noteId);
+        if (!note) return;
+        successHaptic();
+        updateNote(note.id, { items: toggleCheckItem(note.items, action.itemId), updatedAt: Date.now() });
+      } else {
+        return;
+      }
+      setLog((prev) =>
+        prev.map((entry) =>
+          entry.id === entryId
+            ? {
+                ...entry,
+                actions: (entry.actions || []).filter(
+                  (item) => !(item.kind === action.kind && item.id === action.id && item.itemId === action.itemId),
+                ),
+              }
+            : entry,
+        ),
+      );
+    },
+    [habits, notes, updateHabit, updateNote],
+  );
 
   /** Wipes the conversation (and anything half-typed) from the header bin. */
   const clearHistory = () => {
@@ -116,6 +173,17 @@ export default function AssistantScreen({ navigation }) {
             <Card accent={colors.accent} style={styles.answerCard}>
               <Text style={typography.bodyStrong}>{entry.title}</Text>
               <Text style={[typography.small, styles.answerBody]}>{entry.body}</Text>
+              {entry.actions?.length ? (
+                <View style={styles.actionRow}>
+                  {entry.actions.map((action) => (
+                    <Chip
+                      key={`${action.kind}-${action.id}-${action.itemId || ''}`}
+                      label={action.label}
+                      onPress={() => runAction(entry.id, action)}
+                    />
+                  ))}
+                </View>
+              ) : null}
               {entry.route ? (
                 <TextButton
                   label={entry.routeLabel || `Abrir ${entry.route}`}
@@ -185,6 +253,7 @@ const styles = themedStyles({
   userText: { color: colors.text },
   answerCard: { gap: spacing.sm },
   answerBody: { lineHeight: 20 },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   suggestionsTitle: { ...typography.overline, marginTop: spacing.sm },
   composer: {
     flexDirection: 'row',

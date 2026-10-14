@@ -15,13 +15,18 @@ import { ConfirmSheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
 import { Accordion } from '../components/ui/Accordion';
 import { initials } from '../utils/initials';
-import { tap as tapHaptic, select as selectHaptic } from '../services/haptics';
+import { tap as tapHaptic, select as selectHaptic, success as successHaptic } from '../services/haptics';
 import {
   FOLDERS,
   clearFolder,
+  describePickStatus,
+  describeShareStatus,
   formatBytes,
   isAvailable as filesAvailable,
   listFolder,
+  pickAndImport,
+  readText,
+  shareText,
   totalSize,
 } from '../services/files';
 import {
@@ -31,6 +36,31 @@ import {
 } from '../services/audio';
 
 const PERMISSION_TONE = { granted: 'accent', unknown: 'neutral', denied: 'warning' };
+
+/** Las seis colecciones que una copia de seguridad debe (poder) traer. */
+const BACKUP_COLLECTIONS = ['activities', 'events', 'birthdays', 'notes', 'habits', 'expenses'];
+
+/**
+ * Integridad del archivo elegido: `null` si es un respaldo utilizable, o el motivo concreto
+ * por el que se rechaza. Nunca lanza — un JSON cortado a mitad de camino es un caso normal.
+ */
+function validateBackup(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return 'El archivo no es una copia de seguridad válida.';
+  }
+  if (parsed.app !== 'NexusDay') {
+    return 'Ese archivo no es una copia de NexusDay (falta la marca del documento).';
+  }
+  const collections = parsed.collections;
+  if (!collections || typeof collections !== 'object' || Array.isArray(collections)) {
+    return 'La copia no contiene colecciones.';
+  }
+  const present = BACKUP_COLLECTIONS.filter((name) => name in collections);
+  if (!present.length) return 'La copia no contiene ninguna colección conocida.';
+  const broken = present.find((name) => !Array.isArray(collections[name]));
+  if (broken) return `La colección “${broken}” está dañada en el archivo.`;
+  return null;
+}
 
 /** Nombre configurado en app.json (la app se puede renombrar sin tocar la copia). */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -66,6 +96,7 @@ export default function SettingsScreen() {
     userName,
     setUserName,
     clearAllData,
+    restoreBackup,
     replayTutorial,
     tabConfig,
     setTabConfig,
@@ -86,6 +117,8 @@ export default function SettingsScreen() {
   const [careerDraft, setCareerDraft] = useState(null);
   const [micPermission, setMicPermission] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
+  // JSON ya parseado y validado, esperando la confirmación explícita antes de restaurar.
+  const [confirmImport, setConfirmImport] = useState(null);
   const [notice, setNotice] = useState(null);
   const [info, setInfo] = useState(null);
 
@@ -185,12 +218,113 @@ export default function SettingsScreen() {
     }
   }, [google.connected, google.drive, updateSettings]);
 
-  /** "Sincronizar ahora": sella la fecha del último respaldo y da feedback. */
-  const syncNow = useCallback(() => {
+  /**
+   * Exporta una copia .json real de todo: seis colecciones + ajustes + nombre + barra de
+   * solapas. Escribe el archivo en Documents/exports y abre el menú del sistema para
+   * guardarlo o subirlo (Drive, correo, etc.). Al compartirse, sella el "último respaldo"
+   * de la tarjeta de Google.
+   */
+  const exportBackup = useCallback(async () => {
     tapHaptic();
-    updateSettings({ googleConnected: true, googleLastSync: Date.now() });
-    setInfo('Sincronización completada (demostración).');
-  }, [updateSettings]);
+    const payload = {
+      app: 'NexusDay',
+      schema: 1,
+      exportedAt: Date.now(),
+      collections: { activities, events, birthdays, notes, habits, expenses },
+      settings: settings || {},
+      userName,
+      tabConfig,
+    };
+    const result = await shareText({
+      folder: FOLDERS.exports,
+      name: `nexusday-copia-${new Date().toISOString().slice(0, 10)}.json`,
+      text: JSON.stringify(payload, null, 2),
+      dialogTitle: 'Exportar copia de seguridad',
+    });
+    const problem = describeShareStatus(result.status);
+    if (problem) {
+      setNotice(problem);
+      return;
+    }
+    if (result.status === 'shared') {
+      updateSettings({ googleLastSync: Date.now() });
+      successHaptic();
+      setInfo('Copia exportada: el menú de compartir quedó abierto para guardarla donde quieras.');
+    }
+    refreshStorage();
+  }, [
+    activities,
+    events,
+    birthdays,
+    notes,
+    habits,
+    expenses,
+    settings,
+    userName,
+    tabConfig,
+    updateSettings,
+    refreshStorage,
+  ]);
+
+  /**
+   * Elige un .json, valida su integridad y solo entonces pide confirmación. Restaurar
+   * sobrescribe todo, así que el usuario tiene que decirlo explícitamente.
+   */
+  const startImport = useCallback(async () => {
+    tapHaptic();
+    const picked = await pickAndImport({
+      type: 'application/json',
+      folder: FOLDERS.exports,
+      prefix: 'copia',
+    });
+    const problem = describePickStatus(picked.status);
+    if (problem) {
+      setNotice(problem);
+      return;
+    }
+    if (picked.status === 'cancel') return;
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(readText(picked.file.uri));
+    } catch {
+      setNotice('El archivo no se pudo leer como JSON. Elige una copia exportada desde NexusDay.');
+      return;
+    }
+    const invalid = validateBackup(parsed);
+    if (invalid) {
+      setNotice(invalid);
+      return;
+    }
+    setConfirmImport(parsed);
+  }, []);
+
+  /** Aplica la copia ya confirmada y refresca todo lo derivado (storage, avisos). */
+  const applyImport = () => {
+    if (!confirmImport) return;
+    const collections = confirmImport.collections || {};
+    const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + (collections[name]?.length || 0), 0);
+    restoreBackup({
+      activities: collections.activities,
+      events: collections.events,
+      birthdays: collections.birthdays,
+      notes: collections.notes,
+      habits: collections.habits,
+      expenses: collections.expenses,
+      settings: confirmImport.settings,
+      userName: confirmImport.userName,
+      tabConfig: confirmImport.tabConfig,
+    });
+    setConfirmImport(null);
+    successHaptic();
+    refreshStorage();
+    setInfo(`Copia restaurada con ${total} registros.`);
+  };
+
+  /** "Sincronizar ahora": exporta la copia .json y sella la fecha del último respaldo. */
+  const syncNow = useCallback(() => {
+    exportBackup();
+  }, [exportBackup]);
 
   const askNotifications = async () => {
     await requestNotifications();
@@ -208,7 +342,7 @@ export default function SettingsScreen() {
   const clearExports = () => {
     clearFolder(FOLDERS.exports);
     refreshStorage();
-    setInfo('Se borraron los archivos exportados (.ics).');
+    setInfo('Se borraron los archivos exportados (copias .json).');
   };
 
   const wipe = () => {
@@ -527,9 +661,15 @@ export default function SettingsScreen() {
             y las notas de voz viven en el almacenamiento interno de la app.
           </Text>
           <View style={styles.actions}>
-            <PrimaryButton label="Limpiar exportados" onPress={clearExports} style={styles.actionButton} />
+            <PrimaryButton label="Exportar copia (.json)" onPress={exportBackup} style={styles.actionButton} />
+            <PrimaryButton label="Importar copia" onPress={startImport} style={styles.actionButton} />
+            <TextButton label="Limpiar exportados" tone="ghost" onPress={clearExports} />
             <TextButton label="Recalcular" tone="ghost" onPress={refreshStorage} />
           </View>
+          <Text style={typography.caption}>
+            La copia .json junta las seis colecciones, tu perfil y la barra de solapas: guárdala en Drive,
+            en tu computadora o donde quieras. Importarla reemplaza los datos actuales y pide confirmación.
+          </Text>
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
@@ -631,6 +771,15 @@ export default function SettingsScreen() {
         title="¿Borrar todos los datos?"
         message="¿Estás seguro de que quieres eliminar estos datos? Esta acción no se puede deshacer."
         confirmLabel="Sí, eliminar"
+      />
+
+      <ConfirmSheet
+        visible={Boolean(confirmImport)}
+        onClose={() => setConfirmImport(null)}
+        onConfirm={applyImport}
+        title="¿Restaurar esta copia?"
+        message="¿Estás seguro? Los datos actuales se reemplazarán por los de la copia. Esta acción no se puede deshacer."
+        confirmLabel="Sí, restaurar"
       />
     </>
   );
