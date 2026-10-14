@@ -35,7 +35,11 @@ export function formatMoney(value, { currency = '$', decimals = 2 } = {}) {
 
 /** Best-effort numeric parse of a free-text amount. Never throws, never returns NaN. */
 export function parseAmount(input) {
-  const raw = String(input ?? '').replace(/[^\d.,-]/g, '');
+  const source = String(input ?? '').toLowerCase();
+  // Colloquial thousands: "5k" is 5000 and "3 lucas" is 3000. The multiplier applies
+  // to whatever number precedes it, including decimals ("2,5k" -> 2500).
+  const thousand = /(?:\bk\b|luca(?:s)?\b)/.test(source) ? 1000 : 1;
+  const raw = source.replace(/[^\d.,-]/g, '');
   if (!raw) return 0;
 
   const lastComma = raw.lastIndexOf(',');
@@ -53,7 +57,7 @@ export function parseAmount(input) {
     normalized = decimals > 0 && decimals <= 2 ? raw : raw.replace(/\./g, '');
   }
 
-  const value = Number(normalized);
+  const value = Number(normalized) * thousand;
   return Number.isFinite(value) ? value : 0;
 }
 

@@ -46,14 +46,23 @@ export function searchEverything(
   // surface of the app and the whole point of the lock is that the text is not floating
   // around before the user authenticates.
   notes.filter((note) => !note.private).forEach((note) => {
+    const items = Array.isArray(note.items) ? note.items : [];
+    const tags = Array.isArray(note.tags) ? note.tags : [];
     const match = score(
       [
         { text: note.title, weight: 0 },
         { text: note.body, weight: 1 },
+        // A checklist note is found through its tasks and its labels too.
+        ...items.map((item) => ({ text: item?.text, weight: 2 })),
+        ...tags.map((tag) => ({ text: tag, weight: 1 })),
       ],
       needle,
     );
     if (!match) return;
+    const summary = note.kind === 'checklist' && items.length
+      ? `Lista · ${items.filter((item) => item?.done).length}/${items.length} listas`
+      : oneLine(note.body, 72) || 'Nota sin contenido';
+    const tagLine = tags.length ? ` · ${tags.slice(0, 3).join(' ')}` : '';
     candidates.push({
       type: 'note',
       id: note.id,
@@ -61,7 +70,7 @@ export function searchEverything(
       typeLabel: SEARCH_SOURCES.note.label,
       icon: SEARCH_SOURCES.note.icon,
       title: note.title || 'Sin título',
-      subtitle: oneLine(note.body, 72) || 'Nota sin contenido',
+      subtitle: `${summary}${tagLine}`,
       color: note.color,
       recency: note.updatedAt || note.createdAt || 0,
       score: match.score,
@@ -73,6 +82,7 @@ export function searchEverything(
       [
         { text: event.title, weight: 0 },
         { text: event.notes, weight: 1 },
+        { text: event.category, weight: 1 },
         { text: event.dateKey, weight: 2 },
       ],
       needle,
@@ -85,7 +95,7 @@ export function searchEverything(
       typeLabel: SEARCH_SOURCES.event.label,
       icon: SEARCH_SOURCES.event.icon,
       title: event.title,
-      subtitle: `${formatDateShort(event.dateKey)} · ${event.time || 'sin hora'}`,
+      subtitle: `${formatDateShort(event.dateKey)} · ${event.time || 'sin hora'}${event.category ? ` · ${event.category}` : ''}`,
       color: event.color,
       recency: event.dateKey || '',
       score: match.score,

@@ -163,9 +163,9 @@ function readDate(text) {
   return explicitDate(text) ?? weekdayDate(text) ?? { dateKey: null, tokens: [] };
 }
 
-/** Amount + category out of "gaste 1.250 en comida". */
+/** Amount + category out of "gaste 1.250 en comida" (also "gaste 5k" or "gaste 3 lucas"). */
 function readExpense(text) {
-  const match = text.match(/(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/);
+  const match = text.match(/(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(k\b|lucas?\b)?/);
   if (!match) return null;
   const amount = parseAmount(match[0]);
   if (!Number.isFinite(amount) || amount <= 0) return null;

@@ -37,6 +37,11 @@ export function pendingHabits(habits = [], today = todayKey()) {
   return habits.filter((habit) => !Array.isArray(habit.marks) || !habit.marks.includes(today));
 }
 
+/** True when an activity session is suspended for a given dateKey. */
+export function isActivitySuspended(activity, dateKey) {
+  return Boolean(activity?.suspended?.[dateKey]);
+}
+
 /** Consecutive days (ending today or yesterday) in which the habit was ticked. */
 export function habitStreak(habit, today = todayKey()) {
   const marks = new Set(Array.isArray(habit?.marks) ? habit.marks : []);
@@ -86,6 +91,11 @@ export function buildDashboard({
     .slice()
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
 
+  // Suspended sessions do not count as pending: they stay visible below, clearly
+  // marked, while the hero and the counters only answer for what is really ahead.
+  const activeActivities = todayActivities.filter((item) => !isActivitySuspended(item, today));
+  const suspendedActivities = todayActivities.filter((item) => isActivitySuspended(item, today));
+
   // Everything the calendar holds for today, over or pending alike: the greeting has to answer
   // "¿cuánto tengo hoy?", and counting only the weekly schedule ignored every dated event.
   const todayEvents = events.filter((event) => event.dateKey === today);
@@ -96,7 +106,7 @@ export function buildDashboard({
     .sort(compareDateTime);
 
   const nextUp = [
-    ...todayActivities
+    ...activeActivities
       // An activity that ends exactly at the current minute has already finished.
       .filter((item) => String(item.end || item.start) > currentTime)
       .map((item) => ({
@@ -125,11 +135,13 @@ export function buildDashboard({
     dateLabel: formatDateLong(today),
     weekdayLabel: WEEKDAYS[dayIndex].long,
     greeting: greetingForHour(now.getHours()),
-    todayActivities,
+    todayActivities: activeActivities,
+    suspendedToday: suspendedActivities,
     todayEvents,
     // What the greeting answers with: everything scheduled for today, weekly blocks and dated
-    // events together, whether or not the clock already went past them.
-    todayCommitments: todayActivities.length + todayEvents.length,
+    // events together, whether or not the clock already went past them. Suspended sessions
+    // are listed separately and never added to this count.
+    todayCommitments: activeActivities.length + todayEvents.length,
     upcomingEvents,
     nextUp,
     pendingHabits: pendingHabits(habits, today),
