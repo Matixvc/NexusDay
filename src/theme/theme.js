@@ -35,6 +35,9 @@ function resolveTokens(ids) {
  * `overlay` is deliberately outside the palettes: a scrim that dims the page behind a sheet
  * has to stay dark even in light mode, or the sheet loses all separation from the content.
  */
+// `colors` es el único objeto mutable que lleva los valores del tema vigente. Los componentes
+// lo leen durante el render; `applyTheme` lo reasigna en lugar de reconstruirlo, por lo que
+// las referencias existentes siguen siendo válidas después de un cambio de tema.
 export const colors = Object.assign({ overlay: 'rgba(0, 0, 0, 0.72)' }, resolveTokens(applied));
 
 if (__DEV__) {
@@ -171,26 +174,43 @@ export function themedStyles(styles) {
 
 // Typography and the navigation/calendar themes are plain objects rather than style sheets,
 // but they carry token colours too. Register them all: miss `typography` and the light mode
-// would go on painting white text over white cards.
+// would go on painting white text over white cards. They are built as object literals here,
+// so they are mutable; `repaint` will clone any frozen nested object it encounters.
 styleRegistry.add(typography);
 styleRegistry.add(navigationTheme);
 styleRegistry.add(calendarTheme);
 
-/** Replaces every string in `node` that matches a key of `mapping` (recursively). */
+/**
+ * Replaces every string in `node` that matches a key of `mapping` (recursively).
+ *
+ * Returns the (possibly same) node reference. When a node or one of its nested objects
+ * is frozen, a shallow mutable clone is made, repainted, and returned instead — so no
+ * style is left outdated and no frozen object is ever mutated.
+ */
 function repaint(node, mapping, depth = 0) {
-  if (!node || typeof node !== 'object' || depth > 5) return;
+  if (!node || typeof node !== 'object' || depth > 5) return node;
   if (Array.isArray(node)) {
-    node.forEach((child) => repaint(child, mapping, depth + 1));
-    return;
+    return node.map((child) => repaint(child, mapping, depth + 1));
   }
+  const frozen = Object.isFrozen(node);
+  const target = frozen ? { ...node } : node;
+  let changed = false;
   Object.keys(node).forEach((key) => {
     const value = node[key];
     if (typeof value === 'string') {
-      if (mapping[value]) node[key] = mapping[value];
+      if (mapping[value]) {
+        target[key] = mapping[value];
+        changed = true;
+      }
       return;
     }
-    repaint(value, mapping, depth + 1);
+    const repainted = repaint(value, mapping, depth + 1);
+    if (repainted !== value) {
+      target[key] = repainted;
+      changed = true;
+    }
   });
+  return changed ? target : node;
 }
 
 /**
@@ -231,7 +251,18 @@ export function applyTheme(patch = {}) {
   }
 
   Object.assign(colors, resolved);
-  styleRegistry.forEach((styles) => repaint(styles, changes));
+
+  // Repaint every registered style. `repaint` returns the same reference when it mutated
+  // in place, or a new mutable clone when it hit a frozen object. Replace registry entries
+  // for clones so future repaints keep working on mutable objects.
+  const registrySnapshot = Array.from(styleRegistry);
+  registrySnapshot.forEach((styles) => {
+    const repainted = repaint(styles, changes);
+    if (repainted !== styles) {
+      styleRegistry.delete(styles);
+      styleRegistry.add(repainted);
+    }
+  });
 
   applied.accentId = next.accentId;
   applied.surfaceId = next.surfaceId;

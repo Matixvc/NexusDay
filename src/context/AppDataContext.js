@@ -4,7 +4,9 @@ import { KEYS, loadValue, saveValue } from '../services/storage';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
+import { subscribeToNotificationActions } from '../services/notifications';
 import { resyncReminders } from '../services/reminders';
+import { todayKey } from '../utils/dates';
 import {
   seedActivities,
   seedBirthdays,
@@ -197,16 +199,49 @@ export function AppDataProvider({ children }) {
    * no hay vuelta atrás: lo anterior queda descartado (y persistido) en el mismo instante.
    */
   const restoreBackup = useCallback(
-    (backup = {}) => {
-      if (Array.isArray(backup.activities)) activities.replaceAll(backup.activities);
-      if (Array.isArray(backup.events)) events.replaceAll(backup.events);
-      if (Array.isArray(backup.birthdays)) birthdays.replaceAll(backup.birthdays);
-      if (Array.isArray(backup.notes)) notes.replaceAll(backup.notes);
-      if (Array.isArray(backup.habits)) habits.replaceAll(backup.habits);
-      if (Array.isArray(backup.expenses)) expenses.replaceAll(backup.expenses);
+    async (backup = {}) => {
+      // Los arrays locales son la fuente de verdad: `events.items` (por ejemplo) sigue
+      // apuntando al render anterior hasta que React procesa el `setItems` nuevo. Se
+      // elimina `notificationId` explícitamente para que `resyncReminders` genere
+      // recordatorios válidos sobre los datos restaurados en este mismo dispositivo.
+      const restoredActivities = (backup.activities || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredEvents = (backup.events || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredBirthdays = (backup.birthdays || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredNotes = (backup.notes || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredHabits = (backup.habits || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredExpenses = (backup.expenses || []).map((item) => ({ ...item, notificationId: null }));
+
+      // Un array puede estar vacío y el `Array.isArray` distingue un resultado válido de
+      // una colección ausente: `replaceAll([])` limpia los registros anteriores.
+      if (Array.isArray(backup.activities)) activities.replaceAll(restoredActivities);
+      if (Array.isArray(backup.events)) events.replaceAll(restoredEvents);
+      if (Array.isArray(backup.birthdays)) birthdays.replaceAll(restoredBirthdays);
+      if (Array.isArray(backup.notes)) notes.replaceAll(restoredNotes);
+      if (Array.isArray(backup.habits)) habits.replaceAll(restoredHabits);
+      if (Array.isArray(backup.expenses)) expenses.replaceAll(restoredExpenses);
+
       if (backup.settings && typeof backup.settings === 'object') updateSettings(backup.settings);
       if (typeof backup.userName === 'string') setUserName(backup.userName);
       if (backup.tabConfig) setTabConfig(backup.tabConfig);
+
+      // `resyncReminders` se ejecuta sobre los datos reales restaurados. Un fallo aquí no
+      // revierte la restauración de datos.
+      try {
+        const patches = await resyncReminders({
+          events: restoredEvents,
+          birthdays: restoredBirthdays,
+          habits: restoredHabits,
+          activities: restoredActivities,
+        });
+        patches.eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
+        patches.birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
+        patches.habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
+        patches.activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
+        return { dataRestored: true, notificationsRecreated: true };
+      } catch (error) {
+        console.warn('[restoreBackup] could not resync reminders', error);
+        return { dataRestored: true, notificationsRecreated: false };
+      }
     },
     [activities, events, birthdays, notes, habits, expenses, updateSettings, setUserName, setTabConfig],
   );
@@ -259,6 +294,40 @@ export function AppDataProvider({ children }) {
       clearTimeout(timer);
     };
   }, [allHydrated, permission.granted, events, birthdays, habits, activities]);
+
+  /** Mantiene el estado en memoria sincronizado cuando el usuario actúa desde una notificación
+   * (✓ Completar / ⏱ Posponer). `notifications.js` ya escribe a AsyncStorage; este effect se
+   * encarga de que lo que se ve en pantalla se actualice al instante sin reiniciar la app.
+   * No procesa acciones hasta que todas las colecciones estén hidratadas, para no escribir
+   * sobre datos de semilla en lugar de los datos reales del usuario. */
+  useEffect(() => {
+    if (!allHydrated) return;
+    const unsubscribe = subscribeToNotificationActions((action) => {
+      if (action.type === 'habit-complete') {
+        const today = todayKey();
+        habits.update(action.itemId, {
+          marks: (() => {
+            const current = habits.items.find((h) => h.id === action.itemId);
+            const marks = Array.isArray(current?.marks) ? current.marks : [];
+            if (marks.includes(today)) return marks;
+            return [...marks, today].sort();
+          })(),
+          notificationId: null,
+        });
+      } else if (action.type === 'reminder-id') {
+        // Actualizar el notificationId en la colección correspondiente
+        const collections = [events, birthdays, habits];
+        for (const collection of collections) {
+          const item = collection.items.find((i) => i.id === action.itemId);
+          if (item) {
+            collection.update(action.itemId, { notificationId: action.notificationId });
+            break;
+          }
+        }
+      }
+    });
+    return unsubscribe;
+  }, [allHydrated, events, birthdays, habits]);
 
   const value = useMemo(
     () => ({

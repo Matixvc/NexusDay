@@ -55,9 +55,8 @@ function AppStatusBar() {
  * the navigator (fresh styles) while `lastRoute` puts the user back on the tab they left.
  */
 function AppShell() {
-  const { revision } = useAccentTheme();
   const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, setTabConfig } = useAppData();
-  // Remembered so a remount (accent change, tab layout change) lands on the same section.
+  // Remembered so a remount (tab layout change) lands on the same section.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
 
   const onRouteChange = useCallback((name) => {
@@ -77,10 +76,10 @@ function AppShell() {
 
   return (
     <RootNavigator
-      // Only the *order* remounts the navigator. Toggling a visibility switch changes
-      // `tabConfig.hidden`, which `BottomTabBar` applies on its own render — so flipping a
-      // switch never rebuilds the navigator and never throws the user off Ajustes.
-      key={`${revision}|${tabOrderSignature(tabConfig)}`}
+      // Only the *order* of tabs remounts the navigator. Changing the accent or surface
+      // repaints styles in place through the theme system and must not unmount the
+      // navigator, otherwise the user is thrown back to Inicio.
+      key={tabOrderSignature(tabConfig)}
       initialRouteName={lastRoute}
       onRouteChange={onRouteChange}
       tabConfig={tabConfig}

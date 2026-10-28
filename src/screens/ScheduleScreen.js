@@ -33,7 +33,7 @@ import {
   weekdayIndex,
 } from '../utils/dates';
 
-const BLANK = { title: '', start: '09:00', end: '10:00', location: '', color: colors.accent, leadMinutes: -1 };
+const BLANK = () => ({ title: '', start: '09:00', end: '10:00', location: '', color: colors.accent, leadMinutes: -1 });
 
 function durationOf(activity) {
   return minutesBetween(activity.start, activity.end);
@@ -96,7 +96,7 @@ export default function ScheduleScreen({ navigation }) {
     return rest ? `en ${hours} h ${rest} min` : `en ${hours} h`;
   }, [upcoming]);
 
-  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK } });
+  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK() } });
 
   const openEdit = (item) =>
     setSheet({

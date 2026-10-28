@@ -27,7 +27,7 @@ import { plural } from '../utils/text';
 import { WEEKDAYS, fromDateKey, todayKey, weekdayIndex } from '../utils/dates';
 
 const EMOJIS = ['💧', '📚', '🏃', '🧘', '🥗', '😴', '✍️', '🎯'];
-const BLANK = { name: '', emoji: '💧', color: colors.accent };
+const BLANK = () => ({ name: '', emoji: '💧', color: colors.accent });
 
 export default function HabitsScreen() {
   const { habits, addHabit, updateHabit, removeHabit } = useAppData();
@@ -43,7 +43,7 @@ export default function HabitsScreen() {
   const pending = pendingHabits(habits, today);
   const bestStreak = habits.reduce((max, habit) => Math.max(max, habitStreak(habit, today)), 0);
 
-  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK } });
+  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK() } });
 
   const openEdit = useCallback(
     (habit) =>

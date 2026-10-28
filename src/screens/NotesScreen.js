@@ -40,7 +40,7 @@ import { select as selectHaptic, success as successHaptic } from '../services/ha
 import { timeAgo } from '../utils/dates';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
-const BLANK = { ...blankNote(colors.accent) };
+const BLANK = () => ({ ...blankNote(colors.accent) });
 
 /** Fija las notas con casilla primero; dentro de cada grupo, la más reciente arriba. */
 function sortNotes(notes) {
@@ -99,7 +99,7 @@ export default function NotesScreen() {
 
   const pinnedCount = notes.filter((note) => note.pinned).length;
 
-  const openCreate = useCallback(() => setSheet({ mode: 'create', values: { ...BLANK } }), []);
+  const openCreate = useCallback(() => setSheet({ mode: 'create', values: { ...BLANK() } }), []);
 
   /** Rellena el editor con el modelo completo de la nota (texto o checklist, con sus tags). */
   const toSheetValues = (note) => ({

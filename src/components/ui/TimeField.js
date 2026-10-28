@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { formatTime, parseTime, shiftTime } from '../../utils/dates';
 import { Chip, ChipScroller } from './primitives';
@@ -25,9 +25,15 @@ export function TimeField({ label = 'Hora', value, onChange, minuteStep = 5, hin
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
         <Text style={typography.overline}>{label}</Text>
-        <Text style={[styles.toggle, typography.tabular]} onPress={() => setOpen((prev) => !prev)}>
-          {open ? 'Ocultar' : 'Ajustar'}
-        </Text>
+        <Pressable
+          onPress={() => setOpen((prev) => !prev)}
+          accessibilityRole="button"
+          accessibilityLabel={`${open ? 'Ocultar' : 'Ajustar'} ${label}`}
+          accessibilityState={{ expanded: open }}
+          style={styles.toggleButton}
+        >
+          <Text style={[styles.toggle, typography.tabular]}>{open ? 'Ocultar' : 'Ajustar'}</Text>
+        </Pressable>
       </View>
 
       <View style={styles.displayRow}>
@@ -78,7 +84,8 @@ export function TimeField({ label = 'Hora', value, onChange, minuteStep = 5, hin
 const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent, paddingVertical: 2 },
+  toggleButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent },
   displayRow: {
     flexDirection: 'row',
     alignItems: 'center',

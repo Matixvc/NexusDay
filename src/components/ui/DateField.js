@@ -74,12 +74,24 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
         <Text style={typography.overline}>{label}</Text>
-        <Text style={[styles.toggle, typography.tabular]} onPress={() => setOpen((prev) => !prev)}>
-          {open ? 'Ocultar' : 'Cambiar'}
-        </Text>
+        <Pressable
+          onPress={() => setOpen((prev) => !prev)}
+          accessibilityRole="button"
+          accessibilityLabel={`${open ? 'Ocultar' : 'Cambiar'} ${label}`}
+          accessibilityState={{ expanded: open }}
+          style={styles.toggleButton}
+        >
+          <Text style={[styles.toggle, typography.tabular]}>{open ? 'Ocultar' : 'Cambiar'}</Text>
+        </Pressable>
       </View>
 
-      <Pressable style={({ pressed }) => [styles.display, pressed ? styles.pressed : null]} onPress={() => setOpen(true)}>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Elegir ${label}`}
+        accessibilityValue={{ text: relativeDayLabel(value || today) }}
+        style={({ pressed }) => [styles.display, pressed ? styles.pressed : null]}
+      >
         <View style={styles.dayBadge}>
           <Text style={[styles.badgeDay, typography.tabular]}>{selectedDate.getDate()}</Text>
           <Text style={styles.badgeMonth}>{MONTHS[selectedDate.getMonth()].slice(0, 3)}</Text>
@@ -112,6 +124,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
             <Pressable
               onPress={() => shiftMonth(-1)}
               hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Mes anterior"
               style={({ pressed }) => [styles.nav, pressed ? styles.pressed : null]}
             >
               <Text style={styles.navLabel}>‹</Text>
@@ -122,6 +136,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
             <Pressable
               onPress={() => shiftMonth(1)}
               hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Mes siguiente"
               style={({ pressed }) => [styles.nav, pressed ? styles.pressed : null]}
             >
               <Text style={styles.navLabel}>›</Text>
@@ -147,6 +163,9 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
                   <Pressable
                     key={key}
                     onPress={() => pick(key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${day} de ${MONTHS[anchor.month]} de ${anchor.year}`}
+                    accessibilityState={{ selected }}
                     style={({ pressed }) => [
                       styles.cell,
                       selected ? styles.cellSelected : null,
@@ -178,7 +197,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
 const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent, paddingVertical: 2 },
+  toggleButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent },
   display: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -18,10 +18,10 @@ const ThemeContext = createContext(null);
  * `revision` exists because a theme cannot be applied to a StyleSheet after the fact. Each
  * screen builds its sheet once at import time with token values baked in; `applyTheme` repaints
  * those objects in place, but inline objects and arrays created during a render are copies that
- * keep the colour they were born with. The app shell keys the navigator on this counter, so the
- * tree remounts and every sheet is rebuilt from the current `colors` (the previous tab comes
- * back right after). It only ever changes *after* `applyTheme` has painted, which is what makes
- * the first tap enough: the press that picks the option is the press that shows it.
+ * keep the colour they were born with. `RootNavigator` uses this counter to force a re-render
+ * (without unmounting) so `NavigationContainer` receives a fresh `theme` reference and applies
+ * the new colours immediately. It only ever changes *after* `applyTheme` has painted, which is
+ * what makes the first tap enough: the press that picks the option is the press that shows it.
  */
 export function ThemeProvider({ children }) {
   const [ids, setIds] = useState({ accentId: DEFAULT_ACCENT_ID, surfaceId: DEFAULT_SURFACE_ID });

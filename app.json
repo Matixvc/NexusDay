@@ -42,7 +42,10 @@
         {
           "faceIDPermission": "NexusDay usa Face ID para abrir las notas y los gastos que marcaste como privados."
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "owner": "matix03",
     "extra": {

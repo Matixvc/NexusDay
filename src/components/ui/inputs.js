@@ -73,6 +73,9 @@ export function ColorPicker({ label = 'Color', value, onChange, options = palett
             <Pressable
               key={color}
               onPress={() => onChange(color)}
+              accessibilityRole="radio"
+              accessibilityLabel={`${label}: ${color}`}
+              accessibilityState={{ selected }}
               style={({ pressed }) => [
                 styles.swatch,
                 { backgroundColor: color },
@@ -90,15 +93,18 @@ export function ColorPicker({ label = 'Color', value, onChange, options = palett
 }
 
 /** Small +/- control. Avoids an icon-font dependency entirely. */
-export function StepButton({ sign = '+', onPress, disabled, size = 40 }) {
+export function StepButton({ sign = '+', onPress, disabled, size = 40, accessibilityLabel }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || (sign === '+' ? 'Aumentar valor' : 'Reducir valor')}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.stepButton,
-        { width: size, height: size },
+        { width: Math.max(size, 44), height: Math.max(size, 44) },
         disabled ? styles.disabled : null,
         pressed ? styles.pressed : null,
       ]}
@@ -115,6 +121,9 @@ export function PickerTrigger({ label, value, placeholder, onPress, trailing }) 
     <Field label={label}>
       <Pressable
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityValue={{ text: filled ? String(value) : placeholder || 'Sin seleccionar' }}
         style={({ pressed }) => [styles.input, styles.trigger, pressed ? styles.pressed : null]}
       >
         <Text
@@ -151,14 +160,14 @@ const styles = themedStyles({
   trigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, alignItems: 'center' },
   swatch: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   swatchSelected: { borderWidth: 2, borderColor: colors.text },
-  swatchCheck: { fontSize: 14, fontWeight: '800', color: 'rgba(0,0,0,0.65)' },
+  swatchCheck: { fontSize: 14, fontWeight: '800', color: colors.accentInk },
   stepButton: {
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,

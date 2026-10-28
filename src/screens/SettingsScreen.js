@@ -300,11 +300,11 @@ export default function SettingsScreen() {
   }, []);
 
   /** Aplica la copia ya confirmada y refresca todo lo derivado (storage, avisos). */
-  const applyImport = () => {
+  const applyImport = async () => {
     if (!confirmImport) return;
     const collections = confirmImport.collections || {};
     const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + (collections[name]?.length || 0), 0);
-    restoreBackup({
+    const result = await restoreBackup({
       activities: collections.activities,
       events: collections.events,
       birthdays: collections.birthdays,
@@ -318,6 +318,14 @@ export default function SettingsScreen() {
     setConfirmImport(null);
     successHaptic();
     refreshStorage();
+    if (result === false) {
+      setInfo('No se pudieron restaurar los datos. Inténtalo de nuevo.');
+      return;
+    }
+    if (result && result.dataRestored && result.notificationsRecreated === false) {
+      setInfo(`Datos restaurados con ${total} registros. Los recordatorios no se pudieron reprogramar automáticamente.`);
+      return;
+    }
     setInfo(`Copia restaurada con ${total} registros.`);
   };
 
@@ -753,7 +761,7 @@ export default function SettingsScreen() {
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>{APP_NAME}</Text>
-              <Text style={typography.caption}>{`Versión ${appVersion} · Expo SDK 57`}</Text>
+              <Text style={typography.caption}>{`Versión ${appVersion} · Expo SDK 58`}</Text>
             </View>
             <Pill label="Local-first" tone="accent" />
           </View>

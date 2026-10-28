@@ -46,7 +46,7 @@ export function Screen({ title, subtitle, headerRight, children, contentStyle })
 }
 
 /** Elevated container used for every list item and group of controls. */
-function Card({ children, style, accent, onPress, dimmed }) {
+function Card({ children, style, accent, onPress, dimmed, accessibilityLabel, accessibilityHint, accessibilityState }) {
   const body = (
     <View style={[styles.card, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
       {accent ? <View style={[styles.accentBar, { backgroundColor: accent }]} /> : null}
@@ -57,7 +57,14 @@ function Card({ children, style, accent, onPress, dimmed }) {
   if (typeof onPress !== 'function') return body;
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.cardPressable, pressed ? styles.pressed : null]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={accessibilityState}
+      style={({ pressed }) => [styles.cardPressable, pressed ? styles.pressed : null]}
+    >
       {body}
     </Pressable>
   );
@@ -76,16 +83,21 @@ function SectionTitle({ title, count, right }) {
 }
 
 /** Selectable pill. Used for day tabs, lead times, colours and filters. */
-function Chip({ label, selected, onPress, color, compact }) {
+function Chip({ label, selected, onPress, color, compact, disabled = false, accessibilityLabel }) {
   const tint = color || colors.accent;
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ selected: Boolean(selected), disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.chip,
         compact ? styles.chipCompact : null,
         selected ? { backgroundColor: `${tint}22`, borderColor: tint } : null,
-        pressed ? styles.pressed : null,
+        disabled ? styles.disabled : null,
+        pressed && !disabled ? styles.pressed : null,
       ]}
     >
       <Text
@@ -107,7 +119,7 @@ function Pill({ label, tone = 'neutral', style }) {
     neutral: { backgroundColor: colors.surfacePlus, color: colors.textSecondary },
     accent: { backgroundColor: colors.accentSoft, color: colors.accent },
     danger: { backgroundColor: colors.dangerSoft, color: colors.danger },
-    warning: { backgroundColor: 'rgba(251, 191, 36, 0.14)', color: colors.warning },
+    warning: { backgroundColor: colors.warningSoft, color: colors.warning },
   };
   const active = tones[tone] || tones.neutral;
   return (
@@ -178,7 +190,7 @@ function Fab({ onPress, label = '+' }) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel="Agregar"
+      accessibilityLabel={label === '+' ? 'Agregar' : label}
       style={({ pressed }) => [styles.fab, shadow.fab, pressed ? styles.pressed : null]}
     >
       <Text style={styles.fabLabel}>{label}</Text>
@@ -330,6 +342,9 @@ const styles = themedStyles({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipCompact: { paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2 },
   chipLabel: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
