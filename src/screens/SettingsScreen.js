@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Modal, Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { ACCENT_THEMES, getAccentTheme, resolveAccent } from '../theme/accents';
@@ -10,6 +10,8 @@ import { authenticate, describeCapability, describePrivacyFailure } from '../ser
 import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButton } from '../components/ui/primitives';
+import { DeveloperModeScreen } from './DeveloperModeScreen';
+import { isDevModeEnabled } from '../services/devMode';
 import { TextField } from '../components/ui/inputs';
 import { ConfirmSheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
@@ -42,11 +44,11 @@ const BACKUP_COLLECTIONS = ['activities', 'events', 'birthdays', 'notes', 'habit
 
 /**
  * Integridad del archivo elegido: `null` si es un respaldo utilizable, o el motivo concreto
- * por el que se rechaza. Nunca lanza — un JSON cortado a mitad de camino es un caso normal.
+ * por el que se rechaza. Nunca lanza â€” un JSON cortado a mitad de camino es un caso normal.
  */
 function validateBackup(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return 'El archivo no es una copia de seguridad válida.';
+    return 'El archivo no es una copia de seguridad vÃ¡lida.';
   }
   if (parsed.app !== 'NexusDay') {
     return 'Ese archivo no es una copia de NexusDay (falta la marca del documento).';
@@ -56,9 +58,9 @@ function validateBackup(parsed) {
     return 'La copia no contiene colecciones.';
   }
   const present = BACKUP_COLLECTIONS.filter((name) => name in collections);
-  if (!present.length) return 'La copia no contiene ninguna colección conocida.';
+  if (!present.length) return 'La copia no contiene ninguna colecciÃ³n conocida.';
   const broken = present.find((name) => !Array.isArray(collections[name]));
-  if (broken) return `La colección “${broken}” está dañada en el archivo.`;
+  if (broken) return `La colecciÃ³n â€œ${broken}â€ estÃ¡ daÃ±ada en el archivo.`;
   return null;
 }
 
@@ -66,20 +68,20 @@ function validateBackup(parsed) {
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 function permissionPill(permission, labels) {
-  if (!permission) return <Pill label="Consultando…" />;
+  if (!permission) return <Pill label="Consultandoâ€¦" />;
   const tone = PERMISSION_TONE[permission.status] || 'warning';
   const label = permission.granted ? labels.granted : permission.canAskAgain ? labels.missing : labels.blocked;
   return <Pill label={label} tone={tone} />;
 }
 
-/** "Nunca" o una fecha legible del último respaldo de Google (epoch ms → texto). */
+/** "Nunca" o una fecha legible del Ãºltimo respaldo de Google (epoch ms â†’ texto). */
 function formatSyncDate(timestamp) {
   if (!timestamp) return 'Nunca';
   const d = new Date(Number(timestamp));
   if (Number.isNaN(d.getTime())) return 'Nunca';
   const date = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return `${date} · ${time}`;
+  return `${date} Â· ${time}`;
 }
 
 export default function SettingsScreen() {
@@ -106,29 +108,30 @@ export default function SettingsScreen() {
   } = useAppData();
 
   // What the phone can authenticate with (biometric enrolled or device passcode only).
-  const [privacyLabel, setPrivacyLabel] = useState('Consultando…');
+  const [privacyLabel, setPrivacyLabel] = useState('Consultandoâ€¦');
   const [privacyNotice, setPrivacyNotice] = useState(null);
 
-  // The greeting reads `userName` (`@nexusday/v1/user_name`) — the very same value the
-  // tutorial writes — so the field has to start from there and save back to there.
+  // The greeting reads `userName` (`@nexusday/v1/user_name`) â€” the very same value the
+  // tutorial writes â€” so the field has to start from there and save back to there.
   // `nameDraft` stays null until the user types, so the persisted name appears as soon as
   // the context hydrates without an effect that mirrors state into state.
   const [nameDraft, setNameDraft] = useState(null);
   const [careerDraft, setCareerDraft] = useState(null);
   const [micPermission, setMicPermission] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
-  // JSON ya parseado y validado, esperando la confirmación explícita antes de restaurar.
+  // JSON ya parseado y validado, esperando la confirmaciÃ³n explÃ­cita antes de restaurar.
   const [confirmImport, setConfirmImport] = useState(null);
   const [notice, setNotice] = useState(null);
   const [info, setInfo] = useState(null);
+  const [showDevLab, setShowDevLab] = useState(false);
 
   const name = nameDraft ?? userName ?? '';
   const setName = setNameDraft;
   const career = careerDraft ?? settings?.career ?? '';
   const setCareer = setCareerDraft;
 
-  // Estado del ecosistema Google (interfaz preparada): conexión, última sincronización y si el
-  // respaldo de notas en Drive/Keep está vinculado. Sin backend real; se persiste en settings
+  // Estado del ecosistema Google (interfaz preparada): conexiÃ³n, Ãºltima sincronizaciÃ³n y si el
+  // respaldo de notas en Drive/Keep estÃ¡ vinculado. Sin backend real; se persiste en settings
   // para que la tarjeta muestre un estado coherente entre sesiones.
   const google = {
     connected: Boolean(settings?.googleConnected),
@@ -154,7 +157,7 @@ export default function SettingsScreen() {
   /** Fires the native prompt once, so the user can verify the lock before relying on it. */
   const testPrivacy = async () => {
     const result = await authenticate({ promptMessage: 'Prueba el desbloqueo de NexusDay' });
-    setPrivacyNotice(result.ok ? 'Autenticación correcta.' : describePrivacyFailure(result.reason));
+    setPrivacyNotice(result.ok ? 'AutenticaciÃ³n correcta.' : describePrivacyFailure(result.reason));
   };
 
   /** Async on purpose: keeps the size read out of the effect's synchronous body. */
@@ -193,35 +196,35 @@ export default function SettingsScreen() {
     const next = name.trim();
     setUserName(next);
     updateSettings({ displayName: next, career: career.trim() });
-    setInfo(next ? `Listo, te voy a saludar como ${next}.` : 'Se quitó el nombre del saludo.');
+    setInfo(next ? `Listo, te voy a saludar como ${next}.` : 'Se quitÃ³ el nombre del saludo.');
   };
 
-  /** Guarda solo la carrera/ocupación, sin tocar el nombre del saludo. */
+  /** Guarda solo la carrera/ocupaciÃ³n, sin tocar el nombre del saludo. */
   const saveCareer = () => {
     updateSettings({ career: career.trim() });
-    setInfo(career.trim() ? 'Carrera guardada.' : 'Se quitó la carrera.');
+    setInfo(career.trim() ? 'Carrera guardada.' : 'Se quitÃ³ la carrera.');
   };
 
   /**
    * Conecta o desconecta la cuenta de Google (interfaz preparada). No hay backend: el estado
-   * se guarda en `settings` para que la tarjeta refleje la elección entre sesiones. Al conectar
-   * se sella la fecha de esta "sincronización".
+   * se guarda en `settings` para que la tarjeta refleje la elecciÃ³n entre sesiones. Al conectar
+   * se sella la fecha de esta "sincronizaciÃ³n".
    */
   const toggleGoogle = useCallback(() => {
     tapHaptic();
     if (google.connected) {
       updateSettings({ googleConnected: false, googleLastSync: null, googleDrive: false });
-      setInfo('Se desconectó la cuenta de Google.');
+      setInfo('Se desconectÃ³ la cuenta de Google.');
     } else {
       updateSettings({ googleConnected: true, googleLastSync: Date.now(), googleDrive: google.drive });
-      setInfo('Cuenta de Google vinculada (demostración).');
+      setInfo('Cuenta de Google vinculada (demostraciÃ³n).');
     }
   }, [google.connected, google.drive, updateSettings]);
 
   /**
    * Exporta una copia .json real de todo: seis colecciones + ajustes + nombre + barra de
-   * solapas. Escribe el archivo en Documents/exports y abre el menú del sistema para
-   * guardarlo o subirlo (Drive, correo, etc.). Al compartirse, sella el "último respaldo"
+   * solapas. Escribe el archivo en Documents/exports y abre el menÃº del sistema para
+   * guardarlo o subirlo (Drive, correo, etc.). Al compartirse, sella el "Ãºltimo respaldo"
    * de la tarjeta de Google.
    */
   const exportBackup = useCallback(async () => {
@@ -249,7 +252,7 @@ export default function SettingsScreen() {
     if (result.status === 'shared') {
       updateSettings({ googleLastSync: Date.now() });
       successHaptic();
-      setInfo('Copia exportada: el menú de compartir quedó abierto para guardarla donde quieras.');
+      setInfo('Copia exportada: el menÃº de compartir quedÃ³ abierto para guardarla donde quieras.');
     }
     refreshStorage();
   }, [
@@ -267,8 +270,8 @@ export default function SettingsScreen() {
   ]);
 
   /**
-   * Elige un .json, valida su integridad y solo entonces pide confirmación. Restaurar
-   * sobrescribe todo, así que el usuario tiene que decirlo explícitamente.
+   * Elige un .json, valida su integridad y solo entonces pide confirmaciÃ³n. Restaurar
+   * sobrescribe todo, asÃ­ que el usuario tiene que decirlo explÃ­citamente.
    */
   const startImport = useCallback(async () => {
     tapHaptic();
@@ -319,17 +322,17 @@ export default function SettingsScreen() {
     successHaptic();
     refreshStorage();
     if (result === false) {
-      setInfo('No se pudieron restaurar los datos. Inténtalo de nuevo.');
+      setInfo('No se pudieron restaurar los datos. IntÃ©ntalo de nuevo.');
       return;
     }
     if (result && result.dataRestored && result.notificationsRecreated === false) {
-      setInfo(`Datos restaurados con ${total} registros. Los recordatorios no se pudieron reprogramar automáticamente.`);
+      setInfo(`Datos restaurados con ${total} registros. Los recordatorios no se pudieron reprogramar automÃ¡ticamente.`);
       return;
     }
     setInfo(`Copia restaurada con ${total} registros.`);
   };
 
-  /** "Sincronizar ahora": exporta la copia .json y sella la fecha del último respaldo. */
+  /** "Sincronizar ahora": exporta la copia .json y sella la fecha del Ãºltimo respaldo. */
   const syncNow = useCallback(() => {
     exportBackup();
   }, [exportBackup]);
@@ -344,7 +347,7 @@ export default function SettingsScreen() {
     setMicPermission(result);
     const message = describeAudioStatus(result.status, result.canAskAgain);
     if (message) setNotice(message);
-    else setInfo('Micrófono listo para grabar notas de voz.');
+    else setInfo('MicrÃ³fono listo para grabar notas de voz.');
   };
 
   const clearExports = () => {
@@ -383,7 +386,7 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
-        {/* ── Perfil enriquecido ─────────────────────────────────────────────────────── */}
+        {/* â”€â”€ Perfil enriquecido â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <SectionTitle title="Perfil" />
         <Card style={styles.card}>
           <View style={styles.profileRow}>
@@ -392,21 +395,21 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.profileBody}>
               <Text style={typography.bodyStrong} numberOfLines={1}>
-                {name.trim() || 'Sin nombre aún'}
+                {name.trim() || 'Sin nombre aÃºn'}
               </Text>
               <Text style={typography.caption} numberOfLines={1}>
-                {career.trim() || 'Agrega tu carrera u ocupación'}
+                {career.trim() || 'Agrega tu carrera u ocupaciÃ³n'}
               </Text>
               <View style={styles.pillWrap}>
                 <Pill label={`${notes.length} notas`} />
                 <Pill label={`${events.length} eventos`} />
-                <Pill label={`${habits.length} hábitos`} />
+                <Pill label={`${habits.length} hÃ¡bitos`} />
               </View>
             </View>
           </View>
 
           <TextField
-            label="¿Cómo te llamo?"
+            label="Â¿CÃ³mo te llamo?"
             value={name}
             onChangeText={setName}
             placeholder="Tu nombre"
@@ -414,25 +417,25 @@ export default function SettingsScreen() {
             onSubmitEditing={saveName}
           />
           <TextField
-            label="Carrera u ocupación"
+            label="Carrera u ocupaciÃ³n"
             value={career}
             onChangeText={setCareer}
-            placeholder="Ej. Ingeniería en Sistemas"
+            placeholder="Ej. IngenierÃ­a en Sistemas"
             maxLength={40}
             onSubmitEditing={saveCareer}
           />
           <TextButton label="Guardar perfil" onPress={saveName} />
         </Card>
 
-        {/* ── Ecosistema Google (interfaz preparada) ────────────────────────────────── */}
-        <SectionTitle title="Cuenta y Sincronización con Google" />
+        {/* â”€â”€ Ecosistema Google (interfaz preparada) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <SectionTitle title="Cuenta y SincronizaciÃ³n con Google" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Estado de la cuenta</Text>
               <Text style={typography.caption}>
                 {google.connected
-                  ? 'Vinculada · sincroniza Google Calendar y respalda notas en Drive/Keep.'
+                  ? 'Vinculada Â· sincroniza Google Calendar y respalda notas en Drive/Keep.'
                   : 'Sin vincular. Conecta para sincronizar tu agenda y respaldar tus notas.'}
               </Text>
             </View>
@@ -440,7 +443,7 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.rowBetween}>
-            <Text style={typography.small}>Último respaldo</Text>
+            <Text style={typography.small}>Ãšltimo respaldo</Text>
             <Text style={[typography.small, styles.strong]}>{formatSyncDate(google.lastSync)}</Text>
           </View>
 
@@ -471,7 +474,7 @@ export default function SettingsScreen() {
           ) : null}
 
           <Text style={typography.caption}>
-            Módulo en preparación: la vinculación real llegará en una próxima versión. Por ahora tus
+            MÃ³dulo en preparaciÃ³n: la vinculaciÃ³n real llegarÃ¡ en una prÃ³xima versiÃ³n. Por ahora tus
             datos se guardan solo en este dispositivo.
           </Text>
         </Card>
@@ -480,7 +483,7 @@ export default function SettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.fieldLabel}>Acento</Text>
           <Text style={typography.caption}>
-            El acento tiñe botones, la solapa activa, los chips y el calendario. Se guarda en el
+            El acento tiÃ±e botones, la solapa activa, los chips y el calendario. Se guarda en el
             dispositivo y se aplica al instante, con el mismo toque.
           </Text>
           <View style={styles.themeGrid}>
@@ -493,7 +496,7 @@ export default function SettingsScreen() {
                 <Pressable
                   key={option.id}
                   onPress={() => {
-                    // El mismo toque que los demás selectores de Ajustes.
+                    // El mismo toque que los demÃ¡s selectores de Ajustes.
                     selectHaptic();
                     setAccentId(option.id);
                   }}
@@ -525,7 +528,7 @@ export default function SettingsScreen() {
         <Card style={styles.card}>
           <Text style={styles.fieldLabel}>Modo de pantalla</Text>
           <Text style={typography.caption}>
-            El fondo sobre el que se pinta todo lo demás. Negro puro deja los píxeles apagados en
+            El fondo sobre el que se pinta todo lo demÃ¡s. Negro puro deja los pÃ­xeles apagados en
             las pantallas AMOLED; claro es blanco real, con textos oscuros de verdad.
           </Text>
           <View style={styles.surfaceRow}>
@@ -576,12 +579,12 @@ export default function SettingsScreen() {
           <Text style={typography.caption}>{getSurfaceMode(surfaceId).hint}</Text>
         </Card>
 
-        {/* ── Permisos y Seguridad (acordeón) ───────────────────────────────────────── */}
+        {/* â”€â”€ Permisos y Seguridad (acordeÃ³n) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <SectionTitle title="Permisos y Seguridad" />
-        <Accordion title="Permisos del sistema" subtitle="Micrófono, notificaciones, calendario y ubicación." icon="🔐" defaultOpen>
+        <Accordion title="Permisos del sistema" subtitle="MicrÃ³fono, notificaciones, calendario y ubicaciÃ³n." icon="ðŸ”" defaultOpen>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Micrófono</Text>
+              <Text style={typography.bodyStrong}>MicrÃ³fono</Text>
               <Text style={typography.caption}>Necesario para las notas de voz.</Text>
             </View>
             <View style={styles.permissionRight}>
@@ -595,7 +598,7 @@ export default function SettingsScreen() {
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Notificaciones</Text>
-              <Text style={typography.caption}>Avisos de eventos, clases y cumpleaños.</Text>
+              <Text style={typography.caption}>Avisos de eventos, clases y cumpleaÃ±os.</Text>
             </View>
             <View style={styles.permissionRight}>
               {permissionPill(
@@ -610,26 +613,26 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Calendario y ubicación no se usan aún: se muestran como "no gestionadas" con la UI
+          {/* Calendario y ubicaciÃ³n no se usan aÃºn: se muestran como "no gestionadas" con la UI
               lista, sin dependencias nativas nuevas. */}
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Calendario</Text>
-              <Text style={typography.caption}>Aún no lo usa NexusDay.</Text>
+              <Text style={typography.caption}>AÃºn no lo usa NexusDay.</Text>
             </View>
             <Pill label="Inactivo" tone="neutral" />
           </View>
 
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Ubicación</Text>
-              <Text style={typography.caption}>Aún no la usa NexusDay.</Text>
+              <Text style={typography.bodyStrong}>UbicaciÃ³n</Text>
+              <Text style={typography.caption}>AÃºn no la usa NexusDay.</Text>
             </View>
             <Pill label="Inactivo" tone="neutral" />
           </View>
         </Accordion>
 
-        <Accordion title="Desbloqueo biométrico" subtitle={privacyLabel} icon="🛡️">
+        <Accordion title="Desbloqueo biomÃ©trico" subtitle={privacyLabel} icon="ðŸ›¡ï¸">
           {privacyNotice ? <Notice text={privacyNotice} /> : null}
           <View style={styles.privateRow}>
             <View style={styles.privateBody}>
@@ -639,17 +642,17 @@ export default function SettingsScreen() {
             <Switch
               value={Boolean(settings.privacyEnabled)}
               onValueChange={(value) => updateSettings({ privacyEnabled: value })}
-              label="Desbloqueo biométrico"
+              label="Desbloqueo biomÃ©trico"
               hideLabel
             />
           </View>
           <View style={styles.actions}>
-            <PrimaryButton label="Probar autenticación" onPress={testPrivacy} style={styles.actionButton} />
+            <PrimaryButton label="Probar autenticaciÃ³n" onPress={testPrivacy} style={styles.actionButton} />
           </View>
         </Accordion>
 
-        {/* ── Gestión de Datos y Almacenamiento (unificada) ─────────────────────────── */}
-        <SectionTitle title="Gestión de Datos y Almacenamiento" count={totalItems} />
+        {/* â”€â”€ GestiÃ³n de Datos y Almacenamiento (unificada) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <SectionTitle title="GestiÃ³n de Datos y Almacenamiento" count={totalItems} />
         <Card style={styles.card}>
           <View style={styles.statsRow}>
             <Stat value={formatBytes(storage?.attachments || 0)} label="Adjuntos" />
@@ -659,13 +662,13 @@ export default function SettingsScreen() {
           <View style={styles.pillWrap}>
             <Pill label={`${activities.length} actividades`} />
             <Pill label={`${events.length} eventos`} />
-            <Pill label={`${birthdays.length} cumpleaños`} />
+            <Pill label={`${birthdays.length} cumpleaÃ±os`} />
             <Pill label={`${notes.length} notas`} />
-            <Pill label={`${habits.length} hábitos`} />
+            <Pill label={`${habits.length} hÃ¡bitos`} />
             <Pill label={`${expenses.length} gastos`} />
           </View>
           <Text style={typography.caption}>
-            Todo se guarda en el teléfono con AsyncStorage: no hay cuentas ni servidores. Los adjuntos
+            Todo se guarda en el telÃ©fono con AsyncStorage: no hay cuentas ni servidores. Los adjuntos
             y las notas de voz viven en el almacenamiento interno de la app.
           </Text>
           <View style={styles.actions}>
@@ -675,18 +678,18 @@ export default function SettingsScreen() {
             <TextButton label="Recalcular" tone="ghost" onPress={refreshStorage} />
           </View>
           <Text style={typography.caption}>
-            La copia .json junta las seis colecciones, tu perfil y la barra de solapas: guárdala en Drive,
-            en tu computadora o donde quieras. Importarla reemplaza los datos actuales y pide confirmación.
+            La copia .json junta las seis colecciones, tu perfil y la barra de solapas: guÃ¡rdala en Drive,
+            en tu computadora o donde quieras. Importarla reemplaza los datos actuales y pide confirmaciÃ³n.
           </Text>
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
-        <SectionTitle title="Personalizar Navegación" count={tabConfig.order.length} />
+        <SectionTitle title="Personalizar NavegaciÃ³n" count={tabConfig.order.length} />
         <Card style={styles.card}>
           <Text style={typography.caption}>
             Reordena las solapas con las flechas y apaga las que no uses. Inicio y Ajustes quedan fijos con
-            candado: son la única forma de volver atrás y de deshacer estos cambios. Las ocultas siguen
-            accesibles desde la búsqueda global de Inicio.
+            candado: son la Ãºnica forma de volver atrÃ¡s y de deshacer estos cambios. Las ocultas siguen
+            accesibles desde la bÃºsqueda global de Inicio.
           </Text>
 
           {tabConfig.order.map((name, index) => {
@@ -699,29 +702,29 @@ export default function SettingsScreen() {
                 <Text style={[typography.caption, styles.tabIndex]}>{index + 1}</Text>
                 <View style={styles.tabBody}>
                   <View style={styles.tabTitleRow}>
-                    {locked ? <Text style={styles.lockGlyph}>🔒</Text> : null}
+                    {locked ? <Text style={styles.lockGlyph}>ðŸ”’</Text> : null}
                     <Text style={typography.bodyStrong} numberOfLines={1}>
                       {tab.label}
                     </Text>
                   </View>
                   <Text style={typography.caption} numberOfLines={1}>
                     {locked
-                      ? 'Fija · siempre visible'
+                      ? 'Fija Â· siempre visible'
                       : hidden
-                        ? 'Oculta · se abre desde la búsqueda'
+                        ? 'Oculta Â· se abre desde la bÃºsqueda'
                         : 'Visible en la barra'}
                   </Text>
                 </View>
                 <View style={styles.tabArrows}>
                   <TextButton
-                    label="↑"
+                    label="â†‘"
                     tone="ghost"
                     disabled={locked || index === 0}
                     onPress={() => setTabConfig(moveTab(tabConfig, name, -1))}
                     style={styles.arrow}
                   />
                   <TextButton
-                    label="↓"
+                    label="â†“"
                     tone="ghost"
                     disabled={locked || index === tabConfig.order.length - 1}
                     onPress={() => setTabConfig(moveTab(tabConfig, name, 1))}
@@ -761,33 +764,60 @@ export default function SettingsScreen() {
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>{APP_NAME}</Text>
-              <Text style={typography.caption}>{`Versión ${appVersion} · Expo SDK 58`}</Text>
+              <Text style={typography.caption}>{`VersiÃ³n ${appVersion} Â· Expo SDK 58`}</Text>
             </View>
             <Pill label="Local-first" tone="accent" />
           </View>
           <Text style={[typography.caption, styles.aboutText]}>
-            La grabación de voz y los avisos usan módulos nativos, así que la app necesita una
-            versión de desarrollo (npx expo run:android o eas build --profile development) para esas funciones.
+            La grabaciÃ³n de voz y los avisos usan mÃ³dulos nativos, asÃ­ que la app necesita una
+            versiÃ³n de desarrollo (npx expo run:android o eas build --profile development) para esas funciones.
           </Text>
         </Card>
+
+        {__DEV__ && isDevModeEnabled() ? (
+          <>
+            <SectionTitle title="Entorno de desarrollo" />
+            <Card style={styles.card}>
+              <View style={styles.rowBetween}>
+                <View style={styles.rowBody}>
+                  <Text style={typography.bodyStrong}>Laboratorio de desarrollo</Text>
+                  <Text style={typography.caption}>Acceso aislado solo en builds de desarrollo.</Text>
+                </View>
+                <Pill label="DEV" tone="accent" />
+              </View>
+              <PrimaryButton label="Abrir laboratorio" onPress={() => setShowDevLab(true)} style={styles.actionButton} />
+            </Card>
+          </>
+        ) : null}
       </Screen>
+
+      {__DEV__ && isDevModeEnabled() ? (
+        <Modal visible={showDevLab} animationType="slide" onRequestClose={() => setShowDevLab(false)}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <Pressable onPress={() => setShowDevLab(false)} style={{ padding: 16 }}>
+              <Text style={typography.bodyStrong}>← Volver a Ajustes</Text>
+            </Pressable>
+            <DeveloperModeScreen />
+          </View>
+        </Modal>
+      ) : null}
 
       <ConfirmSheet
         visible={confirmWipe}
         onClose={() => setConfirmWipe(false)}
         onConfirm={wipe}
-        title="¿Borrar todos los datos?"
-        message="¿Estás seguro de que quieres eliminar estos datos? Esta acción no se puede deshacer."
-        confirmLabel="Sí, eliminar"
+        title="Â¿Borrar todos los datos?"
+        message="Â¿EstÃ¡s seguro de que quieres eliminar estos datos? Esta acciÃ³n no se puede deshacer."
+        confirmLabel="SÃ­, eliminar"
       />
 
       <ConfirmSheet
         visible={Boolean(confirmImport)}
         onClose={() => setConfirmImport(null)}
         onConfirm={applyImport}
-        title="¿Restaurar esta copia?"
-        message="¿Estás seguro? Los datos actuales se reemplazarán por los de la copia. Esta acción no se puede deshacer."
-        confirmLabel="Sí, restaurar"
+        title="Â¿Restaurar esta copia?"
+        message="Â¿EstÃ¡s seguro? Los datos actuales se reemplazarÃ¡n por los de la copia. Esta acciÃ³n no se puede deshacer."
+        confirmLabel="SÃ­, restaurar"
       />
     </>
   );
@@ -816,7 +846,7 @@ const styles = themedStyles({
   avatarText: { fontSize: 24, fontWeight: '800', letterSpacing: 0.5 },
   profileBody: { flex: 1, gap: 3 },
 
-  // Permisos (dentro del acordeón).
+  // Permisos (dentro del acordeÃ³n).
   permissionRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
   aboutText: { lineHeight: 17 },
   pressed: { opacity: 0.7 },

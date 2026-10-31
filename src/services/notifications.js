@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { AndroidImportance, AndroidNotificationVisibility, AndroidAudioUsage, AndroidAudioContentType } from 'expo-notifications';
 import { KEYS, loadJSON, saveJSON } from './storage';
 import { todayKey } from '../utils/dates';
 import { colors } from '../theme/theme';
@@ -125,17 +126,17 @@ async function ensureChannel() {
       description: 'Avisos de eventos, horarios, cumpleaños y hábitos.',
       // Alarm-grade: heads-up, sound, vibration, and the alarm audio attributes so the
       // volume slider in ring mode still gets it through.
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: AndroidImportance.HIGH,
       sound: 'default',
       vibrationPattern: [0, 250, 150, 250],
       lightColor: colors.accent,
       enableLights: true,
       enableVibrate: true,
       bypassDnd: true,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
       audioAttributes: {
-        usage: Notifications.AndroidAudioUsage.ALARM,
-        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        usage: AndroidAudioUsage.ALARM,
+        contentType: AndroidAudioContentType.SONIFICATION,
         flags: { enforceAudibility: true, requestHardwareAudioVideoSynchronization: false },
       },
     });
