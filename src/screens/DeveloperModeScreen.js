@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -8,6 +8,7 @@ import { Screen, Card, Pill, SectionTitle, PrimaryButton } from '../components/u
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useTheme } from '../context/ThemeContext';
 import { isDevModeEnabled, DEV_NAMESPACE, devSaveJSON, devLoadJSON, devRemoveKey, devCreateId, devClearAll, devKey } from '../services/devMode';
+import * as Notif from '../services/notifications';
 import { TestLog } from '../components/devMode/TestLog';
 
 const CATEGORIES = [
@@ -29,6 +30,16 @@ const STORAGE_TESTS = [
   { id: 'verify-removed', name: 'Verificación de eliminación' },
   { id: 'no-leftovers', name: 'Sin claves de prueba restantes' },
   { id: 'v1-intact', name: 'Claves @nexusday/v1/ intactas' },
+];
+
+const NOTIFICATION_TESTS = [
+  { id: 'compatibility', name: 'Compatibilidad y permiso real' },
+  { id: 'permission-request', name: 'Solicitud de permiso' },
+  { id: 'schedule-5s', name: 'Programación a 5 segundos' },
+  { id: 'pending-contains-5s', name: 'Pendientes incluyen ID de 5s' },
+  { id: 'schedule-60s', name: 'Programación a 60 segundos' },
+  { id: 'cancel-60s', name: 'Cancelación de 60 segundos' },
+  { id: 'pending-no-60s', name: 'Pendientes sin ID cancelado' },
 ];
 
 function deepEqual(a, b) {
@@ -58,6 +69,7 @@ export function DeveloperModeScreen() {
   const [overall, setOverall] = useState('idle');
   const [lastRun, setLastRun] = useState(null);
   const [clearing, setClearing] = useState(false);
+  const operationLock = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -99,7 +111,8 @@ export function DeveloperModeScreen() {
       Alert.alert('Modo desarrollador desactivado', 'No se pueden ejecutar pruebas.');
       return;
     }
-    if (running) return;
+    if (operationLock.current) return;
+    operationLock.current = true;
     setRunning(true);
     setOverall('running');
     setTestResults(STORAGE_TESTS.map((t) => ({ ...t, status: 'pending', message: 'Pendiente', time: null })));
@@ -181,13 +194,177 @@ export function DeveloperModeScreen() {
         updateStep('verify-removed', { status: 'warning', message: 'Limpieza falló: ' + (cleanupError?.message || 'error') });
       }
       setRunning(false);
+      operationLock.current = false;
+
       setOverall(allPassed ? 'success' : 'error');
       setLastRun(new Date());
     }
+
+  };
+
+  const runNotificationTests = async () => {
+    if (!isDevModeEnabled()) {
+      Alert.alert('Modo desarrollador desactivado', 'No se pueden ejecutar pruebas.');
+      return;
+    }
+    if (operationLock.current) return;
+    operationLock.current = true;
+    setRunning(true);
+    setOverall('running');
+    setTestResults(NOTIFICATION_TESTS.map((t) => ({ ...t, status: 'pending', message: 'Pendiente', time: null })));
+    const execute = async (id, task) => {
+      updateStep(id, { status: 'running', message: 'Ejecutando…' });
+      try {
+        await task();
+      } catch (error) {
+        allPassed = false;
+        updateStep(id, { status: 'error', message: error?.message || 'Error', time: nowTime() });
+        throw error;
+      }
+    };
+
+    let allPassed = true;
+    const labIds = [];
+
+    const cancelLabId = async (id) => {
+      try {
+        const pending = await Notifications.getAllScheduledNotificationsAsync();
+        const exists = Array.isArray(pending) && pending.some((n) => n?.identifier === id);
+        if (!exists) return true;
+        const ok = await Notif.cancel(id);
+        if (!ok) console.warn('[devMode] cancel returned false for', id);
+        return ok;
+      } catch (error) {
+        console.error('[devMode] cancel failed for', id, error);
+        return false;
+      }
+    };
+
+    let previousIds = [];
+    try {
+      previousIds = (await devLoadJSON('notif_lab_ids', [])) || [];
+      if (!Array.isArray(previousIds)) previousIds = [];
+    } catch (error) {
+      console.error('[devMode] could not load previous notif ids', error);
+      previousIds = [];
+    }
+    for (const id of previousIds) {
+      if (typeof id === 'string' && id.length > 0) {
+        await cancelLabId(id);
+      }
+    }
+
+    let id5 = null;
+    let id60 = null;
+
+    try {
+      await execute('compatibility', async () => {
+        const supported = Notif.isSupported();
+        if (!supported) throw new Error('Plataforma no soportada para notificaciones');
+        const perm = await Notif.getPermissionStatus();
+        updateStep('compatibility', { status: 'success', message: `Soportado: sí, permiso: ${perm.status}`, time: nowTime() });
+      });
+
+      await execute('permission-request', async () => {
+        const current = await Notif.getPermissionStatus();
+        if (current.granted) {
+          updateStep('permission-request', { status: 'success', message: 'Permiso ya concedido', time: nowTime() });
+          return;
+        }
+        const req = await Notif.requestPermission();
+        if (!req.granted) throw new Error('Permiso denegado por el usuario');
+        updateStep('permission-request', { status: 'success', message: 'Permiso concedido', time: nowTime() });
+      });
+      await execute('schedule-5s', async () => {
+        const date = new Date(Date.now() + 5000);
+        const result = await Notif.scheduleAt({
+          title: 'NexusDay Lab',
+          body: 'Prueba de notificación a 5 segundos',
+          date,
+          data: { source: 'nexusday', lab: true, kind: 'lab-5s' },
+        });
+        if (result.status !== 'scheduled' || !result.id) {
+          throw new Error(`Programación falló: ${result.status || 'sin estado'}`);
+        }
+        id5 = result.id;
+        await devSaveJSON('notif_lab_5s', id5);
+        labIds.push(id5);
+        await devSaveJSON('notif_lab_ids', labIds);
+        updateStep('schedule-5s', { status: 'success', message: `ID: ${id5}`, time: nowTime() });
+      });
+
+      await execute('pending-contains-5s', async () => {
+        if (!id5) throw new Error('No hay ID de 5s');
+        const pending = await Notifications.getAllScheduledNotificationsAsync();
+        const ids = Array.isArray(pending) ? pending.map((n) => n?.identifier) : [];
+        if (!ids.includes(id5)) throw new Error('El ID de 5s no aparece en pendientes');
+        updateStep('pending-contains-5s', { status: 'success', message: 'ID encontrado en pendientes', time: nowTime() });
+      });
+
+      await execute('schedule-60s', async () => {
+        const date = new Date(Date.now() + 60000);
+        const result = await Notif.scheduleAt({
+          title: 'NexusDay Lab',
+          body: 'Prueba de notificación a 60 segundos',
+          date,
+          data: { source: 'nexusday', lab: true, kind: 'lab-60s' },
+        });
+        if (result.status !== 'scheduled' || !result.id) {
+          throw new Error(`Programación falló: ${result.status || 'sin estado'}`);
+        }
+        id60 = result.id;
+        await devSaveJSON('notif_lab_60s', id60);
+        labIds.push(id60);
+        await devSaveJSON('notif_lab_ids', labIds);
+        updateStep('schedule-60s', { status: 'success', message: `ID: ${id60}`, time: nowTime() });
+      });
+
+      await execute('cancel-60s', async () => {
+        if (!id60) throw new Error('No hay ID de 60s');
+        const ok = await Notif.cancel(id60);
+        if (!ok) throw new Error('cancel devolvió false');
+        updateStep('cancel-60s', { status: 'success', message: 'Cancelación confirmada', time: nowTime() });
+      });
+
+      await execute('pending-no-60s', async () => {
+        if (!id60) throw new Error('No hay ID de 60s');
+        const pending = await Notifications.getAllScheduledNotificationsAsync();
+        const ids = Array.isArray(pending) ? pending.map((n) => n?.identifier) : [];
+        if (ids.includes(id60)) throw new Error('El ID cancelado sigue pendiente');
+        updateStep('pending-no-60s', { status: 'success', message: 'ID cancelado ausente', time: nowTime() });
+      });
+    } catch (_error) {
+      // Errores ya registrados por paso.
+    } finally {
+      for (const id of labIds) {
+        try {
+          await cancelLabId(id);
+        } catch (cleanupError) {
+          console.error('[devMode] cleanup cancel failed', cleanupError);
+          allPassed = false;
+        }
+      }
+      const tempKeys = ['notif_lab_5s', 'notif_lab_60s', 'notif_lab_ids'];
+      for (const key of tempKeys) {
+        try {
+          await devRemoveKey(key);
+        } catch (cleanupError) {
+          console.error('[devMode] cleanup key failed', key, cleanupError);
+          allPassed = false;
+        }
+      }
+      setRunning(false);
+      operationLock.current = false;
+
+      setOverall(allPassed ? 'success' : 'error');
+      setLastRun(new Date());
+    }
+
   };
 
   const handleClearLab = () => {
     if (!isDevModeEnabled()) return;
+    if (operationLock.current) return;
     Alert.alert(
       'Limpiar laboratorio',
       'Se eliminarán únicamente las claves que comienzan con @nexusday/dev/. ¿Continuar?',
@@ -197,8 +374,42 @@ export function DeveloperModeScreen() {
           text: 'Limpiar',
           style: 'destructive',
           onPress: async () => {
+            if (operationLock.current) return;
+            operationLock.current = true;
             setClearing(true);
+            const cancelErrors = [];
             try {
+              // Recuperar primero los IDs de pruebas de notificaciones.
+              let labIds = [];
+              try {
+                labIds = (await devLoadJSON('notif_lab_ids', [])) || [];
+                if (!Array.isArray(labIds)) labIds = [];
+              } catch (error) {
+                console.error('[devMode] could not load notif_lab_ids', error);
+                cancelErrors.push(error);
+                labIds = [];
+              }
+              // Cancelar exclusivamente esos IDs.
+              for (const id of labIds) {
+                if (typeof id !== 'string' || id.length === 0) continue;
+                try {
+                  const pending = await Notifications.getAllScheduledNotificationsAsync();
+                  const exists = Array.isArray(pending) && pending.some((n) => n?.identifier === id);
+                  if (!exists) continue;
+                  const ok = await Notif.cancel(id);
+                  if (!ok) {
+                    const err = new Error(`cancel devolvió false para ${id}`);
+                    console.error('[devMode]', err.message);
+                    cancelErrors.push(err);
+                  }
+                } catch (error) {
+                  console.error('[devMode] cancel failed for', id, error);
+                  cancelErrors.push(error);
+                }
+              }
+              if (cancelErrors.length > 0) {
+                Alert.alert('Advertencia', 'Algunas cancelaciones de notificaciones de prueba fallaron. Se continuará con la limpieza.');
+              }
               const ok = await devClearAll();
               const remaining = (await AsyncStorage.getAllKeys()).filter((k) => String(k).startsWith(DEV_NAMESPACE));
               if (ok && remaining.length === 0) {
@@ -209,6 +420,8 @@ export function DeveloperModeScreen() {
             } catch (error) {
               Alert.alert('Error', error?.message || 'No se pudo limpiar el laboratorio.');
             } finally {
+              operationLock.current = false;
+
               setClearing(false);
             }
           },
@@ -227,6 +440,7 @@ export function DeveloperModeScreen() {
       <Card>
         <SectionTitle title="Estado general" />
         <View style={styles.grid}>
+           <Pill label={Constants.appOwnership === 'expo' ? 'Expo Go' : 'Development Build'} tone={Constants.appOwnership === 'expo' ? 'warning' : 'accent'} />
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Plataforma</Text>
             <Text style={styles.statValue}>{Platform.OS}</Text>
@@ -269,10 +483,16 @@ export function DeveloperModeScreen() {
           </View>
           {category.id === 'storage' ? (
             <View style={styles.storageActions}>
-              <PrimaryButton label={running ? 'Ejecutando…' : 'Ejecutar pruebas'} onPress={runStorageTests} disabled={running} style={styles.actionButton} />
-              <PrimaryButton label={clearing ? 'Limpiando…' : 'Limpiar laboratorio'} onPress={handleClearLab} disabled={clearing} style={styles.actionButton} />
+              <PrimaryButton label={running ? 'Ejecutando…' : 'Ejecutar pruebas'} onPress={runStorageTests} disabled={running || clearing} style={styles.actionButton} />
+              <PrimaryButton label={clearing ? 'Limpiando…' : 'Limpiar laboratorio'} onPress={handleClearLab} disabled={running || clearing} style={styles.actionButton} />
             </View>
           ) : null}
+           {category.id === 'notifications' ? (
+             <View style={styles.storageActions}>
+               <PrimaryButton label={running ? 'Ejecutando…' : 'Ejecutar pruebas'} onPress={runNotificationTests} disabled={running || clearing} style={styles.actionButton} />
+               <PrimaryButton label={clearing ? 'Limpiando…' : 'Limpiar laboratorio'} onPress={handleClearLab} disabled={running || clearing} style={styles.actionButton} />
+             </View>
+           ) : null}
         </Card>
       ))}
 
