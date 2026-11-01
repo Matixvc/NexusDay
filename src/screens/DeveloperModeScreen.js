@@ -212,6 +212,7 @@ export function DeveloperModeScreen() {
     setRunning(true);
     setOverall('running');
     setTestResults(NOTIFICATION_TESTS.map((t) => ({ ...t, status: 'pending', message: 'Pendiente', time: null })));
+    let allPassed = true;
     const execute = async (id, task) => {
       updateStep(id, { status: 'running', message: 'Ejecutando…' });
       try {
@@ -223,7 +224,6 @@ export function DeveloperModeScreen() {
       }
     };
 
-    let allPassed = true;
     const labIds = [];
 
     const cancelLabId = async (id) => {
