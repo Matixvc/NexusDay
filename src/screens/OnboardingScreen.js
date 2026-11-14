@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
+import { Icon } from '../components/Icon';
 import { useAppData } from '../context/AppDataContext';
 import { plural } from '../utils/text';
 
@@ -25,7 +26,23 @@ const WELCOME_BG = require('../../assets/welcome-bg.jpg');
 
 /** Tab names of the demo bar, in the same order as the real one. */
 const DEMO_TABS = ['Inicio', 'Horario', 'Agenda', 'Cumple', 'Notas', 'Hábitos', 'Gastos', 'AI', 'Ajustes'];
-const DEMO_ICONS = ['🏠', '🗓️', '📆', '🎂', '📝', '💪', '💰', '🤖', '⚙️'];
+const DEMO_ICONS = ['home', 'schedule', 'calendar', 'birthdays', 'note', 'habit', 'money', 'ai', 'settings'];
+
+/**
+ * Mapping de nombres de pestaña a iconos de Lucide para la demo del onboarding.
+ * Se usa el componente Icon centralizado en lugar de emojis.
+ */
+const TAB_ICON_MAP: Record<string, string> = {
+  Inicio: 'home',
+  Horario: 'schedule',
+  Agenda: 'calendar',
+  Cumple: 'birthdays',
+  Notas: 'note',
+  Hábitos: 'habit',
+  Gastos: 'money',
+  AI: 'ai',
+  Ajustes: 'settings',
+};
 
 /**
  * Copy of the tutorial.
@@ -38,6 +55,7 @@ const SLIDES = [
   {
     key: 'hub',
     emoji: '🏠',
+    icon: 'home',
     title: 'Todo arranca en Inicio',
     body: 'Inicio es tu hub central: en una sola pantalla ves cómo viene el día.',
     points: [
@@ -52,6 +70,7 @@ const SLIDES = [
   {
     key: 'nav',
     emoji: '👆',
+    icon: 'settings',
     title: 'Todo abajo, y desliza para ir',
     body: 'Las nueve secciones viven en la barra inferior. No hay menús escondidos.',
     points: [
@@ -65,6 +84,7 @@ const SLIDES = [
   {
     key: 'notes',
     emoji: '🎙️',
+    icon: 'note',
     title: 'Notas con voz y adjuntos',
     body: 'Las notas aceptan audio y documentos, con listas y etiquetas; y toda la app se respalda en un archivo .json.',
     points: [
@@ -78,6 +98,7 @@ const SLIDES = [
   {
     key: 'habits',
     emoji: '💪',
+    icon: 'habit',
     title: 'Hábitos y gastos bajo control',
     body: 'Marca el día con un toque y registra un gasto en dos: monto y categoría.',
     points: [
@@ -91,6 +112,32 @@ const SLIDES = [
   {
     key: 'ai',
     emoji: '🤖',
+    icon: 'ai',
+    title: 'Nexus AI — tu asistente local',
+    body: 'Haz preguntas o da órdenes sin salir de la app. Todo se resuelve en el dispositivo, sin red ni API key.',
+    points: [
+      'Escribe notas, eventos, hábitos y gastos con lenguaje natural.',
+      'Obtén respuestas sobre tu agenda, cumpleaños y gastos.',
+      'Tus datos nunca salen del teléfono.',
+    ],
+    tip: 'Prueba “crea una nota de la reunión de mañana” o “¿qué gastos tuve esta semana?”.',
+    demo: 'ai',
+  },
+  {
+    key: 'theme',
+    emoji: '🎨',
+    icon: 'palette',
+    title: 'Elige tu look: Claro o AMOLED',
+    body: 'Dos superficies y seis acentos para que la app se vea exactamente como tú quieres.',
+    points: [
+      'Oscuro puro (AMOLED): píxeles apagados, batería que rinde más.',
+      'Claro puro: blanco real para leer a plena luz.',
+      'Seis acentos: Verde, Cian, Azul, Rojo, Amarillo, Púrpura.',
+    ],
+    tip: 'Ve a Ajustes › Tema para cambiar el acento y la superficie en cualquier momento.',
+    demo: 'theme',
+  },
+];oji: '🤖',
     title: 'Nexus AI, sin internet',
     body: 'El asistente vive en el teléfono: lee tus datos y responde al instante.',
     points: [

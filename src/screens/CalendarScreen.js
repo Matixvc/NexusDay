@@ -37,6 +37,7 @@ import {
   todayKey,
   weekdayIndex,
 } from '../utils/dates';
+import { Icon } from '../components/Icon';
 
 const BLANK = () => ({
   title: '',
@@ -562,7 +563,7 @@ function EventRow({ event, onPress, showDay }) {
             {showDay ? <Pill label={relativeDayLabel(event.dateKey)} tone={past ? 'neutral' : 'accent'} /> : null}
             {wantsReminder ? (
               <Pill
-                label={`🔔 ${reminderLabel(event.leadMinutes)}`}
+                label={<>🔔 {reminderLabel(event.leadMinutes)}</>}
                 tone={armed ? 'accent' : 'warning'}
               />
             ) : null}

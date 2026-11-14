@@ -53,5 +53,6 @@
         "projectId": "087f40a1-254c-4153-b120-9e77392b5cd0"
       }
     }
-  }
+  },
+  "assets": ["./assets/fonts/*"]
 }

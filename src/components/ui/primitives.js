@@ -95,7 +95,7 @@ function Chip({ label, selected, onPress, color, compact, disabled = false, acce
       style={({ pressed }) => [
         styles.chip,
         compact ? styles.chipCompact : null,
-        selected ? { backgroundColor: `${tint}22`, borderColor: tint } : null,
+        selected ? { backgroundColor: colors.surfaceAlt, borderColor: tint } : null,
         disabled ? styles.disabled : null,
         pressed && !disabled ? styles.pressed : null,
       ]}
@@ -120,10 +120,11 @@ function Pill({ label, tone = 'neutral', style }) {
     accent: { backgroundColor: colors.accentSoft, color: colors.accent },
     danger: { backgroundColor: colors.dangerSoft, color: colors.danger },
     warning: { backgroundColor: colors.warningSoft, color: colors.warning },
+    outline: { backgroundColor: 'transparent', color: colors.accent, borderColor: colors.accent, borderWidth: 1 },
   };
   const active = tones[tone] || tones.neutral;
   return (
-    <View style={[styles.pill, { backgroundColor: active.backgroundColor }, style]}>
+    <View style={[styles.pill, { backgroundColor: active.backgroundColor, borderColor: active.borderColor, borderWidth: active.borderWidth }, style]}>
       <Text style={[styles.pillLabel, { color: active.color }]} numberOfLines={1}>
         {label}
       </Text>
@@ -353,10 +354,10 @@ const styles = themedStyles({
   chipScrollContent: { gap: spacing.sm, paddingRight: layout.gutter },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 
-  pill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm + 2, paddingVertical: 3, alignSelf: 'flex-start' },
+  pill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, alignSelf: 'flex-start' },
   pillLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 
-  textButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  textButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, minHeight: 44 },
   primaryButton: {
     flex: 1,
     backgroundColor: colors.accent,

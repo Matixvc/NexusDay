@@ -1,12 +1,10 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import Constants from 'expo-constants';
-import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../theme/theme';
+import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
-  EmptyState,
   Notice,
   Pill,
   PrimaryButton,
@@ -14,57 +12,152 @@ import {
   Stat,
   TextButton,
 } from '../components/ui/primitives';
-import { SearchField, SearchResults } from '../components/ui/SearchField';
-import { buildDashboard } from '../services/dashboard';
-import { searchEverything } from '../services/search';
-import { tap as tapHaptic } from '../services/haptics';
 import { formatMoney } from '../utils/money';
 import { plural } from '../utils/text';
-
-/** `assets/welcome-bg.jpg` is the decorative hero of the dashboard. */
-const WELCOME_BG = require('../../assets/welcome-bg.jpg');
+import { Icon } from '../components/Icon';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 /**
- * La línea resumen del banner. Se resuelve con tres frases completas en lugar de un
+ * Nombres de iconos de Lucide para las tarjetas de acceso rápido.
+ * Se usa el componente Icon centralizado en lugar de emojis.
+ */
+const QUICK_ACCESS_ICONS: Record<string, string> = {
+  Horario: 'schedule',
+  Agenda: 'calendar',
+  'Cumpleaños': 'birthdays',
+  Notas: 'note',
+  Hábitos: 'habit',
+  Gastos: 'money',
+  'Nexus AI': 'ai',
+  Ajustes: 'settings',
+};
+
+/**
+ * La línea resumen del banner. Se resuelve con frases completas en lugar de un
  * `1 cosa(s)`: así el número y el sustantivo siempre concuerdan.
  */
 function commitmentSummary(count) {
-  if (!count) return 'No tienes eventos o tareas pendientes para hoy.';
-  return `Tienes ${plural(count, 'evento pendiente', 'eventos pendientes')} para hoy.`;
+  if (!count) return 'No tienes compromisos pendientes para hoy.';
+  return `Tienes ${plural(count, 'compromiso pendiente', 'compromisos pendientes')} para hoy.`;
 }
 
-/** Quick access cards: one tap opens the matching section of the swipeable pager. */
+/**
+ * Accesos rápidos: un toque abre la sección correspondiente del pager deslizable.
+ * Los colores son moderados y se derivan del acento activo para no saturar la UI.
+ */
 function buildQuickAccess(data) {
+  const accent = colors.accent;
   return [
-    { route: 'Horario', emoji: '📅', title: 'Horario semanal', hint: `${data.todayActivities.length} hoy`, color: colors.accent },
-    { route: 'Notas', emoji: '📝', title: 'Bloc de notas', hint: plural(data.notesCount, 'nota guardada', 'notas guardadas'), color: '#a3e635' },
-    {
-      route: 'Agenda',
-      emoji: '🗓️',
-      title: 'Calendario',
-      hint: plural(data.upcomingEvents.length, 'próximo', 'próximos'),
-      color: '#8b5cf6',
-    },
-    {
-      route: 'Cumpleaños',
-      emoji: '🎂',
-      title: 'Cumpleaños',
+    { route: 'Horario', icon: QUICK_ACCESS_ICONS.Horario, title: 'Horario semanal', hint: `${data.todayActivities.length} actividades hoy`, color: accent },
+    { route: 'Agenda', icon: QUICK_ACCESS_ICONS.Agenda, title: 'Agenda', hint: 'Eventos y recordatorios', color: accent },
+    { route: 'Cumpleaños', icon: QUICK_ACCESS_ICONS['Cumpleaños'], title: 'Cumpleaños', hint: 'Próximos cumpleaños', color: accent },
+    { route: 'Notas', icon: QUICK_ACCESS_ICONS.Notas, title: 'Notas', hint: 'Texto, voz y adjuntos', color: accent },
+    { route: 'Hábitos', icon: QUICK_ACCESS_ICONS.Hábitos, title: 'Hábitos', hint: 'Rachas y progreso', color: accent },
+    { route: 'Gastos', icon: QUICK_ACCESS_ICONS.Gastos, title: 'Gastos', hint: 'Registro de gastos', color: accent },
+    { route: 'Nexus AI', icon: QUICK_ACCESS_ICONS['Nexus AI'], title: 'Nexus AI', hint: 'Asistente local', color: accent },
+    { route: 'Ajustes', icon: QUICK_ACCESS_ICONS.Ajustes, title: 'Ajustes', hint: 'Tema y preferencias', color: accent },
+  ];
+}
+
+function HomeScreen({ navigation }) {
+  const { data, notificationPermission, requestNotifications } = useAppData();
+
+  const stats = useMemo(() => {
+    const todayActivities = data.todayActivities || [];
+    const upcomingEvents = data.upcomingEvents || [];
+    const notesCount = data.notesCount ?? 0;
+    const pendingHabits = data.pendingHabits ?? 0;
+    const spentToday = data.spentToday ?? 0;
+    return { todayActivities, upcomingEvents, notesCount, pendingHabits, spentToday };
+  }, [data]);
+
+  const todayLabel = useMemo(() => {
+    const now = new Date();
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    return now.toLocaleDateString('es-ES', options);
+  }, []);
+
+  const quickAccess = useMemo(() => buildQuickAccess(stats), [stats]);
+
+  const [showPermissions, setShowPermissions] = useState(false);
+
+  const goToSettings = () => navigation.navigate('Ajustes');
+  const requestNotificationPermission = () => {
+    requestNotifications();
+    setShowPermissions(false);
+  };
+
+  return (
+    <View style={styles.root}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        {/* Hero */}
+        <View style={styles.hero}>
+          <View style={styles.heroBody}>
+            <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
+              {todayLabel}
+            </Text>
+            <Text style={typography.title} numberOfLines={2}>
+              ¡Hola, bienvenido a tu día.
+            </Text>
+            <Text style={[typography.subtitle, styles.heroHint]} numberOfLines={2}>
+              {commitmentSummary(stats.pendingHabits)}
+            </Text>
+            <View style={styles.heroPills}>
+              <Pill label={`💰 ${formatMoney(stats.spentToday)} hoy`} tone="neutral" />
+              <Pill label={`📝 ${stats.notesCount} notas`} tone="neutral" />
+              <Pill label={`✓ ${stats.pendingHabits} hábitos pendientes`} tone="accent" />
+            </View>
+          </View>
+        </View>
+
+        {/* Stats */}
+        <View style={styles.statsRow}>
+          <Stat value={stats.todayActivities.length} label="Actividades hoy" accent={colors.accent} />
+          <Stat value={stats.upcomingEvents.length} label="Eventos próximos" accent={colors.accent} />
+          <Stat value={stats.pendingHabits} label="Hábitos pendientes" accent={colors.accent} />
+        </View>
+
+        {/* Permissions banner */}
+        {notificationPermission !== 'granted' && !showPermissions ? (
+          <Card accent={colors.accent} style={styles.bannerCard}>
+            <Text style={typography.body}>Para que Nexus AI y los recordatorios funcionen, permite las notificaciones.</Text>
+            <View style={styles.bannerActions}>
+              <PrimaryButton label="Permitir avisos" onPress={requestNotificationPermission} style={styles.bannerButton} />
+              <TextButton label="Ver ajustes" tone="ghost" onPress={goToSettings} />
+            </View>
+          </Card>
+        ) : null}
+
+        <Notice text="Desliza a los costados para cambiar de sección, o toca una tarjeta para ir directo." />
+
+        {/* Quick access grid */}
+        <SectionTitle title="Acceso rápido" />
+        <View style={styles.grid}>
+          {quickAccess.map((item) => (
+            <MemoQuickCard key={item.route} item={item} width={(340 - 20) / 2} navigation={navigation} />
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function QuickCard({ item, width, navigation }) {
       hint: data.upcomingBirthdays.length ? `${data.upcomingBirthdays.length} próximos` : 'Sin avisos',
-      color: '#ec4899',
+      color: accent,
     },
     {
       route: 'Hábitos',
-      emoji: '💪',
+      icon: '💧',
       title: 'Hábitos',
       hint: data.pendingHabits.length ? plural(data.pendingHabits.length, 'pendiente', 'pendientes') : 'Todo al día',
-      color: '#f59e0b',
+      color: accent,
     },
-    { route: 'Gastos', emoji: '💰', title: 'Gastos rápidos', hint: formatMoney(data.spentToday), color: '#38bdf8' },
-    { route: 'Nexus AI', emoji: '🤖', title: 'Nexus AI', hint: 'Asistente local', color: '#4fd1c5' },
-    { route: 'Ajustes', emoji: '⚙️', title: 'Ajustes', hint: 'Permisos y datos', color: '#94a3b8' },
+    { route: 'Gastos', icon: '💰', title: 'Gastos rápidos', hint: formatMoney(data.spentToday), color: accent },
+    { route: 'Nexus AI', icon: '🤖', title: 'Nexus AI', hint: 'Asistente local', color: accent },
+    { route: 'Ajustes', icon: '⚙️', title: 'Ajustes', hint: 'Permisos y datos', color: accent },
   ];
 }
 
@@ -104,7 +197,7 @@ export default function HomeScreen({ navigation }) {
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
   // v1.1 name (written by the tutorial) wins; the v1.0 profile field stays as a fallback.
   const name = (userName || settings?.displayName || '').trim();
-  const title = name ? `¡Hola, ${name}! 👋` : data.greeting;
+  const greeting = name ? `¡Hola, ${name}!` : data.greeting;
 
   /** One tap: jump to the section and let it highlight the exact item. */
   const openResult = useCallback(
@@ -132,21 +225,16 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* The hero only exists while browsing. Searching hides the photo, its scrim and every
-            shadow below it, so the results start at the top of the screen instead of competing
-            with a picture. */}
+        {/* El héroe solo existe mientras se navega. Buscando, se oculta para que los resultados
+            empiecen arriba sin competir con la imagen. */}
         {searching ? null : (
-          <ImageBackground source={WELCOME_BG} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
-            {/* Dark filter over the photo: the banner is the brightest element of a #0a0a0a
-                app, so the picture is dimmed and then scrimmed twice under the text block. */}
-            <View style={styles.heroOverlay} />
-            <View style={styles.heroOverlayBottom} />
+          <View style={styles.hero}>
             <View style={styles.heroBody}>
               <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
                 {data.dateLabel}
               </Text>
               <Text style={typography.display} numberOfLines={2}>
-                {title}
+                {greeting}
               </Text>
               <Text style={[typography.small, styles.heroHint]} numberOfLines={3}>
                 {name ? `${data.greeting}. ` : ''}
@@ -162,7 +250,7 @@ export default function HomeScreen({ navigation }) {
                 )}
               </View>
             </View>
-          </ImageBackground>
+          </View>
         )}
 
         <SearchField
@@ -286,8 +374,8 @@ function QuickCard({ item, width, navigation }) {
       accessibilityLabel={`${item.title}. ${item.hint}`}
       style={({ pressed }) => [styles.quickCard, { width }, pressed ? styles.pressed : null]}
     >
-      <View style={[styles.quickIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
-        <Text style={styles.quickEmoji}>{item.emoji}</Text>
+      <View style={[styles.quickIcon, { borderColor: item.color }]}>
+        <Icon name={item.icon} size={20} color={item.color} />
       </View>
       <Text style={typography.bodyStrong} numberOfLines={1}>
         {item.title}
@@ -304,27 +392,24 @@ const MemoQuickCard = memo(QuickCard);
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  content: {
+    paddingHorizontal: layout.gutter,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.lg,
+  },
 
   hero: {
-    minHeight: 200,
-    justifyContent: 'flex-end',
-    borderRadius: radius.xl,
-    overflow: 'hidden',
     backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    minHeight: 210,
+    padding: spacing.xl,
+    gap: spacing.sm,
   },
-  heroImage: { borderRadius: radius.xl, opacity: 0.55 },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: `${colors.background}b0` },
-  heroOverlayBottom: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    top: '38%',
-    backgroundColor: `${colors.background}d9`,
-  },
-  heroBody: { padding: spacing.lg, gap: spacing.sm },
-  heroDate: { color: colors.accent },
+  heroBody: { gap: spacing.sm },
+  heroDate: { color: colors.accent, fontWeight: '700' },
   heroHint: { color: colors.textSecondary },
   heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
 
@@ -340,7 +425,6 @@ const styles = themedStyles({
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   quickCard: {
-    ...shadow.card,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -350,12 +434,19 @@ const styles = themedStyles({
   },
   pressed: { opacity: 0.7 },
   quickIcon: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickEmoji: { fontSize: 20 },
+  bannerCard: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
 });

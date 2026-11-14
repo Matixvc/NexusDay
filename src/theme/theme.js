@@ -63,16 +63,18 @@ export const radius = { sm: 10, md: 14, lg: 18, xl: 22, sheet: 28, pill: 999 };
 
 export const layout = { gutter: 20, listGap: 10, fabInset: 24 };
 
-const fontFamily = Platform.select({ ios: 'System', android: 'sans-serif', default: undefined });
+export const manropeFontFamily = 'Manrope';
 
 export const typography = {
-  display: { fontFamily, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
-  title: { fontFamily, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3, color: colors.text },
-  subtitle: { fontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
-  body: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.text },
-  bodyStrong: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
-  small: { fontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
-  caption: { fontFamily, fontSize: 11.5, lineHeight: 15, fontWeight: '600', color: colors.textMuted },
+  display: { fontFamily: manropeFontFamily, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
+  title: { fontFamily: manropeFontFamily, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3, color: colors.text },
+  subtitle: { fontFamily: manropeFontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
+  body: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.text },
+  bodyStrong: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
+  small: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
+  caption: { fontFamily: manropeFontFamily, fontSize: 11.5, lineHeight: 16, fontWeight: '500', color: colors.textSecondary },
+  overline: { fontFamily: manropeFontFamily, fontSize: 11, lineHeight: 16, fontWeight: '700', letterSpacing: 0.5, color: colors.textSecondary },
+  tabular: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
   overline: {
     fontFamily,
     fontSize: 10.5,
@@ -190,17 +192,24 @@ styleRegistry.add(calendarTheme);
 function repaint(node, mapping, depth = 0) {
   if (!node || typeof node !== 'object' || depth > 5) return node;
   if (Array.isArray(node)) {
-    return node.map((child) => repaint(child, mapping, depth + 1));
+    let changed = false;
+    const result = node.map((child) => {
+      const repainted = repaint(child, mapping, depth + 1);
+      if (repainted !== child) changed = true;
+      return repainted;
+    });
+    return changed ? result : node;
   }
-  const frozen = Object.isFrozen(node);
-  const target = frozen ? { ...node } : node;
   let changed = false;
+  const target = { ...node };
   Object.keys(node).forEach((key) => {
     const value = node[key];
     if (typeof value === 'string') {
       if (mapping[value]) {
         target[key] = mapping[value];
         changed = true;
+      } else {
+        target[key] = value;
       }
       return;
     }
@@ -208,6 +217,8 @@ function repaint(node, mapping, depth = 0) {
     if (repainted !== value) {
       target[key] = repainted;
       changed = true;
+    } else {
+      target[key] = value;
     }
   });
   return changed ? target : node;
@@ -252,15 +263,18 @@ export function applyTheme(patch = {}) {
 
   Object.assign(colors, resolved);
 
-  // Repaint every registered style. `repaint` returns the same reference when it mutated
-  // in place, or a new mutable clone when it hit a frozen object. Replace registry entries
-  // for clones so future repaints keep working on mutable objects.
+  // Repaint every registered style. `repaint` now returns a new object reference whenever a
+  // colour changed (even for previously-mutable sheets), so React can detect the change and
+  // update the native views. We copy the repainted keys back into the original sheet object
+  // to keep the module-level `styles` reference stable for `React.memo` comparisons.
   const registrySnapshot = Array.from(styleRegistry);
   registrySnapshot.forEach((styles) => {
     const repainted = repaint(styles, changes);
     if (repainted !== styles) {
-      styleRegistry.delete(styles);
-      styleRegistry.add(repainted);
+      Object.keys(styles).forEach((key) => {
+        delete styles[key];
+      });
+      Object.assign(styles, repainted);
     }
   });
 

@@ -32,6 +32,7 @@ import {
   todayKey,
   weekdayIndex,
 } from '../utils/dates';
+import { Icon } from '../components/Icon';
 
 const BLANK = () => ({ title: '', start: '09:00', end: '10:00', location: '', color: colors.accent, leadMinutes: -1 });
 
@@ -385,13 +386,13 @@ export default function ScheduleScreen({ navigation }) {
         {hub ? (
           <View style={styles.hubList}>
             <HubAction
-              glyph="📝"
+              glyph="file-text"
               label="Crear Nota de Clase"
               hint="Abre una nota ya etiquetada con esta asignatura."
               onPress={() => createClassNote(hub)}
             />
             <HubAction
-              glyph="📌"
+              glyph="map-pin"
               label="Agendar Evaluación / Fecha importante"
               hint="Crea un evento en la Agenda vinculado a este ramo."
               onPress={() => scheduleEvaluation(hub)}
@@ -420,7 +421,7 @@ export default function ScheduleScreen({ navigation }) {
               }}
               style={({ pressed }) => [styles.hubAction, pressed ? styles.pressed : null]}
             >
-              <Text style={styles.hubGlyph}>🔔</Text>
+              <Icon name="bell" size={20} color={colors.textSecondary} />
               <View style={styles.hubBody}>
                 <Text style={typography.bodyStrong}>Notificación de clase</Text>
                 <Text style={typography.caption}>
@@ -430,7 +431,7 @@ export default function ScheduleScreen({ navigation }) {
             </Pressable>
 
             <HubAction
-              glyph="✏️"
+              glyph="edit"
               label="Editar datos de la asignatura"
               hint="Cambiar nombre, hora, lugar o color."
               tone="ghost"
@@ -478,7 +479,7 @@ function HubAction({ glyph, label, hint, onPress, tone }) {
       accessibilityLabel={label}
       style={({ pressed }) => [styles.hubAction, tone === 'ghost' ? styles.hubActionGhost : null, pressed ? styles.pressed : null]}
     >
-      <Text style={styles.hubGlyph}>{glyph}</Text>
+      <Icon name={glyph} size={20} color={colors.textSecondary} />
       <View style={styles.hubBody}>
         <Text style={typography.bodyStrong}>{label}</Text>
         {hint ? <Text style={typography.caption}>{hint}</Text> : null}
@@ -514,7 +515,6 @@ const styles = themedStyles({
     paddingVertical: spacing.md,
   },
   hubActionGhost: { backgroundColor: 'transparent', borderStyle: 'dashed' },
-  hubGlyph: { fontSize: 20, width: 26, textAlign: 'center' },
   hubBody: { flex: 1, gap: 2 },
   hubSwitchRow: {
     flexDirection: 'row',

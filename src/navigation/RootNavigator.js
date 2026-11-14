@@ -1,6 +1,7 @@
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, useState, useEffect, useMemo } from 'react-native';
+import { View } from 'react-native';
+import { useMemo } from 'react';
 import { themedStyles, colors, navigationTheme } from '../theme/theme';
 import { BottomTabBar } from './BottomTabBar';
 import { Glyph } from './TabGlyphs';
@@ -39,16 +40,11 @@ export default function RootNavigator({ initialRouteName = HOME_TAB, onRouteChan
   // reference to refresh its internal context. We force a re-render on revision change
   // without unmounting the navigator.
   const { revision } = useTheme();
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    setTick((t) => t + 1);
-  }, [revision]);
-
   const theme = useMemo(
     () => ({
       ...navigationTheme,
       colors: { ...navigationTheme.colors },
+      revision,
     }),
     [revision],
   );

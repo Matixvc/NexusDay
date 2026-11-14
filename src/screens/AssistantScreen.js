@@ -11,6 +11,7 @@ import { toggleCheckItem } from '../services/notes';
 import { dropReminder } from '../services/reminders';
 import { success as successHaptic } from '../services/haptics';
 import { todayKey } from '../utils/dates';
+import { Icon } from '../components/Icon';
 
 /**
  * Nexus AI — panel del asistente.

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
@@ -13,6 +13,7 @@ import { HOME_TAB } from './src/navigation/tabs';
 import { setTabHidden, tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
+import { useFonts } from './src/hooks/useFonts';
 
 enableScreens();
 
@@ -23,6 +24,20 @@ configureNotifications();
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 export default function App() {
+  const { fontsLoaded, error } = useFonts();
+
+  // Mientras las fuentes no cargan, se muestra una pantalla de carga mínima
+  // para evitar que el texto parpadee entre la fuente del sistema y Manrope.
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.fontLoading}>
+          <Text style={styles.fontLoadingText}>{APP_NAME.slice(0, 1)}</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
@@ -103,5 +118,7 @@ const styles = themedStyles({
   boot: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   bootMark: { fontSize: 40, fontWeight: '800', color: colors.accent },
   bootName: { ...typography.title, color: colors.text },
+  fontLoading: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  fontLoadingText: { fontSize: 40, fontWeight: '800', color: colors.accent },
 });
 
