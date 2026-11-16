@@ -1,10 +1,12 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
+  EmptyState,
   Notice,
   Pill,
   PrimaryButton,
@@ -12,6 +14,10 @@ import {
   Stat,
   TextButton,
 } from '../components/ui/primitives';
+import { SearchField, SearchResults } from '../components/ui/SearchField';
+import { buildDashboard } from '../services/dashboard';
+import { searchEverything } from '../services/search';
+import { tap as tapHaptic } from '../services/haptics';
 import { formatMoney } from '../utils/money';
 import { plural } from '../utils/text';
 import { Icon } from '../components/Icon';
@@ -23,7 +29,7 @@ const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
  * Nombres de iconos de Lucide para las tarjetas de acceso rápido.
  * Se usa el componente Icon centralizado en lugar de emojis.
  */
-const QUICK_ACCESS_ICONS: Record<string, string> = {
+const QUICK_ACCESS_ICONS = {
   Horario: 'schedule',
   Agenda: 'calendar',
   'Cumpleaños': 'birthdays',
@@ -58,106 +64,6 @@ function buildQuickAccess(data) {
     { route: 'Gastos', icon: QUICK_ACCESS_ICONS.Gastos, title: 'Gastos', hint: 'Registro de gastos', color: accent },
     { route: 'Nexus AI', icon: QUICK_ACCESS_ICONS['Nexus AI'], title: 'Nexus AI', hint: 'Asistente local', color: accent },
     { route: 'Ajustes', icon: QUICK_ACCESS_ICONS.Ajustes, title: 'Ajustes', hint: 'Tema y preferencias', color: accent },
-  ];
-}
-
-function HomeScreen({ navigation }) {
-  const { data, notificationPermission, requestNotifications } = useAppData();
-
-  const stats = useMemo(() => {
-    const todayActivities = data.todayActivities || [];
-    const upcomingEvents = data.upcomingEvents || [];
-    const notesCount = data.notesCount ?? 0;
-    const pendingHabits = data.pendingHabits ?? 0;
-    const spentToday = data.spentToday ?? 0;
-    return { todayActivities, upcomingEvents, notesCount, pendingHabits, spentToday };
-  }, [data]);
-
-  const todayLabel = useMemo(() => {
-    const now = new Date();
-    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return now.toLocaleDateString('es-ES', options);
-  }, []);
-
-  const quickAccess = useMemo(() => buildQuickAccess(stats), [stats]);
-
-  const [showPermissions, setShowPermissions] = useState(false);
-
-  const goToSettings = () => navigation.navigate('Ajustes');
-  const requestNotificationPermission = () => {
-    requestNotifications();
-    setShowPermissions(false);
-  };
-
-  return (
-    <View style={styles.root}>
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        {/* Hero */}
-        <View style={styles.hero}>
-          <View style={styles.heroBody}>
-            <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
-              {todayLabel}
-            </Text>
-            <Text style={typography.title} numberOfLines={2}>
-              ¡Hola, bienvenido a tu día.
-            </Text>
-            <Text style={[typography.subtitle, styles.heroHint]} numberOfLines={2}>
-              {commitmentSummary(stats.pendingHabits)}
-            </Text>
-            <View style={styles.heroPills}>
-              <Pill label={`💰 ${formatMoney(stats.spentToday)} hoy`} tone="neutral" />
-              <Pill label={`📝 ${stats.notesCount} notas`} tone="neutral" />
-              <Pill label={`✓ ${stats.pendingHabits} hábitos pendientes`} tone="accent" />
-            </View>
-          </View>
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <Stat value={stats.todayActivities.length} label="Actividades hoy" accent={colors.accent} />
-          <Stat value={stats.upcomingEvents.length} label="Eventos próximos" accent={colors.accent} />
-          <Stat value={stats.pendingHabits} label="Hábitos pendientes" accent={colors.accent} />
-        </View>
-
-        {/* Permissions banner */}
-        {notificationPermission !== 'granted' && !showPermissions ? (
-          <Card accent={colors.accent} style={styles.bannerCard}>
-            <Text style={typography.body}>Para que Nexus AI y los recordatorios funcionen, permite las notificaciones.</Text>
-            <View style={styles.bannerActions}>
-              <PrimaryButton label="Permitir avisos" onPress={requestNotificationPermission} style={styles.bannerButton} />
-              <TextButton label="Ver ajustes" tone="ghost" onPress={goToSettings} />
-            </View>
-          </Card>
-        ) : null}
-
-        <Notice text="Desliza a los costados para cambiar de sección, o toca una tarjeta para ir directo." />
-
-        {/* Quick access grid */}
-        <SectionTitle title="Acceso rápido" />
-        <View style={styles.grid}>
-          {quickAccess.map((item) => (
-            <MemoQuickCard key={item.route} item={item} width={(340 - 20) / 2} navigation={navigation} />
-          ))}
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-function QuickCard({ item, width, navigation }) {
-      hint: data.upcomingBirthdays.length ? `${data.upcomingBirthdays.length} próximos` : 'Sin avisos',
-      color: accent,
-    },
-    {
-      route: 'Hábitos',
-      icon: '💧',
-      title: 'Hábitos',
-      hint: data.pendingHabits.length ? plural(data.pendingHabits.length, 'pendiente', 'pendientes') : 'Todo al día',
-      color: accent,
-    },
-    { route: 'Gastos', icon: '💰', title: 'Gastos rápidos', hint: formatMoney(data.spentToday), color: accent },
-    { route: 'Nexus AI', icon: '🤖', title: 'Nexus AI', hint: 'Asistente local', color: accent },
-    { route: 'Ajustes', icon: '⚙️', title: 'Ajustes', hint: 'Permisos y datos', color: accent },
   ];
 }
 

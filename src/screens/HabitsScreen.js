@@ -25,7 +25,6 @@ import { habitStreak, lastDays, pendingHabits } from '../services/dashboard';
 import { success as successHaptic } from '../services/haptics';
 import { plural } from '../utils/text';
 import { WEEKDAYS, fromDateKey, todayKey, weekdayIndex } from '../utils/dates';
-import { Icon } from '../components/Icon';
 
 const EMOJIS = ['💧', '📚', '🏃', '🧘', '🥗', '😴', '✍️', '🎯'];
 const BLANK = () => ({ name: '', emoji: '💧', color: colors.accent });

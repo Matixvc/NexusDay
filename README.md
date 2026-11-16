@@ -4,8 +4,8 @@
 
 **Your entire day, in one local-first pocket companion.**
 
-[![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020.svg?style=flat&logo=expo&logoColor=white)](https://docs.expo.dev/versions/v57.0.0/)
-[![React Native](https://img.shields.io/badge/React%20Native-0.86.3-20232A.svg?style=flat&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
+[![Expo](https://img.shields.io/badge/Expo-SDK%2058-000020.svg?style=flat&logo=expo&logoColor=white)](https://docs.expo.dev/versions/v58.0.0/)
+[![React Native](https://img.shields.io/badge/React%20Native-0.88.1-20232A.svg?style=flat&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
 [![License](https://img.shields.io/badge/license-see%20LICENSE-4fd1c5.svg?style=flat)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-4fd1c5.svg?style=flat&logo=apple&logoColor=white)]()
 [![Offline](https://img.shields.io/badge/data-100%25%20on--device-4fd1c5.svg?style=flat&logo=lock&logoColor=white)]()
@@ -20,7 +20,7 @@
 your class schedule, agenda, birthdays, notes (checklists and tags included), habits and
 expenses into a single interface — with **no account, no server, and no network calls**.
 
-It is built with **Expo SDK 57 / React Native 0.86**, ships for **iOS and Android**, and is
+It is built with **Expo SDK 58 / React Native 0.88**, ships for **iOS and Android**, and is
 fully usable offline.
 
 <div align="center">
@@ -100,11 +100,10 @@ token. **Result:** switching the theme repaints ~20 screens with zero re-renders
 re-mounts and zero jank, and the same object identity keeps every `React.memo` comparison
 stable.
 
-### Zero-dependency iconography
+### SVG iconography
 
-The app ships **no icon font** (`@expo/vector-icons` is deliberately absent). All nine tab
-glyphs are composed from plain `View`s with border tricks (`TabGlyphs.js`). They tint
-cleanly for the active state, scale to any density, and cost ~0 KB of binary size.
+The app ships **no icon font**. Navigation keeps its lightweight `View` glyphs and the
+redesigned screens use a centralized Lucide/React Native SVG adapter (`Icon.tsx`).
 
 ---
 
@@ -114,13 +113,13 @@ cleanly for the active state, scale to any density, and cost ~0 KB of binary siz
 
 | Layer | Technology |
 |---|---|
-| Framework | **Expo SDK 57.0.26** (Continuous Native Generation) |
-| Runtime | **React Native 0.86.3** · **React 19.2.3** |
+| Framework | **Expo SDK 58.0.25** (Continuous Native Generation) |
+| Runtime | **React Native 0.88.1** · **React 19.3.0** |
 | Language | **JavaScript (ESM)** — documented with JSDoc; no TypeScript build step |
 | Navigation | **React Navigation 7** — `material-top-tabs` + a custom bottom bar |
 | Persistence | **AsyncStorage 2.2.0** (`@react-native-async-storage/async-storage`) |
 | Audio | `expo-audio` — recording **and** playback |
-| Files | `expo-file-system` (SDK 57 class API) · `expo-sharing` · `expo-document-picker` |
+| Files | `expo-file-system` (SDK 58 class API) · `expo-sharing` · `expo-document-picker` |
 | Security | `expo-local-authentication` (Face ID / fingerprint / PIN) |
 | Haptics | `expo-haptics` — wrapped in a never-throwing, no-op-on-failure service |
 | Calendar | `react-native-calendars` — the app never writes to the device calendar |
@@ -245,7 +244,7 @@ nexusday/
     │   ├── tabs.js            # Catalogue of the 9 sections
     │   ├── RootNavigator.js
     │   ├── BottomTabBar.js
-    │   └── TabGlyphs.js       # View-drawn icons (no icon font)
+    │   └── TabGlyphs.js       # View-drawn navigation icons
     ├── screens/               # One file per section
     ├── services/              # All business logic as pure, testable functions
     │   ├── assistant.js       # Nexus AI: intents, fuzzy names, tag & checklist answers
@@ -253,7 +252,7 @@ nexusday/
     │   ├── audio.js           # expo-audio: permissions, sessions, file juggling
     │   ├── dashboard.js       # buildDashboard(), habitStreak(), suspended classes
     │   ├── eventCategories.js # Category palette for Agenda events
-    │   ├── files.js           # expo-file-system SDK 57 class API + JSON backup I/O
+    │   ├── files.js           # expo-file-system SDK 58 class API + JSON backup I/O
     │   ├── notes.js           # Note model: checklists, tags, previews
     │   ├── notifications.js
     │   ├── privacy.js         # expo-local-authentication
@@ -278,7 +277,7 @@ single component.
 
 | Tool | Version | Notes |
 |---|---|---|
-| Node.js | 20 LTS or newer | `node --version` |
+| Node.js | 22.13 or newer | `node --version` |
 | npm | 10+ | Ships with Node |
 | **Expo Go** *(optional)* | latest | UI only — see the warning below |
 | **EAS CLI** | 23.2+ | Only needed to build or publish |
@@ -299,10 +298,8 @@ single component.
 ```bash
 git clone https://github.com/Matixvc/NexusDay.git
 cd NexusDay
-npm install
+npm ci
 ```
-
-> Using **Bun**? `bun install` works and `bun.lock` is respected.
 
 ### 2. Run in development
 
@@ -322,7 +319,7 @@ npx expo run:android
 ### 4. Quality checks
 
 ```bash
-npx expo lint             # ESLint (eslint-config-expo)
+npm run lint              # ESLint (eslint-config-expo)
 npx expo-doctor           # dependency and config health
 npx expo install --check  # confirm versions match the SDK
 ```
@@ -426,7 +423,7 @@ See [`LICENSE`](LICENSE).
 
 **Built with Expo, React Native and a lot of care for the details.**
 
-`NexusDay v1.1.0` · Expo SDK 57 · React Native 0.86
+`NexusDay v1.1.0` · Expo SDK 58 · React Native 0.88
 
 </div>
 

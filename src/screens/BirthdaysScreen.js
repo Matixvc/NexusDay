@@ -24,7 +24,6 @@ import { TabBadge } from '../navigation/BottomTabBar';
 import { BIRTHDAY_LEADS, dropReminder, syncBirthdayReminder } from '../services/reminders';
 import { ageOn, daysUntilYearly, formatDateMedium, fromDateKey, nextYearlyOccurrence } from '../utils/dates';
 import { plural } from '../utils/text';
-import { Icon } from '../components/Icon';
 
 const EMOJIS = ['🎂', '🎉', '🎈', '🎁', '⭐', '🌟', '🎧', '⚽', '📚', '🐱', '🐶', '✈️'];
 

@@ -32,7 +32,7 @@ const DEMO_ICONS = ['home', 'schedule', 'calendar', 'birthdays', 'note', 'habit'
  * Mapping de nombres de pestaña a iconos de Lucide para la demo del onboarding.
  * Se usa el componente Icon centralizado en lugar de emojis.
  */
-const TAB_ICON_MAP: Record<string, string> = {
+const TAB_ICON_MAP = {
   Inicio: 'home',
   Horario: 'schedule',
   Agenda: 'calendar',
@@ -136,17 +136,6 @@ const SLIDES = [
     ],
     tip: 'Ve a Ajustes › Tema para cambiar el acento y la superficie en cualquier momento.',
     demo: 'theme',
-  },
-];oji: '🤖',
-    title: 'Nexus AI, sin internet',
-    body: 'El asistente vive en el teléfono: lee tus datos y responde al instante.',
-    points: [
-      'Resume el día, los gastos y las rachas.',
-      'Busca en tus notas, eventos, hábitos y cumpleaños.',
-      'Si le preguntas algo ajeno a la app, te reorienta.',
-    ],
-    tip: 'Toca una sugerencia de la demo. El botón de papelera de la barra superior borra la conversación.',
-    demo: 'ai',
   },
 ];
 
@@ -342,7 +331,7 @@ function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onS
     <View style={styles.slideBody}>
       <View style={styles.emojiRow}>
         <View style={[styles.emojiRing, { width: unit(62), height: unit(62), borderRadius: unit(31) }]}>
-          <Text style={{ fontSize: unit(28) }}>{slide.emoji}</Text>
+          <Icon name={slide.icon} size={unit(28)} color={colors.accent} />
         </View>
         <View style={styles.headline}>
           <Text style={[typography.display, { fontSize: unit(25), lineHeight: unit(30) }]}>{slide.title}</Text>
@@ -515,7 +504,7 @@ function TabsDemo({ unit }) {
               pressed ? styles.pointPressed : null,
             ]}
           >
-            <Text style={{ fontSize: unit(11) }}>{DEMO_ICONS[index]}</Text>
+            <Icon name={TAB_ICON_MAP[label] || DEMO_ICONS[index]} size={unit(11)} color={index === active ? colors.accent : colors.textMuted} />
             <Text
               style={[
                 styles.demoTabLabel,

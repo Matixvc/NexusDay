@@ -38,7 +38,6 @@ import {
 } from '../services/notes';
 import { select as selectHaptic, success as successHaptic } from '../services/haptics';
 import { timeAgo } from '../utils/dates';
-import { Icon } from '../components/Icon';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
 const BLANK = () => ({ ...blankNote(colors.accent) });

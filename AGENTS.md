@@ -1,41 +1,42 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# NexusDay development rules
 
-## Expo has changed — do not trust your training data
+Expo SDK 58, React Native 0.88 and React 19.3 mobile app. The codebase is primarily
+JavaScript and uses React Navigation 7. Keep the product offline-first and cross-platform.
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+## Architecture
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+- Screens live in `src/screens`, reusable UI in `src/components`, state in `src/context`,
+  and business/platform logic in `src/services`.
+- Keep React Navigation and current route names unless a phase explicitly authorizes a migration.
+- Preserve the six persisted domains: activities, events, birthdays, notes, habits and expenses.
+- Storage changes must remain backward compatible with existing `@nexusday/v1/*` data.
+- Treat `android/` and `ios/` as generated CNG output. Do not edit them manually without approval.
 
-## Commands
+## Expo and dependencies
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
+- Read the installed Expo major, then use its versioned docs and
+  `https://docs.expo.dev/llms.txt` before changing Expo or React Native APIs.
+- Install Expo packages only with `npx expo install`; justify every dependency change.
+- Do not update Expo, React Native or dependencies unless the current phase authorizes it.
+
+## Safety and Git
+
+- Never expose personal data, backup contents, credentials, tokens or signing material.
+- Do not read or mutate real app data during development; use isolated fixtures.
+- Work only on feature/development branches, never directly on `main` or `backup/*`.
+- Do not rewrite history or run destructive Git/file operations without explicit approval.
+- Keep changes limited to the active phase; do not commit or push unless requested.
+
+## Validation
+
+Use npm (`package-lock.json` is authoritative):
 
 ```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
+npm run lint
+npx expo install --check
+npx expo-doctor
+npx expo export --platform android
 ```
 
-Run lint and typecheck before declaring any task done.
-
-## Navigation & Routing
-
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
-
-## Building with EAS
-
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
-
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+Run relevant tests when present. Distinguish static checks, JS export, native build and
+real-device testing in reports. A task is not complete while required checks fail.

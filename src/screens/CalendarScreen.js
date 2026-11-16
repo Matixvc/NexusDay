@@ -37,7 +37,6 @@ import {
   todayKey,
   weekdayIndex,
 } from '../utils/dates';
-import { Icon } from '../components/Icon';
 
 const BLANK = () => ({
   title: '',

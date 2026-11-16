@@ -74,17 +74,14 @@ export const typography = {
   small: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
   caption: { fontFamily: manropeFontFamily, fontSize: 11.5, lineHeight: 16, fontWeight: '500', color: colors.textSecondary },
   overline: { fontFamily: manropeFontFamily, fontSize: 11, lineHeight: 16, fontWeight: '700', letterSpacing: 0.5, color: colors.textSecondary },
-  tabular: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
-  overline: {
-    fontFamily,
-    fontSize: 10.5,
-    lineHeight: 14,
+  tabular: {
+    fontFamily: manropeFontFamily,
+    fontSize: 15,
+    lineHeight: 21,
     fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
-  tabular: { fontVariant: ['tabular-nums'] },
 };
 
 export const shadow = {
@@ -128,9 +125,9 @@ export const calendarTheme = {
   indicatorColor: colors.accent,
   dotColor: colors.accent,
   selectedDotColor: colors.accent,
-  textDayFontFamily: fontFamily,
-  textMonthFontFamily: fontFamily,
-  textDayHeaderFontFamily: fontFamily,
+  textDayFontFamily: manropeFontFamily,
+  textMonthFontFamily: manropeFontFamily,
+  textDayHeaderFontFamily: manropeFontFamily,
   textDayFontWeight: '500',
   textMonthFontWeight: '700',
   textDayHeaderFontWeight: '600',

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
@@ -24,7 +24,7 @@ configureNotifications();
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 export default function App() {
-  const { fontsLoaded, error } = useFonts();
+  const { fontsLoaded } = useFonts();
 
   // Mientras las fuentes no cargan, se muestra una pantalla de carga mínima
   // para evitar que el texto parpadee entre la fuente del sistema y Manrope.

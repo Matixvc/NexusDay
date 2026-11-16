@@ -8,17 +8,19 @@ import * as Font from 'expo-font';
  * ejecución desde Internet), cumpliendo el requisito de "no cargar fuentes desde
  * Internet en tiempo de ejecución".
  *
- * Pesos configurados: 300 (Light), 400 (Regular), 500 (Medium), 600 (SemiBold),
- * 700 (Bold), 800 (ExtraBold).
+ * Solo se incluyen los pesos usados por los tokens tipográficos: 400, 500 y 700.
+ * Se cargan como una familia para que `fontWeight` seleccione la cara correcta.
  */
-const MANROPE_FONTS = {
-  Manrope: require('../../assets/fonts/Manrope-Regular.ttf'),
-  'Manrope-Medium': require('../../assets/fonts/Manrope-Medium.ttf'),
-  'Manrope-SemiBold': require('../../assets/fonts/Manrope-SemiBold.ttf'),
-  'Manrope-Bold': require('../../assets/fonts/Manrope-Bold.ttf'),
-  'Manrope-ExtraBold': require('../../assets/fonts/Manrope-ExtraBold.ttf'),
-  'Manrope-Light': require('../../assets/fonts/Manrope-Light.ttf'),
-};
+const MANROPE_FONTS = [
+  {
+    fontFamily: 'Manrope',
+    fontDefinitions: [
+      { path: require('../../assets/fonts/Manrope-Regular.ttf'), weight: 400 },
+      { path: require('../../assets/fonts/Manrope-Medium.ttf'), weight: 500 },
+      { path: require('../../assets/fonts/Manrope-Bold.ttf'), weight: 700 },
+    ],
+  },
+];
 
 export function useFonts() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
@@ -32,6 +34,9 @@ export function useFonts() {
         if (alive) setFontsLoaded(true);
       } catch (err) {
         if (alive) setError(err);
+      } finally {
+        // A font failure must never leave the app blocked on the loading screen.
+        if (alive) setFontsLoaded(true);
       }
     })();
     return () => {

@@ -1,6 +1,49 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
+import type { ElementType } from 'react';
 import Svg, { SvgProps } from 'react-native-svg';
+import AlertCircle from 'lucide-react-native/icons/alert-circle';
+import Bell from 'lucide-react-native/icons/bell';
+import Bot from 'lucide-react-native/icons/bot';
+import Cake from 'lucide-react-native/icons/cake';
+import Calendar from 'lucide-react-native/icons/calendar';
+import Check from 'lucide-react-native/icons/check';
+import CheckCircle from 'lucide-react-native/icons/check-circle';
+import CheckCircle2 from 'lucide-react-native/icons/check-circle-2';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import Clock from 'lucide-react-native/icons/clock';
+import Copy from 'lucide-react-native/icons/copy';
+import CreditCard from 'lucide-react-native/icons/credit-card';
+import Edit2 from 'lucide-react-native/icons/edit-2';
+import Eye from 'lucide-react-native/icons/eye';
+import EyeOff from 'lucide-react-native/icons/eye-off';
+import FileText from 'lucide-react-native/icons/file-text';
+import Folder from 'lucide-react-native/icons/folder';
+import Grid from 'lucide-react-native/icons/grid';
+import Heart from 'lucide-react-native/icons/heart';
+import Home from 'lucide-react-native/icons/home';
+import Image from 'lucide-react-native/icons/image';
+import Info from 'lucide-react-native/icons/info';
+import List from 'lucide-react-native/icons/list';
+import Lock from 'lucide-react-native/icons/lock';
+import Menu from 'lucide-react-native/icons/menu';
+import Mic from 'lucide-react-native/icons/mic';
+import Minus from 'lucide-react-native/icons/minus';
+import Palette from 'lucide-react-native/icons/palette';
+import Plus from 'lucide-react-native/icons/plus';
+import Save from 'lucide-react-native/icons/save';
+import Search from 'lucide-react-native/icons/search';
+import Settings from 'lucide-react-native/icons/settings';
+import Share2 from 'lucide-react-native/icons/share-2';
+import Shield from 'lucide-react-native/icons/shield';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import Star from 'lucide-react-native/icons/star';
+import Trash2 from 'lucide-react-native/icons/trash-2';
+import Unlock from 'lucide-react-native/icons/unlock';
+import User from 'lucide-react-native/icons/user';
+import X from 'lucide-react-native/icons/x';
+import Zap from 'lucide-react-native/icons/zap';
 
 export interface IconProps extends Omit<SvgProps, 'color'> {
   name: string;
@@ -9,50 +52,51 @@ export interface IconProps extends Omit<SvgProps, 'color'> {
   strokeWidth?: number;
 }
 
-const LUCIDE_ICONS: Record<string, React.ComponentType<any>> = {
-  home: () => require('lucide-react-native').Home,
-  schedule: () => require('lucide-react-native').Grid,
-  calendar: () => require('lucide-react-native').Calendar,
-  birthdays: () => require('lucide-react-native').Cake,
-  settings: () => require('lucide-react-native').Settings,
-  habit: () => require('lucide-react-native').CheckCircle2,
-  money: () => require('lucide-react-native').CreditCard,
-  ai: () => require('lucide-react-native').Bot,
-  search: () => require('lucide-react-native').Search,
-  note: () => require('lucide-react-native').FileText,
-  chevronDown: () => require('lucide-react-native').ChevronDown,
-  chevronUp: () => require('lucide-react-native').ChevronUp,
-  chevronLeft: () => require('lucide-react-native').ChevronLeft,
-  chevronRight: () => require('lucide-react-native').ChevronRight,
-  plus: () => require('lucide-react-native').Plus,
-  minus: () => require('lucide-react-native').Minus,
-  x: () => require('lucide-react-native').X,
-  check: () => require('lucide-react-native').Check,
-  checkCircle: () => require('lucide-react-native').CheckCircle,
-  clock: () => require('lucide-react-native').Clock,
-  user: () => require('lucide-react-native').User,
-  bell: () => require('lucide-react-native').Bell,
-  lock: () => require('lucide-react-native').Lock,
-  unlock: () => require('lucide-react-native').Unlock,
-  shield: () => require('lucide-react-native').Shield,
-  shieldCheck: () => require('lucide-react-native').ShieldCheck,
-  eye: () => require('lucide-react-native').Eye,
-  eyeOff: () => require('lucide-react-native').EyeOff,
-  trash: () => require('lucide-react-native').Trash2,
-  edit: () => require('lucide-react-native').Edit2,
-  save: () => require('lucide-react-native').Save,
-  copy: () => require('lucide-react-native').Copy,
-  share: () => require('lucide-react-native').Share2,
-  menu: () => require('lucide-react-native').Menu,
-  list: () => require('lucide-react-native').List,
-  folder: () => require('lucide-react-native').Folder,
-  image: () => require('lucide-react-native').Image,
-  mic: () => require('lucide-react-native').Mic,
-  heart: () => require('lucide-react-native').Heart,
-  star: () => require('lucide-react-native').Star,
-  zap: () => require('lucide-react-native').Zap,
-  alertCircle: () => require('lucide-react-native').AlertCircle,
-  info: () => require('lucide-react-native').Info,
+const LUCIDE_ICONS: Record<string, ElementType> = {
+  home: Home,
+  schedule: Grid,
+  calendar: Calendar,
+  birthdays: Cake,
+  settings: Settings,
+  habit: CheckCircle2,
+  money: CreditCard,
+  ai: Bot,
+  search: Search,
+  note: FileText,
+  chevronDown: ChevronDown,
+  chevronUp: ChevronUp,
+  chevronLeft: ChevronLeft,
+  chevronRight: ChevronRight,
+  plus: Plus,
+  minus: Minus,
+  x: X,
+  check: Check,
+  checkCircle: CheckCircle,
+  clock: Clock,
+  user: User,
+  bell: Bell,
+  lock: Lock,
+  unlock: Unlock,
+  shield: Shield,
+  shieldCheck: ShieldCheck,
+  eye: Eye,
+  eyeOff: EyeOff,
+  trash: Trash2,
+  edit: Edit2,
+  save: Save,
+  copy: Copy,
+  share: Share2,
+  menu: Menu,
+  list: List,
+  folder: Folder,
+  image: Image,
+  mic: Mic,
+  heart: Heart,
+  star: Star,
+  zap: Zap,
+  alertCircle: AlertCircle,
+  info: Info,
+  palette: Palette,
 };
 
 export function Icon({ name, size = 24, color, strokeWidth = 2, ...rest }: IconProps) {
@@ -71,5 +115,3 @@ export function Icon({ name, size = 24, color, strokeWidth = 2, ...rest }: IconP
 
   return <IconComponent size={size} color={color} strokeWidth={strokeWidth} {...rest} />;
 }
-
-const styles = StyleSheet.create({});

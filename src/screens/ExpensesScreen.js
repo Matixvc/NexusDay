@@ -25,7 +25,6 @@ import { authenticate, describePrivacyFailure } from '../services/privacy';
 import { EXPENSE_CATEGORIES, categoryOf, formatMoney, parseAmount, sumAmounts } from '../utils/money';
 import { relativeDayLabel, todayKey } from '../utils/dates';
 import { plural } from '../utils/text';
-import { Icon } from '../components/Icon';
 
 const MAX_ROWS = 8;
 
