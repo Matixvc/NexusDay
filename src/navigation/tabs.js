@@ -7,22 +7,25 @@ import HomeScreen from '../screens/HomeScreen';
 import NotesScreen from '../screens/NotesScreen';
 import ScheduleScreen from '../screens/ScheduleScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import { PRIMARY_TABS } from './primaryTabs';
+export { PRIMARY_TABS, PRIMARY_TAB_NAMES } from './primaryTabs';
+
+const PRIMARY_SCREENS = {
+  Inicio: HomeScreen,
+  Notas: NotesScreen,
+  Agenda: CalendarScreen,
+};
 
 /**
  * Every section of the app, in the default order.
  *
- * Keeping the catalog in one place is what makes the navigation customisable: the navigator
- * renders these screens in `tabConfig.order` and Ajustes reorders or hides them without
- * touching the navigator. `locked: true` marks the two tabs that can never be moved or
- * hidden: Inicio (the way back into the app) and Ajustes (the only way to undo any tab
- * change — hiding it would be a one-way door).
+ * Keeping the historical catalog intact preserves route names used by search, reminders and
+ * older backups. `PRIMARY_TAB_NAMES` below decides which entries appear in the bottom bar.
  */
 export const TABS = [
-  { name: 'Inicio', label: 'Inicio', glyph: 'home', component: HomeScreen, locked: true },
+  ...PRIMARY_TABS.map((tab) => ({ ...tab, component: PRIMARY_SCREENS[tab.name], locked: tab.name === 'Inicio' })),
   { name: 'Horario', label: 'Horario', glyph: 'schedule', component: ScheduleScreen },
-  { name: 'Agenda', label: 'Agenda', glyph: 'calendar', component: CalendarScreen },
   { name: 'Cumpleaños', label: 'Cumple', glyph: 'birthdays', component: BirthdaysScreen },
-  { name: 'Notas', label: 'Notas', glyph: 'note', component: NotesScreen },
   { name: 'Hábitos', label: 'Hábitos', glyph: 'habit', component: HabitsScreen },
   { name: 'Gastos', label: 'Gastos', glyph: 'money', component: ExpensesScreen },
   { name: 'Nexus AI', label: 'Nexus AI', glyph: 'ai', component: AssistantScreen },

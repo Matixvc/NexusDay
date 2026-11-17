@@ -16,6 +16,7 @@ import { TextField } from '../components/ui/inputs';
 import { ConfirmSheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
 import { Accordion } from '../components/ui/Accordion';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import { initials } from '../utils/initials';
 import { tap as tapHaptic, select as selectHaptic, success as successHaptic } from '../services/haptics';
 import {
@@ -84,7 +85,7 @@ function formatSyncDate(timestamp) {
   return `${date} · ${time}`;
 }
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const { accentId, setAccentId, surfaceId, setSurfaceId } = useAccentTheme();
   const {
     activities,
@@ -363,6 +364,7 @@ export default function SettingsScreen() {
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
   const storageTotal = storage ? storage.attachments + storage.recordings + storage.exports : 0;
+  const showNavigationCustomization = false;
   const totalItems =
     activities.length + events.length + birthdays.length + notes.length + habits.length + expenses.length;
 
@@ -371,6 +373,13 @@ export default function SettingsScreen() {
       <Screen
         title="Ajustes"
         subtitle={`Permisos, datos y respaldo de ${APP_NAME}.`}
+        headerLeft={
+          <HeaderIconButton
+            icon="chevronLeft"
+            label="Volver a la sección anterior"
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Inicio'))}
+          />
+        }
         headerRight={<Pill label={`v${appVersion}`} />}
       >
         {notice ? (
@@ -684,6 +693,8 @@ export default function SettingsScreen() {
           <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
+        {showNavigationCustomization ? (
+          <>
         <SectionTitle title="Personalizar Navegación" count={tabConfig.order.length} />
         <Card style={styles.card}>
           <Text style={typography.caption}>
@@ -743,15 +754,17 @@ export default function SettingsScreen() {
 
           <TextButton label="Restablecer barra" tone="ghost" onPress={() => setTabConfig(DEFAULT_TAB_CONFIG)} />
         </Card>
+          </>
+        ) : null}
 
         <SectionTitle title="Ayuda" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Tutorial de {APP_NAME}</Text>
-              <Text style={typography.caption}>Las cinco pantallas del primer arranque, otra vez.</Text>
+              <Text style={typography.caption}>Las seis pantallas del primer arranque, otra vez.</Text>
             </View>
-            <Pill label="5 pasos" tone="accent" />
+            <Pill label="6 pasos" tone="accent" />
           </View>
           <TextButton label="Ver el tutorial otra vez" onPress={replayTutorial} />
           <Text style={typography.caption}>

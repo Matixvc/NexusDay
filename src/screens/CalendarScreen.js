@@ -3,6 +3,9 @@ import { Pressable, Text, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { themedStyles, calendarTheme, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { useFocusId } from '../hooks/useFocusId';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
+import { BirthdayEditor } from '../components/BirthdayEditor';
 import {
   Card,
   Chip,
@@ -13,7 +16,6 @@ import {
   PrimaryButton,
   Screen,
   SectionTitle,
-  Stat,
   TextButton,
 } from '../components/ui/primitives';
 import { ColorPicker, PickerTrigger, TextArea, TextField } from '../components/ui/inputs';
@@ -23,19 +25,20 @@ import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
 import { SwitchRow } from '../components/ui/Switch';
 import { EVENT_REMINDERS, dropReminder, syncEventReminder } from '../services/reminders';
 import { EVENT_CATEGORIES, categoryOf } from '../services/eventCategories';
+import {
+  blankBirthday,
+  deleteBirthdayRecord,
+  saveBirthdayRecord,
+} from '../services/birthdays';
+import { buildCalendarMarks, buildDayAgenda, CALENDAR_FILTERS } from '../services/calendar';
 import { plural } from '../utils/text';
 import {
-  compareDateTime,
-  daysFromToday,
   formatDateLong,
   formatDuration,
   formatTime,
-  fromDateKey,
   isPastDateTime,
   minutesBetween,
-  relativeDayLabel,
   todayKey,
-  weekdayIndex,
 } from '../utils/dates';
 
 const BLANK = () => ({
@@ -50,45 +53,27 @@ const BLANK = () => ({
   notificationId: null,
 });
 
+const CREATE_OPTIONS = [
+  { value: 'event', label: 'Evento personal' },
+  { value: 'birthday', label: 'Cumpleaños' },
+];
+
 function reminderLabel(leadMinutes) {
   const option = EVENT_REMINDERS.find((item) => item.value === leadMinutes);
   return option ? option.label : 'Sin aviso';
 }
 
-/** Marking map for react-native-calendars: one dot per event colour on its day. */
-function buildMarks(events, selectedKey) {
-  const marks = {};
-  events.forEach((event) => {
-    if (!event.dateKey) return;
-    const entry = marks[event.dateKey] || { dots: [] };
-    if (entry.dots.length < 3) {
-      entry.dots.push({ key: event.id, color: event.color || colors.accent, selectedColor: event.color || colors.accent });
-    }
-    marks[event.dateKey] = entry;
-  });
-
-  Object.keys(marks).forEach((key) => {
-    const dots = marks[key].dots;
-    marks[key] = {
-      marked: dots.length > 0,
-      dotColor: dots[0]?.color || colors.accent,
-      dots,
-      selected: key === selectedKey,
-      disableTouchEvent: false,
-    };
-  });
-
-  if (selectedKey && !marks[selectedKey]) marks[selectedKey] = { selected: true, dots: [] };
-  return marks;
-}
-
-export default function CalendarScreen() {
+export default function CalendarScreen({ navigation }) {
   const {
     events,
     addEvent,
     updateEvent,
     removeEvent,
     activities,
+    birthdays,
+    addBirthday,
+    updateBirthday,
+    removeBirthday,
     permission,
     requestNotifications,
     notificationsSupported,
@@ -96,68 +81,42 @@ export default function CalendarScreen() {
 
   const today = todayKey();
   const [selected, setSelected] = useState(today);
+  const [visibleYear, setVisibleYear] = useState(Number(today.slice(0, 4)));
+  const [calendarRevision, setCalendarRevision] = useState(0);
+  const [filter, setFilter] = useState('all');
   const [sheet, setSheet] = useState(null);
+  const [birthdaySheet, setBirthdaySheet] = useState(null);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
+  const [birthdayConfirmId, setBirthdayConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [birthdaySaving, setBirthdaySaving] = useState(false);
+  const focusId = useFocusId();
+  const [handledFocusId, setHandledFocusId] = useState(null);
 
-  const marks = useMemo(() => buildMarks(events, selected), [events, selected]);
-
-  const dayEvents = useMemo(
-    () => events.filter((event) => event.dateKey === selected).slice().sort(compareDateTime),
-    [events, selected],
+  const marks = useMemo(
+    () =>
+      buildCalendarMarks({
+        events,
+        birthdays,
+        year: visibleYear,
+        selectedKey: selected,
+        filter,
+        colors: { event: colors.accent, birthday: colors.warning },
+      }),
+    [birthdays, events, filter, selected, visibleYear],
   );
 
   /**
-   * Línea de tiempo del día seleccionado: los eventos de esa fecha y las clases del horario
-   * semanal que caen ese día de la semana, fusionados y ordenados por hora. Una clase cuya
-   * sesión de esa fecha está suspendida se omite, igual que en el Horario.
+   * Agenda del día seleccionado: eventos, clases semanales y cumpleaños anuales ordenados
+   * por hora. Una clase suspendida para esa fecha se omite, igual que en el Horario.
    */
-  const dayTimeline = useMemo(() => {
-    const dayOfWeek = weekdayIndex(fromDateKey(selected));
-    const classes = activities
-      .filter((activity) => Number(activity.day) === dayOfWeek)
-      .filter((activity) => !activity.suspended?.[selected])
-      .map((activity) => ({
-        kind: 'class',
-        id: `class-${activity.id}`,
-        title: activity.title,
-        time: activity.start,
-        endTime: activity.end,
-        location: activity.location,
-        color: activity.color,
-      }));
-    const dated = dayEvents.map((event) => ({
-      kind: 'event',
-      id: `event-${event.id}`,
-      event,
-      title: event.title,
-      time: event.time,
-      endTime: event.endTime,
-      notes: event.notes,
-      category: event.category,
-      color: event.color,
-    }));
-    return [...classes, ...dated].sort((a, b) => String(a.time).localeCompare(String(b.time)));
-  }, [activities, dayEvents, selected]);
-
-  const upcoming = useMemo(
-    () =>
-      events
-        .filter((event) => compareDateTime(event, { dateKey: today, time: '23:59' }) >= 0)
-        .slice()
-        .sort(compareDateTime)
-        .slice(0, 4),
-    [events, today],
+  const dayTimeline = useMemo(
+    () => buildDayAgenda({ dateKey: selected, events, activities, birthdays, filter }),
+    [activities, birthdays, events, filter, selected],
   );
-
-  const pastCount = useMemo(
-    () => events.filter((event) => daysFromToday(event.dateKey) < 0).length,
-    [events],
-  );
-
-  const remindersArmed = useMemo(() => events.filter((event) => event.notificationId).length, [events]);
 
   /**
    * Opens the editor for a new event with the day currently shown in the grid already picked:
@@ -185,6 +144,47 @@ export default function CalendarScreen() {
       },
     });
   }, []);
+
+  const openBirthdayCreate = useCallback(
+    () => setBirthdaySheet({ mode: 'create', values: blankBirthday(colors.accent, selected) }),
+    [selected],
+  );
+
+  const openBirthdayEdit = useCallback((birthday) => {
+    setBirthdaySheet({
+      mode: 'edit',
+      id: birthday.id,
+      values: {
+        name: birthday.name,
+        emoji: birthday.emoji || '🎂',
+        dateKey: birthday.dateKey,
+        time: birthday.time || '09:00',
+        daysBefore: birthday.daysBefore ?? 0,
+        color: birthday.color || colors.accent,
+        notificationId: birthday.notificationId || null,
+      },
+    });
+  }, []);
+
+  const setBirthdayValue = useCallback(
+    (patch) => setBirthdaySheet((previous) => ({ ...previous, values: { ...previous.values, ...patch } })),
+    [],
+  );
+
+  const goToday = useCallback(() => {
+    const nextToday = todayKey();
+    setSelected(nextToday);
+    setVisibleYear(Number(nextToday.slice(0, 4)));
+    setCalendarRevision((value) => value + 1);
+  }, []);
+
+  const focusedEvent = focusId ? events.find((item) => item.id === focusId) : null;
+  if (!focusId && handledFocusId) setHandledFocusId(null);
+  if (focusedEvent && handledFocusId !== focusId) {
+    setHandledFocusId(focusId);
+    setSelected(focusedEvent.dateKey || today);
+    openEdit(focusedEvent);
+  }
 
   const setValue = useCallback(
     (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } })),
@@ -258,6 +258,21 @@ export default function CalendarScreen() {
     setSheet(null);
   };
 
+  const saveBirthday = async () => {
+    if (!birthdaySheet || birthdaySaving || !birthdaySheet.values.name.trim()) return;
+    setBirthdaySaving(true);
+    const result = await saveBirthdayRecord({
+      mode: birthdaySheet.mode,
+      id: birthdaySheet.id,
+      values: birthdaySheet.values,
+      addBirthday,
+      updateBirthday,
+    });
+    setBirthdaySaving(false);
+    setNotice(result.notice);
+    setBirthdaySheet(null);
+  };
+
   const confirmDelete = async () => {
     const target = events.find((event) => event.id === confirmId);
     if (target) await dropReminder(target);
@@ -265,14 +280,24 @@ export default function CalendarScreen() {
     setConfirmId(null);
   };
 
+  const confirmBirthdayDelete = async () => {
+    await deleteBirthdayRecord({ id: birthdayConfirmId, birthdays, removeBirthday });
+    setBirthdayConfirmId(null);
+  };
+
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
 
   return (
     <>
       <Screen
-        title="Agenda"
+        title="Calendario"
         subtitle={formatDateLong(selected)}
-        headerRight={<Pill label={plural(events.length, 'evento')} />}
+        headerRight={
+          <View style={styles.headerActions}>
+            <Pill label={plural(events.length + birthdays.length, 'fecha')} />
+            <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={() => navigation.navigate('Ajustes')} />
+          </View>
+        }
       >
         {showPermissionCard ? (
           <Card accent={colors.warning}>
@@ -281,7 +306,7 @@ export default function CalendarScreen() {
             </Text>
             <Text style={[typography.small, styles.bannerText]}>
               {permission.canAskAgain
-                ? 'Sin permisos la agenda se guarda igual, pero no te avisa cuando se acerca un evento.'
+                ? 'La agenda se guarda igual, pero sin permiso no avisa sobre eventos ni cumpleaños.'
                 : 'Actívalos desde Ajustes → Aplicaciones → NexusDay → Notificaciones para volver a usarlos.'}
             </Text>
             {permission.canAskAgain ? (
@@ -303,30 +328,55 @@ export default function CalendarScreen() {
           </View>
         ) : null}
 
+        <View style={styles.filterBar}>
+          <View style={styles.filters}>
+            {CALENDAR_FILTERS.map((option) => (
+              <Chip
+                key={option.id}
+                label={option.label}
+                compact
+                selected={filter === option.id}
+                onPress={() => setFilter(option.id)}
+              />
+            ))}
+          </View>
+          <TextButton label="Hoy" tone="ghost" onPress={goToday} />
+        </View>
+
         <Card style={styles.calendarCard}>
           <Calendar
+            key={calendarRevision}
+            current={selected}
             theme={calendarTheme}
             markingType="multi-dot"
             markedDates={marks}
             onDayPress={(day) => setSelected(day.dateString)}
+            onMonthChange={(month) => setVisibleYear(month.year)}
             firstDay={1}
             hideExtraDays
             enableSwipeMonths
             style={styles.calendar}
           />
+          <View style={styles.legend}>
+            {filter === 'all' || filter === 'events' ? <LegendItem color={colors.accent} label="Eventos" /> : null}
+            {filter === 'all' || filter === 'birthdays' ? (
+              <LegendItem color={colors.warning} label="Cumpleaños" />
+            ) : null}
+            {filter === 'classes' ? <Text style={typography.caption}>Las clases aparecen en la agenda diaria.</Text> : null}
+          </View>
         </Card>
 
         <SectionTitle
-          title="Línea de tiempo del día"
+          title="Agenda del día"
           count={dayTimeline.length}
-          right={<TextButton label="+ Nuevo" onPress={openCreate} />}
+          right={<TextButton label="+ Crear" onPress={() => setCreateSheetOpen(true)} />}
         />
 
         {dayTimeline.length === 0 ? (
           <EmptyState
             emoji="🌙"
             title="Día libre"
-            hint="No hay clases ni eventos este día. Toca + para agendar algo con su recordatorio."
+            hint="No hay elementos de este tipo para la fecha seleccionada."
           />
         ) : (
           <View style={styles.timeline}>
@@ -334,25 +384,21 @@ export default function CalendarScreen() {
               <TimelineRow
                 key={item.id}
                 item={item}
-                onPress={item.kind === 'event' ? () => openEdit(item.event) : undefined}
+                onPress={
+                  item.kind === 'event'
+                    ? () => openEdit(item.source)
+                    : item.kind === 'birthday'
+                      ? () => openBirthdayEdit(item.source)
+                      : () => navigation.navigate('Horario', { focusId: item.sourceId })
+                }
               />
             ))}
           </View>
         )}
 
-        <View style={styles.statsRow}>
-          <Stat value={dayEvents.length} label="ese día" />
-          <Stat value={remindersArmed} label="con aviso" accent={colors.accent} />
-          <Stat value={pastCount} label="pasados" />
-        </View>
-
-        {upcoming.length > 0 ? <SectionTitle title="Se acercan" count={upcoming.length} /> : null}
-        {upcoming.map((event) => (
-          <EventRow key={`up-${event.id}`} event={event} showDay onPress={() => openEdit(event)} />
-        ))}
       </Screen>
 
-      <Fab onPress={openCreate} />
+      <Fab onPress={() => setCreateSheetOpen(true)} />
 
       <Sheet
         visible={Boolean(sheet)}
@@ -460,6 +506,30 @@ export default function CalendarScreen() {
         ) : null}
       </Sheet>
 
+      <BirthdayEditor
+        sheet={birthdaySheet}
+        saving={birthdaySaving}
+        onClose={() => setBirthdaySheet(null)}
+        onChange={setBirthdayValue}
+        onSave={saveBirthday}
+        onRequestDelete={(id) => {
+          setBirthdayConfirmId(id);
+          setBirthdaySheet(null);
+        }}
+      />
+
+      <OptionSheet
+        visible={createSheetOpen}
+        onClose={() => setCreateSheetOpen(false)}
+        title="Crear en Calendario"
+        options={CREATE_OPTIONS}
+        value={null}
+        onSelect={(kind) => {
+          if (kind === 'birthday') openBirthdayCreate();
+          else openCreate();
+        }}
+      />
+
       <OptionSheet
         visible={leadSheetOpen}
         onClose={() => setLeadSheetOpen(false)}
@@ -476,6 +546,14 @@ export default function CalendarScreen() {
         title="¿Eliminar evento?"
         message="Se borra de la agenda y se cancela su recordatorio."
       />
+
+      <ConfirmSheet
+        visible={Boolean(birthdayConfirmId)}
+        onClose={() => setBirthdayConfirmId(null)}
+        onConfirm={confirmBirthdayDelete}
+        title="¿Eliminar cumpleaños?"
+        message="Se borra del calendario y se cancela su aviso anual."
+      />
     </>
   );
 }
@@ -487,13 +565,16 @@ export default function CalendarScreen() {
  */
 function TimelineRow({ item, onPress }) {
   const isClass = item.kind === 'class';
-  const category = !isClass && item.category ? categoryOf(item.category) : null;
+  const isBirthday = item.kind === 'birthday';
+  const category = item.kind === 'event' && item.category ? categoryOf(item.category) : null;
   const tint = item.color || colors.accent;
   const detail = isClass
-    ? item.location || 'Clase'
+    ? item.detail || 'Clase'
+    : isBirthday
+      ? item.detail
     : category
       ? `${category.emoji} ${category.label}`
-      : item.notes || '';
+      : item.detail || '';
   const timeRange = item.endTime && item.endTime !== item.time ? `${formatTime(item.time)}–${formatTime(item.endTime)}` : formatTime(item.time);
 
   const body = (
@@ -511,10 +592,11 @@ function TimelineRow({ item, onPress }) {
       <View style={styles.timelineBody}>
         <View style={styles.timelineTitleRow}>
           <Text style={typography.bodyStrong} numberOfLines={1}>
-            {isClass ? '📚 ' : ''}
+            {isClass ? '📚 ' : isBirthday ? `${item.emoji} ` : ''}
             {item.title}
           </Text>
           {isClass ? <Pill label="clase" /> : null}
+          {isBirthday ? <Pill label="cumpleaños" tone="warning" /> : null}
         </View>
         {detail ? (
           <Text style={[typography.small, styles.timelineDetail]} numberOfLines={1}>
@@ -529,7 +611,6 @@ function TimelineRow({ item, onPress }) {
     </View>
   );
 
-  if (!onPress) return body;
   return (
     <Pressable onPress={onPress} style={({ pressed }) => (pressed ? styles.pressed : null)}>
       {body}
@@ -537,58 +618,28 @@ function TimelineRow({ item, onPress }) {
   );
 }
 
-function EventRow({ event, onPress, showDay }) {
-  const past = daysFromToday(event.dateKey) < 0;
-  const armed = Boolean(event.notificationId);
-  const wantsReminder = (event.leadMinutes ?? -1) !== -1;
-
+function LegendItem({ color, label }) {
   return (
-    <Card accent={event.color} onPress={onPress} dimmed={past} style={styles.eventCard}>
-      <View style={styles.eventRow}>
-        <View style={styles.eventTime}>
-          <Text style={[styles.eventHour, typography.tabular]}>{formatTime(event.time)}</Text>
-          {showDay ? <Text style={styles.eventDay}>{relativeDayLabel(event.dateKey)}</Text> : null}
-        </View>
-        <View style={styles.eventBody}>
-          <Text style={typography.bodyStrong} numberOfLines={2}>
-            {event.title}
-          </Text>
-          {event.notes ? (
-            <Text style={[typography.small, styles.eventNotes]} numberOfLines={2}>
-              {event.notes}
-            </Text>
-          ) : null}
-          <View style={styles.pillRow}>
-            {showDay ? <Pill label={relativeDayLabel(event.dateKey)} tone={past ? 'neutral' : 'accent'} /> : null}
-            {wantsReminder ? (
-              <Pill
-                label={<>🔔 {reminderLabel(event.leadMinutes)}</>}
-                tone={armed ? 'accent' : 'warning'}
-              />
-            ) : null}
-          </View>
-        </View>
-      </View>
-    </Card>
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={typography.caption}>{label}</Text>
+    </View>
   );
 }
 
 const styles = themedStyles({
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { marginTop: spacing.md, flexDirection: 'row' },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  filters: { flex: 1, minWidth: 230, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   calendarCard: { paddingVertical: spacing.sm, marginBottom: spacing.sm },
   calendar: { backgroundColor: 'transparent' },
-  statsRow: { flexDirection: 'row', gap: spacing.sm },
-  eventCard: { paddingVertical: spacing.md },
-  eventRow: { flexDirection: 'row', gap: spacing.lg },
-  eventTime: { width: 62, gap: 2 },
-  eventHour: { fontSize: 15.5, fontWeight: '700', color: colors.text },
-  eventDay: { fontSize: 11.5, fontWeight: '600', color: colors.textMuted },
-  eventBody: { flex: 1, gap: 4 },
-  eventNotes: { lineHeight: 18 },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 2 },
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, paddingTop: spacing.xs },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  legendDot: { width: 8, height: 8, borderRadius: radius.pill },
   leadWrap: { gap: spacing.xs },
   leadHint: { fontSize: 11, fontWeight: '700', color: colors.accent },
 

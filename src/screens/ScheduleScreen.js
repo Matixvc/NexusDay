@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { useFocusId } from '../hooks/useFocusId';
 import {
   Card,
   Chip,
@@ -33,6 +34,7 @@ import {
   weekdayIndex,
 } from '../utils/dates';
 import { Icon } from '../components/Icon';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 
 const BLANK = () => ({ title: '', start: '09:00', end: '10:00', location: '', color: colors.accent, leadMinutes: -1 });
 
@@ -60,6 +62,8 @@ export default function ScheduleScreen({ navigation }) {
   const [hubId, setHubId] = useState(null);
   const hub = hubId ? activities.find((a) => a.id === hubId) || null : null;
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
+  const focusId = useFocusId();
+  const [handledFocusId, setHandledFocusId] = useState(null);
 
   const dayLabel = WEEKDAYS[day].long;
   const isToday = day === todayIndex;
@@ -112,6 +116,14 @@ export default function ScheduleScreen({ navigation }) {
         leadMinutes: item.leadMinutes ?? -1,
       },
     });
+
+  const focusedActivity = focusId ? activities.find((item) => item.id === focusId) : null;
+  if (!focusId && handledFocusId) setHandledFocusId(null);
+  if (focusedActivity && handledFocusId !== focusId) {
+    setHandledFocusId(focusId);
+    setDay(focusedActivity.day);
+    setHubId(focusedActivity.id);
+  }
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
@@ -215,6 +227,13 @@ export default function ScheduleScreen({ navigation }) {
       <Screen
         title="Horario"
         subtitle={formatDateLong(todayKey())}
+        headerLeft={
+          <HeaderIconButton
+            icon="chevronLeft"
+            label="Volver a Día a Día"
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Inicio'))}
+          />
+        }
         headerRight={<Pill label={`${activities.length} actividades`} />}
       >
         <View style={styles.statsRow}>

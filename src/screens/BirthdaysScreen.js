@@ -4,8 +4,6 @@ import { themedStyles, colors, radius, spacing, typography } from '../theme/them
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
-  Chip,
-  ChipScroller,
   EmptyState,
   Fab,
   Notice,
@@ -16,37 +14,17 @@ import {
   Stat,
   TextButton,
 } from '../components/ui/primitives';
-import { ColorPicker, PickerTrigger, TextField } from '../components/ui/inputs';
-import { DateField } from '../components/ui/DateField';
-import { TimeField } from '../components/ui/TimeField';
-import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
+import { ConfirmSheet } from '../components/ui/Sheet';
+import { BirthdayEditor } from '../components/BirthdayEditor';
 import { TabBadge } from '../navigation/BottomTabBar';
-import { BIRTHDAY_LEADS, dropReminder, syncBirthdayReminder } from '../services/reminders';
+import {
+  birthdayLeadLabel,
+  blankBirthday,
+  deleteBirthdayRecord,
+  saveBirthdayRecord,
+} from '../services/birthdays';
 import { ageOn, daysUntilYearly, formatDateMedium, fromDateKey, nextYearlyOccurrence } from '../utils/dates';
 import { plural } from '../utils/text';
-
-const EMOJIS = ['🎂', '🎉', '🎈', '🎁', '⭐', '🌟', '🎧', '⚽', '📚', '🐱', '🐶', '✈️'];
-
-const BLANK = () => ({
-  name: '',
-  emoji: '🎂',
-  dateKey: '2000-01-01',
-  time: '09:00',
-  daysBefore: 0,
-  color: colors.accent,
-  notificationId: null,
-});
-
-function leadLabel(daysBefore) {
-  const option = BIRTHDAY_LEADS.find((item) => item.value === daysBefore);
-  return option ? option.label : 'El mismo día';
-}
-
-/** Age the person turns on their next birthday. */
-function turnsNext(dateKey) {
-  const birth = fromDateKey(dateKey);
-  return ageOn(dateKey, nextYearlyOccurrence(birth.getMonth(), birth.getDate()));
-}
 
 function countdown(days) {
   if (days === 0) return '¡Hoy!';
@@ -68,7 +46,6 @@ export default function BirthdaysScreen({ navigation }) {
   } = useAppData();
 
   const [sheet, setSheet] = useState(null);
-  const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -98,7 +75,7 @@ export default function BirthdaysScreen({ navigation }) {
     });
   }, [navigation, soon.length]);
 
-  const openCreate = () => setSheet({ mode: 'create', values: BLANK() });
+  const openCreate = () => setSheet({ mode: 'create', values: blankBirthday(colors.accent) });
 
   const openEdit = (item) =>
     setSheet({
@@ -117,35 +94,24 @@ export default function BirthdaysScreen({ navigation }) {
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
-  const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.name.trim());
-
   const save = async () => {
-    if (!canSave) return;
-    const { mode, id, values } = sheet;
-    const payload = {
-      name: values.name.trim(),
-      emoji: values.emoji,
-      dateKey: values.dateKey,
-      time: values.time,
-      daysBefore: values.daysBefore,
-      color: values.color,
-    };
+    if (!sheet || saving || !sheet.values.name.trim()) return;
 
     setSaving(true);
-    const result = await syncBirthdayReminder(payload, values.notificationId);
+    const result = await saveBirthdayRecord({
+      mode: sheet.mode,
+      id: sheet.id,
+      values: sheet.values,
+      addBirthday,
+      updateBirthday,
+    });
     setSaving(false);
-
-    if (mode === 'edit') updateBirthday(id, { ...payload, notificationId: result.notificationId });
-    else addBirthday({ ...payload, notificationId: result.notificationId });
-
     setNotice(result.notice);
     setSheet(null);
   };
 
   const confirmDelete = async () => {
-    const target = birthdays.find((item) => item.id === confirmId);
-    if (target) await dropReminder(target);
-    removeBirthday(confirmId);
+    await deleteBirthdayRecord({ id: confirmId, birthdays, removeBirthday });
     setConfirmId(null);
   };
 
@@ -212,84 +178,16 @@ export default function BirthdaysScreen({ navigation }) {
 
       <Fab onPress={openCreate} />
 
-      <Sheet
-        visible={Boolean(sheet)}
+      <BirthdayEditor
+        sheet={sheet}
+        saving={saving}
         onClose={() => setSheet(null)}
-        title={sheet?.mode === 'edit' ? 'Editar cumpleaños' : 'Nuevo cumpleaños'}
-        subtitle="El aviso se repite todos los años en la fecha elegida."
-        footer={
-          <>
-            {sheet?.mode === 'edit' ? (
-              <TextButton
-                label="Eliminar"
-                tone="danger"
-                onPress={() => {
-                  setConfirmId(sheet.id);
-                  setSheet(null);
-                }}
-              />
-            ) : null}
-            <PrimaryButton label={saving ? 'Guardando…' : 'Guardar'} onPress={save} disabled={!canSave} />
-          </>
-        }
-      >
-        {sheet ? (
-          <>
-            <TextField
-              label="Nombre"
-              value={sheet.values.name}
-              onChangeText={(name) => setValue({ name })}
-              placeholder="Ej. Camila"
-              autoFocus
-              maxLength={40}
-            />
-            <View style={styles.field}>
-              <Text style={typography.overline}>Emoji</Text>
-              <ChipScroller>
-                {EMOJIS.map((emoji) => (
-                  <Chip
-                    key={emoji}
-                    label={emoji}
-                    compact
-                    selected={sheet.values.emoji === emoji}
-                    onPress={() => setValue({ emoji })}
-                  />
-                ))}
-              </ChipScroller>
-            </View>
-            <DateField
-              label="Fecha de nacimiento"
-              value={sheet.values.dateKey}
-              onChange={(dateKey) => setValue({ dateKey })}
-              quick={false}
-            />
-            <Text style={styles.birthdayHint}>
-              {`Cumple ${turnsNext(sheet.values.dateKey)} años el ${formatDateMedium(sheet.values.dateKey)}.`}
-            </Text>
-            <TimeField
-              label="Hora del aviso"
-              value={sheet.values.time}
-              onChange={(time) => setValue({ time })}
-              minuteStep={30}
-            />
-            <PickerTrigger
-              label="Cuándo avisar"
-              value={leadLabel(sheet.values.daysBefore)}
-              onPress={() => setLeadSheetOpen(true)}
-              trailing={sheet.values.notificationId ? <Text style={styles.armed}>● programado</Text> : null}
-            />
-            <ColorPicker value={sheet.values.color} onChange={(color) => setValue({ color })} />
-          </>
-        ) : null}
-      </Sheet>
-
-      <OptionSheet
-        visible={leadSheetOpen}
-        onClose={() => setLeadSheetOpen(false)}
-        title="¿Cuándo te aviso?"
-        options={BIRTHDAY_LEADS}
-        value={sheet?.values.daysBefore}
-        onSelect={(daysBefore) => setValue({ daysBefore })}
+        onChange={setValue}
+        onSave={save}
+        onRequestDelete={(id) => {
+          setConfirmId(id);
+          setSheet(null);
+        }}
       />
 
       <ConfirmSheet
@@ -323,7 +221,7 @@ function BirthdayRow({ item, onPress }) {
           </Text>
           <View style={styles.pillRow}>
             <Pill label={countdown(item.days)} tone={isToday ? 'warning' : soonish ? 'accent' : 'neutral'} />
-            {armed ? <Pill label={`🔔 ${leadLabel(item.daysBefore)}`} tone="accent" /> : null}
+            {armed ? <Pill label={`🔔 ${birthdayLeadLabel(item.daysBefore)}`} tone="accent" /> : null}
             {!armed ? <Pill label="sin aviso" /> : null}
           </View>
         </View>

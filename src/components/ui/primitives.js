@@ -11,11 +11,12 @@ import { tap as tapHaptic } from '../../services/haptics';
  * inherits the right padding: the title never collides with the notch and the last
  * card is never hidden behind the Android nav bar / iOS home indicator.
  */
-export function Screen({ title, subtitle, headerRight, children, contentStyle }) {
+export function Screen({ title, subtitle, headerLeft, headerRight, children, contentStyle }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+        {headerLeft ? <View style={styles.headerLeft}>{headerLeft}</View> : null}
         <View style={styles.headerText}>
           <Text style={typography.display} numberOfLines={1}>
             {title}
@@ -297,6 +298,7 @@ const styles = themedStyles({
     paddingBottom: spacing.lg,
     gap: spacing.md,
   },
+  headerLeft: { paddingBottom: spacing.xs },
   headerText: { flex: 1 },
   headerRight: { paddingBottom: spacing.xs },
   subtitle: { marginTop: spacing.xs },

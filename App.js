@@ -10,7 +10,7 @@ import { SwipeLockProvider } from './src/context/SwipeLockContext';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { HOME_TAB } from './src/navigation/tabs';
-import { setTabHidden, tabOrderSignature } from './src/services/tabs';
+import { tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
 import { useFonts } from './src/hooks/useFonts';
@@ -70,18 +70,13 @@ function AppStatusBar() {
  * the navigator (fresh styles) while `lastRoute` puts the user back on the tab they left.
  */
 function AppShell() {
-  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, setTabConfig } = useAppData();
-  // Remembered so a remount (tab layout change) lands on the same section.
+  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig } = useAppData();
+  // Remembered so any navigator remount lands on the same registered route.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
 
   const onRouteChange = useCallback((name) => {
     setLastRoute((previous) => (previous === name ? previous : name));
   }, []);
-
-  const onRevealTab = useCallback(
-    (name) => setTabConfig(setTabHidden(tabConfig, name, false)),
-    [setTabConfig, tabConfig],
-  );
 
   if (onboardingCompleted === null) return <BootScreen />;
 
@@ -91,14 +86,10 @@ function AppShell() {
 
   return (
     <RootNavigator
-      // Only the *order* of tabs remounts the navigator. Changing the accent or surface
-      // repaints styles in place through the theme system and must not unmount the
-      // navigator, otherwise the user is thrown back to Inicio.
+      // The normalized legacy signature is stable for the fixed three-section layout.
       key={tabOrderSignature(tabConfig)}
       initialRouteName={lastRoute}
       onRouteChange={onRouteChange}
-      tabConfig={tabConfig}
-      onRevealTab={onRevealTab}
     />
   );
 }

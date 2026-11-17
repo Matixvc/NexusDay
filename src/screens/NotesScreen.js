@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import { useFocusId } from '../hooks/useFocusId';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import {
   Card,
   Chip,
@@ -52,7 +53,7 @@ function sortNotes(notes) {
     );
 }
 
-export default function NotesScreen() {
+export default function NotesScreen({ navigation }) {
   const { notes, addNote, updateNote, removeNote, settings } = useAppData();
   // The global lock can be turned off in Ajustes; secure by default.
   const privacyEnabled = settings?.privacyEnabled;
@@ -302,9 +303,14 @@ export default function NotesScreen() {
   return (
     <>
       <Screen
-        title="Notas"
+        title="Bloc de Notas"
         subtitle="Rápidas, sin cuenta y sin nube."
-        headerRight={<Pill label={`${notes.length} notas`} />}
+        headerRight={
+          <View style={styles.headerActions}>
+            <Pill label={`${notes.length} notas`} />
+            <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={() => navigation.navigate('Ajustes')} />
+          </View>
+        }
       >
         <TextInput
           value={query}
@@ -743,6 +749,7 @@ function CheckLine({ item, onPress }) {
 }
 
 const styles = themedStyles({
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   search: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.md,

@@ -25,23 +25,17 @@ const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 const WELCOME_BG = require('../../assets/welcome-bg.jpg');
 
 /** Tab names of the demo bar, in the same order as the real one. */
-const DEMO_TABS = ['Inicio', 'Horario', 'Agenda', 'Cumple', 'Notas', 'Hábitos', 'Gastos', 'AI', 'Ajustes'];
-const DEMO_ICONS = ['home', 'schedule', 'calendar', 'birthdays', 'note', 'habit', 'money', 'ai', 'settings'];
+const DEMO_TABS = ['Día a Día', 'Bloc de Notas', 'Calendario'];
+const DEMO_ICONS = ['home', 'note', 'calendar'];
 
 /**
  * Mapping de nombres de pestaña a iconos de Lucide para la demo del onboarding.
  * Se usa el componente Icon centralizado en lugar de emojis.
  */
 const TAB_ICON_MAP = {
-  Inicio: 'home',
-  Horario: 'schedule',
-  Agenda: 'calendar',
-  Cumple: 'birthdays',
-  Notas: 'note',
-  Hábitos: 'habit',
-  Gastos: 'money',
-  AI: 'ai',
-  Ajustes: 'settings',
+  'Día a Día': 'home',
+  'Bloc de Notas': 'note',
+  Calendario: 'calendar',
 };
 
 /**
@@ -56,14 +50,14 @@ const SLIDES = [
     key: 'hub',
     emoji: '🏠',
     icon: 'home',
-    title: 'Todo arranca en Inicio',
-    body: 'Inicio es tu hub central: en una sola pantalla ves cómo viene el día.',
+    title: 'Todo arranca en Día a Día',
+    body: 'Día a Día es tu hub central: en una sola pantalla ves cómo viene la jornada.',
     points: [
-      'Saludo, gastado del día y hábitos pendientes.',
+      'Saludo y resumen de tus compromisos.',
       'Las próximas actividades, ordenadas por hora.',
-      'Tarjetas de acceso directo a cada sección.',
+      'Acceso directo al horario universitario.',
     ],
-    tip: 'Prueba el buscador de la demo: filtra notas, eventos, hábitos y gastos mientras escribes.',
+    tip: 'Prueba el buscador de la demo: filtra notas, clases y eventos mientras escribes.',
     demo: 'search',
     field: true,
   },
@@ -71,14 +65,14 @@ const SLIDES = [
     key: 'nav',
     emoji: '👆',
     icon: 'settings',
-    title: 'Todo abajo, y desliza para ir',
-    body: 'Las nueve secciones viven en la barra inferior. No hay menús escondidos.',
+    title: 'Tres destinos, siempre a mano',
+    body: 'La barra inferior reúne las tres secciones principales de NexusDay.',
     points: [
-      'Inicio · Horario · Agenda · Cumpleaños.',
-      'Notas · Hábitos · Gastos · Nexus AI · Ajustes.',
-      'Desliza el dedo a los costados para cambiar de sección.',
+      'Día a Día · Bloc de Notas · Calendario.',
+      'El horario se abre desde Día a Día.',
+      'Ajustes está en el encabezado y permite volver donde estabas.',
     ],
-    tip: 'Toca una solapa de la demo. En Ajustes puedes reordenarlas u ocultarlas cuando quieras.',
+    tip: 'Toca un destino de la demo para ver cómo funciona la nueva barra.',
     demo: 'tabs',
   },
   {
@@ -99,29 +93,29 @@ const SLIDES = [
     key: 'habits',
     emoji: '💪',
     icon: 'habit',
-    title: 'Hábitos y gastos bajo control',
-    body: 'Marca el día con un toque y registra un gasto en dos: monto y categoría.',
+    title: 'Horario y calendario conectados',
+    body: 'Consulta tus clases desde Día a Día y organiza eventos en Calendario.',
     points: [
-      'Un toque por día: la racha se arma sola.',
-      'Avisos con “✓ Completar” directo en la notificación.',
-      'Resumen por categoría del mes en pantalla.',
+      'Consulta, crea y modifica clases como siempre.',
+      'Revisa clases y eventos juntos en el calendario.',
+      'Mantén tus recordatorios locales y sin cuenta.',
     ],
-    tip: 'Toca el ✓ de la demo para ver cómo crece la racha, y el + para sumar un gasto.',
-    demo: 'habits',
+    tip: 'El horario conserva sus herramientas y se abre sin recargar el inicio.',
+    demo: 'tabs',
   },
   {
     key: 'ai',
     emoji: '🤖',
     icon: 'ai',
-    title: 'Nexus AI — tu asistente local',
-    body: 'Haz preguntas o da órdenes sin salir de la app. Todo se resuelve en el dispositivo, sin red ni API key.',
+    title: 'Nexus AI — próximamente',
+    body: 'El asistente no forma parte de la navegación principal en esta versión.',
     points: [
-      'Escribe notas, eventos, hábitos y gastos con lenguaje natural.',
-      'Obtén respuestas sobre tu agenda, cumpleaños y gastos.',
-      'Tus datos nunca salen del teléfono.',
+      'La función actual queda desactivada desde los accesos principales.',
+      'Tus datos existentes se conservan en el dispositivo.',
+      'NexusDay sigue funcionando completamente sin el asistente.',
     ],
-    tip: 'Prueba “crea una nota de la reunión de mañana” o “¿qué gastos tuve esta semana?”.',
-    demo: 'ai',
+    tip: 'Las tres secciones principales concentran las tareas cotidianas.',
+    demo: 'tabs',
   },
   {
     key: 'theme',
@@ -442,8 +436,7 @@ function SearchDemo({ unit }) {
   const pool = [
     { icon: '📝', label: 'Nota · Pendientes de la semana' },
     { icon: '🗓️', label: 'Evento · Entrega del proyecto' },
-    { icon: '💧', label: 'Hábito · Tomar 2 L de agua' },
-    { icon: '💰', label: 'Gasto · Almuerzo en la facultad' },
+    { icon: '🎓', label: 'Clase · Diseño de interfaces' },
   ];
   const needle = query.trim().toLowerCase();
   const hits = pool.filter((item) => item.label.toLowerCase().includes(needle));
@@ -482,13 +475,13 @@ function SearchDemo({ unit }) {
   );
 }
 
-/** Bottom bar: nine slots, the tapped one lights up. */
+/** Bottom bar: three primary destinations, the tapped one lights up. */
 function TabsDemo({ unit }) {
   const [active, setActive] = useState(0);
   return (
-    <DemoFrame caption="Barra inferior · 9 secciones">
+    <DemoFrame caption="Barra inferior · 3 secciones">
       <Text style={styles.demoEmpty}>
-        {`Estás en ${DEMO_TABS[active]}. Desliza el dedo o toca otra solapa.`}
+        {`Estás en ${DEMO_TABS[active]}. Toca otro destino para cambiar.`}
       </Text>
       <View style={styles.demoTabs}>
         {DEMO_TABS.map((label, index) => (

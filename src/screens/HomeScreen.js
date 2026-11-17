@@ -21,6 +21,7 @@ import { tap as tapHaptic } from '../services/haptics';
 import { formatMoney } from '../utils/money';
 import { plural } from '../utils/text';
 import { Icon } from '../components/Icon';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -34,10 +35,6 @@ const QUICK_ACCESS_ICONS = {
   Agenda: 'calendar',
   'Cumpleaños': 'birthdays',
   Notas: 'note',
-  Hábitos: 'habit',
-  Gastos: 'money',
-  'Nexus AI': 'ai',
-  Ajustes: 'settings',
 };
 
 /**
@@ -57,13 +54,9 @@ function buildQuickAccess(data) {
   const accent = colors.accent;
   return [
     { route: 'Horario', icon: QUICK_ACCESS_ICONS.Horario, title: 'Horario semanal', hint: `${data.todayActivities.length} actividades hoy`, color: accent },
-    { route: 'Agenda', icon: QUICK_ACCESS_ICONS.Agenda, title: 'Agenda', hint: 'Eventos y recordatorios', color: accent },
+    { route: 'Agenda', icon: QUICK_ACCESS_ICONS.Agenda, title: 'Calendario', hint: 'Eventos y recordatorios', color: accent },
     { route: 'Cumpleaños', icon: QUICK_ACCESS_ICONS['Cumpleaños'], title: 'Cumpleaños', hint: 'Próximos cumpleaños', color: accent },
     { route: 'Notas', icon: QUICK_ACCESS_ICONS.Notas, title: 'Notas', hint: 'Texto, voz y adjuntos', color: accent },
-    { route: 'Hábitos', icon: QUICK_ACCESS_ICONS.Hábitos, title: 'Hábitos', hint: 'Rachas y progreso', color: accent },
-    { route: 'Gastos', icon: QUICK_ACCESS_ICONS.Gastos, title: 'Gastos', hint: 'Registro de gastos', color: accent },
-    { route: 'Nexus AI', icon: QUICK_ACCESS_ICONS['Nexus AI'], title: 'Nexus AI', hint: 'Asistente local', color: accent },
-    { route: 'Ajustes', icon: QUICK_ACCESS_ICONS.Ajustes, title: 'Ajustes', hint: 'Tema y preferencias', color: accent },
   ];
 }
 
@@ -91,10 +84,10 @@ export default function HomeScreen({ navigation }) {
     [activities, events, birthdays, notes, habits, expenses],
   );
 
-  // Real-time: the four collections the dashboard can reach, ranked by relevance.
+  // Real-time: the three primary domains reachable from the dashboard, ranked by relevance.
   const search = useMemo(
-    () => searchEverything(query, { notes, events, habits, expenses }),
-    [query, notes, events, habits, expenses],
+    () => searchEverything(query, { notes, events, activities }),
+    [query, notes, events, activities],
   );
   const searching = query.trim().length > 0;
 
@@ -131,6 +124,11 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.screenHeader}>
+          <Text style={typography.title}>Día a Día</Text>
+          <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={goToSettings} />
+        </View>
+
         {/* El héroe solo existe mientras se navega. Buscando, se oculta para que los resultados
             empiecen arriba sin competir con la imagen. */}
         {searching ? null : (
@@ -162,7 +160,7 @@ export default function HomeScreen({ navigation }) {
         <SearchField
           value={query}
           onChangeText={setQuery}
-          placeholder="Buscar notas, asignaturas, eventos o gastos..."
+          placeholder="Buscar notas, clases o eventos..."
         />
 
         {searching ? (
@@ -191,7 +189,7 @@ export default function HomeScreen({ navigation }) {
           <SectionTitle
             title="Próximas actividades"
             count={data.nextUp.length}
-            right={<TextButton label="Ver agenda" onPress={goToAgenda} />}
+            right={<TextButton label="Ver calendario" onPress={goToAgenda} />}
           />
 
           {data.nextUp.length === 0 ? (
@@ -219,7 +217,7 @@ export default function HomeScreen({ navigation }) {
                     </Text>
                   </View>
                   <Pill
-                    label={item.kind === 'event' ? 'Agenda' : 'Horario'}
+                    label={item.kind === 'event' ? 'Calendario' : 'Horario'}
                     tone={item.kind === 'event' ? 'accent' : 'neutral'}
                   />
                 </View>
@@ -252,7 +250,7 @@ export default function HomeScreen({ navigation }) {
             </Card>
           ) : null}
 
-          <Notice text="Desliza a los costados para cambiar de sección, o toca una tarjeta para ir directo." />
+          <Notice text="Usa la barra inferior para cambiar de sección, o toca una tarjeta para abrir un acceso secundario." />
           </>
         )}
       </ScrollView>
@@ -315,6 +313,7 @@ const styles = themedStyles({
     gap: spacing.sm,
   },
   heroBody: { gap: spacing.sm },
+  screenHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroDate: { color: colors.accent, fontWeight: '700' },
   heroHint: { color: colors.textSecondary },
   heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
