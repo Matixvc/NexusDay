@@ -2,7 +2,7 @@ import { Keyboard, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../components/Icon';
 import { select as selectHaptic } from '../services/haptics';
-import { themedStyles, colors, manropeFontFamily, radius, spacing } from '../theme/theme';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { PRIMARY_TABS } from './primaryTabs';
 
 /** Content height before the device navigation inset is added. */
@@ -34,7 +34,7 @@ export function BottomTabBar({ state, navigation }) {
 
   return (
     <View
-      style={[styles.bar, { height: TAB_BAR_BASE_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
+      style={[styles.bar, { minHeight: TAB_BAR_BASE_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
       accessibilityRole="tablist"
     >
       {PRIMARY_TABS.map((tab) => (
@@ -71,15 +71,14 @@ function TabButton({ tab, routeKey, navigation, active }) {
       android_ripple={{ color: colors.accentSoft }}
       onPress={open}
       onLongPress={() => navigation.emit({ type: 'tabLongPress', target: routeKey })}
-      style={({ pressed }) => [styles.item, active ? styles.itemActive : null, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [styles.item, pressed ? styles.pressed : null]}
     >
-      <View style={styles.iconWrap}>
+      <View style={[styles.iconWrap, active ? styles.iconWrapActive : null]}>
         <Icon name={tab.glyph} size={22} color={color} strokeWidth={active ? 2.4 : 2} />
       </View>
-      <Text style={[styles.label, active ? styles.labelActive : null]} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+      <Text style={[styles.label, active ? styles.labelActive : null]} numberOfLines={2} maxFontSizeMultiplier={2}>
         {tab.label}
       </Text>
-      {active ? <View style={styles.indicator} /> : null}
     </Pressable>
   );
 }
@@ -103,31 +102,17 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    overflow: 'hidden',
+    paddingHorizontal: spacing.xs,
   },
-  itemActive: { backgroundColor: colors.accentSoft, borderColor: colors.borderStrong },
   pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
-  iconWrap: { height: 25, alignItems: 'center', justifyContent: 'center' },
+  iconWrap: { width: 48, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  iconWrapActive: { backgroundColor: colors.accentSoft },
   label: {
-    fontFamily: manropeFontFamily,
-    fontSize: 11.5,
-    lineHeight: 15,
-    fontWeight: '700',
+    ...typography.tab,
     color: colors.textSecondary,
     textAlign: 'center',
   },
   labelActive: { color: colors.accent },
-  indicator: {
-    position: 'absolute',
-    bottom: 2,
-    height: 3,
-    width: 28,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-  },
   badge: {
     minWidth: 18,
     height: 18,
@@ -138,7 +123,7 @@ const styles = themedStyles({
     justifyContent: 'center',
   },
   badgeLabel: {
-    fontFamily: manropeFontFamily,
+    fontFamily: typography.tab.fontFamily,
     fontSize: 10,
     fontWeight: '700',
     color: colors.accentInk,

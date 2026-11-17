@@ -1,8 +1,11 @@
 import { memo, useCallback } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
+import { brand, themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
 import { tap as tapHaptic } from '../../services/haptics';
+import { Icon } from '../Icon';
+import { useResponsiveLayout } from '../../theme/responsive';
+import { AppHeader } from './AppHeader';
 
 /**
  * Page scaffold: dark background, large title, scrollable body.
@@ -13,26 +16,17 @@ import { tap as tapHaptic } from '../../services/haptics';
  */
 export function Screen({ title, subtitle, headerLeft, headerRight, children, contentStyle }) {
   const insets = useSafeAreaInsets();
+  const responsive = useResponsiveLayout();
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        {headerLeft ? <View style={styles.headerLeft}>{headerLeft}</View> : null}
-        <View style={styles.headerText}>
-          <Text style={typography.display} numberOfLines={1}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text style={[typography.subtitle, styles.subtitle]} numberOfLines={2}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-        {headerRight ? <View style={styles.headerRight}>{headerRight}</View> : null}
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md, paddingHorizontal: responsive.gutter }]}>
+        <AppHeader title={title} subtitle={subtitle} headerLeft={headerLeft} headerRight={headerRight} />
       </View>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
+          { paddingHorizontal: responsive.gutter },
           { paddingBottom: spacing.xxxl * 2 + insets.bottom },
           contentStyle,
         ]}
@@ -47,9 +41,9 @@ export function Screen({ title, subtitle, headerLeft, headerRight, children, con
 }
 
 /** Elevated container used for every list item and group of controls. */
-function Card({ children, style, accent, onPress, dimmed, accessibilityLabel, accessibilityHint, accessibilityState }) {
+function Card({ children, style, accent, onPress, dimmed, disabled = false, variant = 'standard', accessibilityLabel, accessibilityHint, accessibilityState }) {
   const body = (
-    <View style={[styles.card, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
+    <View style={[styles.card, variant === 'tinted' ? styles.cardTinted : null, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
       {accent ? <View style={[styles.accentBar, { backgroundColor: accent }]} /> : null}
       {children}
     </View>
@@ -60,11 +54,12 @@ function Card({ children, style, accent, onPress, dimmed, accessibilityLabel, ac
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={accessibilityState}
-      style={({ pressed }) => [styles.cardPressable, pressed ? styles.pressed : null]}
+      accessibilityState={{ ...accessibilityState, disabled }}
+      style={({ pressed }) => [styles.cardPressable, disabled ? styles.disabled : null, pressed && !disabled ? styles.pressed : null]}
     >
       {body}
     </Pressable>
@@ -157,34 +152,40 @@ function TextButton({ label, onPress, tone = 'primary', disabled, style }) {
   );
 }
 
-function PrimaryButton({ label, onPress, disabled, style }) {
-  // A light impact on the main actions: enough to feel the press on a phone held one-handed,
-  // subtle enough not to be noisy when several are pressed in a row.
+function Button({ label, onPress, variant = 'primary', disabled = false, loading = false, style, icon }) {
+  const inactive = disabled || loading;
+  const variants = {
+    primary: { container: styles.buttonPrimary, text: styles.buttonPrimaryText },
+    secondary: { container: styles.buttonSecondary, text: styles.buttonSecondaryText },
+    ghost: { container: styles.buttonGhost, text: styles.buttonGhostText },
+    destructive: { container: styles.buttonDestructive, text: styles.buttonDestructiveText },
+  };
+  const active = variants[variant] || variants.primary;
+  const indicatorColor = variant === 'primary' ? brand.onPrimaryAction : active.text.color;
+
   const handlePress = useCallback(() => {
-    if (disabled) return;
+    if (inactive) return;
     tapHaptic();
     onPress?.();
-  }, [disabled, onPress]);
+  }, [inactive, onPress]);
 
   return (
     <Pressable
       onPress={handlePress}
-      disabled={disabled}
+      disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      style={({ pressed }) => [
-        styles.primaryButton,
-        disabled ? styles.disabled : null,
-        pressed ? styles.primaryPressed : null,
-        style,
-      ]}
+      accessibilityState={{ disabled: inactive, busy: loading }}
+      style={({ pressed }) => [styles.button, active.container, inactive ? styles.disabled : null, pressed && !inactive ? styles.buttonPressed : null, style]}
     >
-      <Text style={[typography.bodyStrong, { color: colors.accentInk }]} numberOfLines={1}>
-        {label}
-      </Text>
+      {loading ? <ActivityIndicator size="small" color={indicatorColor} /> : icon ? <Icon name={icon} size={19} color={active.text.color} /> : null}
+      <Text style={[typography.label, active.text]} numberOfLines={2}>{label}</Text>
     </Pressable>
   );
+}
+
+function PrimaryButton({ label, onPress, disabled, style }) {
+  return <Button label={label} onPress={onPress} disabled={disabled} style={[styles.primaryButtonLegacy, style]} />;
 }
 
 function Fab({ onPress, label = '+' }) {
@@ -228,12 +229,13 @@ function Notice({ text, tone = 'info' }) {
   );
 }
 
-function EmptyState({ emoji, title, hint }) {
+function EmptyState({ emoji, icon, title, hint, action }) {
   return (
     <View style={styles.empty}>
-      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      {icon ? <View style={styles.emptyIcon}><Icon name={icon} size={30} color={colors.accent} /></View> : <Text style={styles.emptyEmoji}>{emoji}</Text>}
       <Text style={[typography.title, styles.emptyTitle]}>{title}</Text>
       {hint ? <Text style={[typography.small, styles.emptyHint]}>{hint}</Text> : null}
+      {action}
     </View>
   );
 }
@@ -269,6 +271,7 @@ export {
   Chip,
   Pill,
   TextButton,
+  Button,
   PrimaryButton,
   Fab,
   Stat,
@@ -290,20 +293,11 @@ export { ChipScroller };
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingHorizontal: layout.gutter,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
-    gap: spacing.md,
   },
-  headerLeft: { paddingBottom: spacing.xs },
-  headerText: { flex: 1 },
-  headerRight: { paddingBottom: spacing.xs },
-  subtitle: { marginTop: spacing.xs },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxxl * 3, gap: spacing.lg },
+  content: { paddingBottom: spacing.xxxl * 3, gap: spacing.lg },
 
   card: {
     backgroundColor: colors.surface,
@@ -313,6 +307,7 @@ const styles = themedStyles({
     padding: spacing.lg,
     overflow: 'hidden',
   },
+  cardTinted: { backgroundColor: colors.surfaceAlt },
   cardWithAccent: { paddingLeft: spacing.lg + 4 },
   accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   cardPressable: { borderRadius: radius.lg },
@@ -345,30 +340,41 @@ const styles = themedStyles({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 1,
-    minHeight: 44,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipCompact: { paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2 },
-  chipLabel: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
-  chipLabelCompact: { fontSize: 12 },
+  chipLabel: { ...typography.label, fontWeight: '500', color: colors.textSecondary },
+  chipLabelCompact: { ...typography.caption },
   chipScroll: { flexGrow: 0 },
   chipScrollContent: { gap: spacing.sm, paddingRight: layout.gutter },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 
   pill: { borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, alignSelf: 'flex-start' },
-  pillLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  pillLabel: { ...typography.overline, letterSpacing: 0.2 },
 
-  textButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, minHeight: 44 },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: colors.accent,
+  textButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, minHeight: 48, justifyContent: 'center' },
+  button: {
+    minHeight: 48,
     borderRadius: radius.md,
-    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
+  buttonPrimary: { backgroundColor: brand.primaryAction },
+  buttonPrimaryText: { color: brand.onPrimaryAction },
+  buttonSecondary: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.borderStrong },
+  buttonSecondaryText: { color: colors.text },
+  buttonGhost: { backgroundColor: 'transparent' },
+  buttonGhostText: { color: colors.accent },
+  buttonDestructive: { backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: colors.danger },
+  buttonDestructiveText: { color: colors.danger },
+  buttonPressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
+  primaryButtonLegacy: { flex: 1 },
 
   fab: {
     position: 'absolute',
@@ -381,7 +387,7 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fabLabel: { fontSize: 28, lineHeight: 32, fontWeight: '500', color: colors.accentInk, marginTop: -2 },
+  fabLabel: { fontFamily: typography.display.fontFamily, fontSize: 28, lineHeight: 32, fontWeight: '500', color: colors.accentInk, marginTop: -2 },
 
   stat: {
     flex: 1,
@@ -395,13 +401,14 @@ const styles = themedStyles({
     gap: 2,
   },
   statValue: { fontSize: 20, fontWeight: '700', color: colors.text },
-  statLabel: { fontSize: 11, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
+  statLabel: { ...typography.overline, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
 
   notice: { borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 1 },
-  noticeText: { fontSize: 12.5, lineHeight: 17, fontWeight: '500' },
+  noticeText: { ...typography.caption, fontSize: 12.5 },
 
   empty: { alignItems: 'center', paddingVertical: spacing.xxxl, gap: spacing.sm },
   emptyEmoji: { fontSize: 38, marginBottom: spacing.xs },
+  emptyIcon: { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs },
   emptyTitle: { textAlign: 'center' },
   emptyHint: { textAlign: 'center', paddingHorizontal: spacing.xxl, lineHeight: 19 },
 });

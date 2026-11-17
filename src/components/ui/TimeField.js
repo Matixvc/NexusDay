@@ -84,8 +84,8 @@ export function TimeField({ label = 'Hora', value, onChange, minuteStep = 5, hin
 const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
-  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent },
+  toggleButton: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  toggle: { ...typography.label, fontSize: 12.5, color: colors.accent },
   displayRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -98,7 +98,7 @@ const styles = themedStyles({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  display: { fontSize: 30, lineHeight: 36, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
+  display: { ...typography.display, color: colors.text, letterSpacing: -0.5 },
   quickRow: { flexDirection: 'row', gap: spacing.sm },
   panel: {
     flexDirection: 'row',
@@ -111,17 +111,17 @@ const styles = themedStyles({
     padding: spacing.lg,
   },
   column: { alignItems: 'center', gap: spacing.sm, minWidth: 84 },
-  columnLabel: { fontSize: 10.5, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', color: colors.textMuted },
+  columnLabel: { ...typography.overline, fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase', color: colors.textMuted },
   columnValue: {
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 40,
+    minHeight: 48,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceAlt,
   },
-  columnNumber: { fontSize: 19, fontWeight: '700', color: colors.text },
-  tip: { flex: 1, fontSize: 11.5, lineHeight: 16, color: colors.textMuted, paddingTop: spacing.md },
+  columnNumber: { ...typography.h2, fontSize: 19, color: colors.text },
+  tip: { ...typography.caption, flex: 1, color: colors.textMuted, paddingTop: spacing.md },
   presets: { paddingTop: spacing.xs },
-  hint: { fontSize: 11.5, lineHeight: 16, color: colors.textMuted },
+  hint: { ...typography.caption, color: colors.textMuted },
 });

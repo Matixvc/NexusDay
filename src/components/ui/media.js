@@ -184,15 +184,15 @@ const styles = themedStyles({
     padding: spacing.md,
   },
   recordButton: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
     backgroundColor: colors.surfacePlus,
     alignItems: 'center',
     justifyContent: 'center',
   },
   recordButtonActive: { backgroundColor: colors.dangerSoft },
-  recordGlyph: { fontSize: 18 },
+  recordGlyph: { fontFamily: typography.body.fontFamily, fontSize: 18 },
 
   player: {
     flexDirection: 'row',
@@ -205,14 +205,14 @@ const styles = themedStyles({
     padding: spacing.md,
   },
   playButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
     backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playGlyph: { fontSize: 13, fontWeight: '800', color: colors.accent },
+  playGlyph: { ...typography.label, fontWeight: '800', color: colors.accent },
   track: { height: 4, borderRadius: radius.pill, backgroundColor: colors.surfacePlus, overflow: 'hidden' },
   trackFill: { height: 4, borderRadius: radius.pill, backgroundColor: colors.accent },
 
@@ -235,6 +235,6 @@ const styles = themedStyles({
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
   },
-  attachmentBadgeText: { fontSize: 10.5, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.4 },
+  attachmentBadgeText: { ...typography.overline, fontSize: 10.5, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.4 },
 });
 

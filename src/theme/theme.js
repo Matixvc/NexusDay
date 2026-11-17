@@ -57,6 +57,18 @@ export const palette = [
   '#94a3b8',
 ];
 
+/** Brand colours do not change with the selected surface, so they stay outside repaint. */
+export const brand = {
+  violet: '#8265F5',
+  mint: '#27C6BB',
+  amber: '#FFB45E',
+  coral: '#FF719B',
+  primaryAction: '#6546D7',
+  // Kept visually white but unique: pure #FFFFFF is the light elevated token and would be
+  // mistaken for that surface by the value-based repaint engine.
+  onPrimaryAction: '#FFFEFF',
+};
+
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 };
 
 export const radius = { sm: 10, md: 14, lg: 18, xl: 22, sheet: 28, pill: 999 };
@@ -66,18 +78,22 @@ export const layout = { gutter: 20, listGap: 10, fabInset: 24 };
 export const manropeFontFamily = 'Manrope';
 
 export const typography = {
-  display: { fontFamily: manropeFontFamily, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
-  title: { fontFamily: manropeFontFamily, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3, color: colors.text },
+  display: { fontFamily: manropeFontFamily, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
+  h1: { fontFamily: manropeFontFamily, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, color: colors.text },
+  h2: { fontFamily: manropeFontFamily, fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.2, color: colors.text },
+  title: { fontFamily: manropeFontFamily, fontSize: 17, lineHeight: 23, fontWeight: '700', letterSpacing: -0.2, color: colors.text },
   subtitle: { fontFamily: manropeFontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
-  body: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.text },
-  bodyStrong: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
+  body: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 22, fontWeight: '500', color: colors.text },
+  bodyStrong: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 22, fontWeight: '700', color: colors.text },
+  label: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.text },
   small: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
-  caption: { fontFamily: manropeFontFamily, fontSize: 11.5, lineHeight: 16, fontWeight: '500', color: colors.textSecondary },
+  caption: { fontFamily: manropeFontFamily, fontSize: 12, lineHeight: 17, fontWeight: '500', color: colors.textSecondary },
+  tab: { fontFamily: manropeFontFamily, fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.textSecondary },
   overline: { fontFamily: manropeFontFamily, fontSize: 11, lineHeight: 16, fontWeight: '700', letterSpacing: 0.5, color: colors.textSecondary },
   tabular: {
     fontFamily: manropeFontFamily,
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 22,
     fontWeight: '700',
     color: colors.text,
     fontVariant: ['tabular-nums'],

@@ -32,6 +32,7 @@ export function SearchField({ value, onChangeText, placeholder = 'Buscar…', er
           autoCapitalize="none"
           returnKeyType="search"
           accessibilityLabel={placeholder}
+          accessibilityHint={error || helper}
         />
         {value ? (
           <Pressable
@@ -118,8 +119,8 @@ const styles = themedStyles({
   // alone left the magnifier riding high (it carries a negative offset in TabGlyphs), which
   // read as a stray dot detached from the field; centring the box removes any drift.
   leading: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, fontSize: 15, color: colors.text, minHeight: 52, paddingVertical: spacing.md },
-  clear: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  input: { ...typography.body, flex: 1, color: colors.text, minHeight: 52, paddingVertical: spacing.md },
+  clear: { width: 48, height: 48, marginRight: -spacing.md, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.65 },
   errorText: { color: colors.danger, ...typography.caption, marginTop: spacing.xs },
   helperText: { color: colors.textMuted, ...typography.caption, marginTop: spacing.xs },
@@ -144,6 +145,6 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resultEmoji: { fontSize: 16 },
+  resultEmoji: { fontFamily: typography.body.fontFamily, fontSize: 16 },
   resultBody: { flex: 1, gap: 2 },
 });

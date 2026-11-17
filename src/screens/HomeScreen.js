@@ -22,6 +22,7 @@ import { formatMoney } from '../utils/money';
 import { plural } from '../utils/text';
 import { Icon } from '../components/Icon';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
+import { AppHeader } from '../components/ui/AppHeader';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -124,10 +125,11 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.screenHeader}>
-          <Text style={typography.title}>Día a Día</Text>
-          <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={goToSettings} />
-        </View>
+        <AppHeader
+          title="Día a Día"
+          variant="compact"
+          headerRight={<HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={goToSettings} />}
+        />
 
         {/* El héroe solo existe mientras se navega. Buscando, se oculta para que los resultados
             empiecen arriba sin competir con la imagen. */}
@@ -313,7 +315,6 @@ const styles = themedStyles({
     gap: spacing.sm,
   },
   heroBody: { gap: spacing.sm },
-  screenHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroDate: { color: colors.accent, fontWeight: '700' },
   heroHint: { color: colors.textSecondary },
   heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },

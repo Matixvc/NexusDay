@@ -1,12 +1,13 @@
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, palette, radius, spacing, typography } from '../../theme/theme';
+import { Icon } from '../Icon';
 
-export function Field({ label, children, hint }) {
+export function Field({ label, children, hint, error }) {
   return (
     <View style={styles.field}>
       <Text style={typography.overline}>{label}</Text>
       {children}
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -21,10 +22,13 @@ export function TextField({
   keyboardType,
   returnKeyType = 'next',
   onSubmitEditing,
+  hint,
+  error,
+  disabled = false,
   style,
 }) {
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint} error={error}>
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -35,7 +39,9 @@ export function TextField({
         keyboardType={keyboardType}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmitEditing}
-        style={[styles.input, style]}
+        editable={!disabled}
+        accessibilityState={{ disabled }}
+        style={[styles.input, error ? styles.inputError : null, disabled ? styles.disabled : null, style]}
         selectionColor={colors.accent}
         cursorColor={colors.accent}
       />
@@ -43,9 +49,9 @@ export function TextField({
   );
 }
 
-export function TextArea({ label, value, onChangeText, placeholder, minHeight = 96, autoFocus }) {
+export function TextArea({ label, value, onChangeText, placeholder, minHeight = 96, autoFocus, hint, error, disabled = false }) {
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint} error={error}>
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -54,7 +60,9 @@ export function TextArea({ label, value, onChangeText, placeholder, minHeight = 
         multiline
         textAlignVertical="top"
         autoFocus={autoFocus}
-        style={[styles.input, styles.textArea, { minHeight }]}
+        editable={!disabled}
+        accessibilityState={{ disabled }}
+        style={[styles.input, styles.textArea, error ? styles.inputError : null, disabled ? styles.disabled : null, { minHeight }]}
         selectionColor={colors.accent}
         cursorColor={colors.accent}
       />
@@ -83,7 +91,7 @@ export function ColorPicker({ label = 'Color', value, onChange, options = palett
                 pressed ? styles.pressed : null,
               ]}
             >
-              {selected ? <Text style={styles.swatchCheck}>✓</Text> : null}
+              {selected ? <Icon name="check" size={18} color={colors.accentInk} /> : null}
             </Pressable>
           );
         })}
@@ -104,7 +112,7 @@ export function StepButton({ sign = '+', onPress, disabled, size = 40, accessibi
       accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.stepButton,
-        { width: Math.max(size, 44), height: Math.max(size, 44) },
+        { width: Math.max(size, 48), height: Math.max(size, 48) },
         disabled ? styles.disabled : null,
         pressed ? styles.pressed : null,
       ]}
@@ -144,7 +152,8 @@ export function Divider({ style }) {
 
 const styles = themedStyles({
   field: { gap: spacing.sm },
-  hint: { fontSize: 11.5, lineHeight: 16, color: colors.textMuted },
+  hint: { ...typography.caption, color: colors.textMuted },
+  error: { ...typography.caption, color: colors.danger },
   input: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.md,
@@ -152,22 +161,22 @@ const styles = themedStyles({
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontSize: 15,
+    ...typography.body,
     color: colors.text,
-    minHeight: 46,
+    minHeight: 52,
   },
+  inputError: { borderColor: colors.danger, borderWidth: 2 },
   textArea: { paddingTop: spacing.md, paddingBottom: spacing.md, lineHeight: 21 },
   trigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, alignItems: 'center' },
   swatch: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   swatchSelected: { borderWidth: 2, borderColor: colors.text },
-  swatchCheck: { fontSize: 14, fontWeight: '800', color: colors.accentInk },
   stepButton: {
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
@@ -176,7 +185,7 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepSign: { color: colors.text, fontWeight: '600', lineHeight: undefined },
+  stepSign: { fontFamily: typography.body.fontFamily, color: colors.text, fontWeight: '600', lineHeight: undefined },
   disabled: { opacity: 0.35 },
   pressed: { opacity: 0.6 },
   divider: { height: 1, backgroundColor: colors.border },

@@ -77,10 +77,11 @@ const styles = themedStyles({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
+    minHeight: 56,
   },
   icon: { fontSize: 18 },
   headerText: { flex: 1, gap: 2 },
-  chevron: { fontSize: 16, color: colors.textMuted },
+  chevron: { fontFamily: typography.body.fontFamily, fontSize: 16, color: colors.textMuted },
   body: {
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
