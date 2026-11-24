@@ -1,10 +1,34 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { recoverRestoreTransaction, runRestoreTransaction } from './backupRestore';
 
 const NAMESPACE = '@nexusday/v1';
 
 /** Pre-rebrand namespace. Kept read-only so installs that stored data under the old
  *  name keep working after the rename; new writes always go to NAMESPACE. */
 const LEGACY_NAMESPACE = '@appmobile/v1';
+let recoveryPromise = null;
+
+const restoreStore = {
+  get: (key) => AsyncStorage.getItem(key),
+  set: (key, value) => AsyncStorage.setItem(key, value),
+  remove: (key) => AsyncStorage.removeItem(key),
+};
+
+async function ensureRestoreRecovered() {
+  if (!recoveryPromise) {
+    recoveryPromise = recoverRestoreTransaction(restoreStore).catch((error) => {
+      recoveryPromise = null;
+      throw error;
+    });
+  }
+  return recoveryPromise;
+}
+
+/** Persists a prepared restore before the context exposes it in memory. */
+export async function persistRestoreSnapshot(entries) {
+  await ensureRestoreRecovered();
+  return runRestoreTransaction({ store: restoreStore, entries });
+}
 
 /** `'@nexusday/v1/events'` -> `'@appmobile/v1/events'`. */
 function legacyKey(key) {
@@ -39,6 +63,7 @@ export const KEYS = {
  * so a bad write can never soft-lock the app on next launch.
  */
 export async function loadJSON(key, fallback = []) {
+  await ensureRestoreRecovered();
   try {
     const raw = await readItem(key);
     if (raw == null) return fallback;
@@ -78,6 +103,7 @@ export async function removeKey(key) {
  * preferences such as the greeting name or the preferred calendar live here.
  */
 export async function loadValue(key, fallback = null) {
+  await ensureRestoreRecovered();
   try {
     const raw = await readItem(key);
     if (raw == null) return fallback;

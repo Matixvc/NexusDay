@@ -44,32 +44,16 @@ import {
   getMicrophonePermission,
   requestMicrophonePermission,
 } from '../services/audio';
+import { BACKUP_COLLECTIONS, backupRequiresPrivateAuthorization, isPartialHistoricalBackup, prepareBackupImport } from '../services/backupRestore';
 
 const PERMISSION_TONE = { granted: 'accent', unknown: 'neutral', denied: 'warning' };
 
-/** Las seis colecciones que una copia de seguridad debe (poder) traer. */
-const BACKUP_COLLECTIONS = ['activities', 'events', 'birthdays', 'notes', 'habits', 'expenses'];
-
-/**
- * Integridad del archivo elegido: `null` si es un respaldo utilizable, o el motivo concreto
-
- */
-function validateBackup(parsed) {
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return 'El archivo no es una copia de seguridad válida.';
-  }
-  if (parsed.app !== 'NexusDay') {
-    return 'Ese archivo no es una copia de NexusDay (falta la marca del documento).';
-  }
-  const collections = parsed.collections;
-  if (!collections || typeof collections !== 'object' || Array.isArray(collections)) {
-    return 'La copia no contiene colecciones.';
-  }
-  const present = BACKUP_COLLECTIONS.filter((name) => name in collections);
-  if (!present.length) return 'La copia no contiene ninguna colección conocida.';
-  const broken = present.find((name) => !Array.isArray(collections[name]));
-  if (broken) return `La colección “${broken}” está dañada en el archivo.`;
-  return null;
+function backupValidationMessage(code) {
+  if (code === 'unsupported-schema') return 'Esta copia usa una versión que NexusDay no puede restaurar.';
+  if (code === 'missing-collection') return 'La copia está incompleta y no se aplicó.';
+  if (code === 'duplicate-id') return 'La copia contiene registros duplicados y no se aplicó.';
+  if (code === 'invalid-collection' || code === 'invalid-record') return 'La estructura de la copia no es válida y no se aplicó.';
+  return 'El archivo no es una copia válida de NexusDay.';
 }
 
 /** Nombre configurado en app.json (la app se puede renombrar sin tocar la copia). */
@@ -113,6 +97,7 @@ export default function SettingsScreen({ navigation }) {
     permission,
     requestNotifications,
     notificationsSupported,
+    hydrated,
   } = useAppData();
 
   // What the phone can authenticate with (biometric enrolled or device passcode only).
@@ -272,61 +257,78 @@ export default function SettingsScreen({ navigation }) {
    * sobrescribe todo, así que el usuario tiene que decirlo explícitamente.
    */
   const startImport = useCallback(async () => {
+    if (!hydrated) {
+      setInfo('Espera a que NexusDay termine de cargar tus datos antes de restaurar.');
+      return;
+    }
     tapHaptic();
     const picked = await pickAndImport({
       type: 'application/json',
       folder: FOLDERS.exports,
       prefix: 'copia',
     });
+    const prepared = prepareBackupImport(picked, (uri) => readText(uri));
+    if (prepared.status === 'cancel') return;
     const problem = describePickStatus(picked.status);
     if (problem) {
       setNotice(problem);
       return;
     }
-    if (picked.status === 'cancel') return;
-
-    let parsed = null;
-    try {
-      parsed = JSON.parse(readText(picked.file.uri));
-    } catch {
+    if (prepared.status === 'invalid-json') {
       setNotice('El archivo no se pudo leer como JSON. Elige una copia exportada desde NexusDay.');
       return;
     }
-    const invalid = validateBackup(parsed);
-    if (invalid) {
-      setNotice(invalid);
+    if (prepared.status !== 'ready') {
+      setNotice(backupValidationMessage(prepared.error));
       return;
     }
-    setConfirmImport(parsed);
-  }, []);
+    setConfirmImport(prepared.backup);
+  }, [hydrated]);
 
   /** Aplica la copia ya confirmada y refresca todo lo derivado (storage, avisos). */
   const applyImport = async () => {
     if (!confirmImport) return;
+    if (!hydrated) {
+      setInfo('Espera a que NexusDay termine de cargar tus datos antes de restaurar.');
+      return;
+    }
     const collections = confirmImport.collections || {};
     const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + (collections[name]?.length || 0), 0);
-    const importedDisablesPrivacy =
-      settings?.privacyEnabled !== false && confirmImport.settings?.privacyEnabled === false;
     let result = null;
-    const authorization = await authorizePrivateAction({
-      record: { private: hasPrivateRecords || importedDisablesPrivacy },
-      action: PRIVATE_ACTIONS.delete,
-      privacyEnabled: true,
-      promptMessage: 'Autoriza restaurar datos protegidos',
-      onAuthorized: async () => {
-        result = await restoreBackup({
-          activities: collections.activities,
-          events: collections.events,
-          birthdays: collections.birthdays,
-          notes: collections.notes,
-          habits: collections.habits,
-          expenses: collections.expenses,
-          settings: confirmImport.settings,
-          userName: confirmImport.userName,
-          tabConfig: confirmImport.tabConfig,
-        });
-      },
-    });
+    let authorization;
+    try {
+      authorization = await authorizePrivateAction({
+        record: {
+          private: backupRequiresPrivateAuthorization({
+            collections,
+            currentPrivacyEnabled: settings?.privacyEnabled,
+            settings: confirmImport.settings,
+            currentHasPrivateRecords: hasPrivateRecords,
+          }),
+        },
+        action: PRIVATE_ACTIONS.delete,
+        privacyEnabled: true,
+        promptMessage: 'Autoriza restaurar datos protegidos',
+        onAuthorized: async () => {
+          result = await restoreBackup({
+            activities: collections.activities,
+            events: collections.events,
+            birthdays: collections.birthdays,
+            notes: collections.notes,
+            habits: collections.habits,
+            expenses: collections.expenses,
+            settings: confirmImport.settings,
+            userName: confirmImport.userName,
+            tabConfig: confirmImport.tabConfig,
+          });
+        },
+      });
+    } catch (error) {
+      setInfo(error?.code === 'RESTORE_RECOVERY_REQUIRED'
+        ? 'La restauración quedó interrumpida. Reinicia NexusDay para intentar recuperar los datos anteriores.'
+        : 'No se pudo completar la restauración. Los datos anteriores se conservaron si fue posible. Puedes volver a intentarlo.');
+      return;
+    }
     if (!authorization.ok) {
       setNotice(describePrivacyFailure(authorization.reason));
       return;
@@ -566,6 +568,19 @@ export default function SettingsScreen({ navigation }) {
           />
         </Card>
 
+        <SectionTitle title="Widget Android · Mi horario" />
+        <Card style={styles.card}>
+          <SwitchRow
+            title="Mostrar nombres de clases"
+            hint="Desactivado por defecto. Solo comparte nombres y horas del horario; nunca notas ni otros datos."
+            value={settings?.scheduleWidgetShowDetails === true}
+            onValueChange={(value) => updateSettings({ scheduleWidgetShowDetails: value })}
+          />
+          <Text style={typography.caption}>
+            Añádelo manteniendo pulsada la pantalla de inicio de Android y eligiendo Widgets › NexusDay › Mi horario. Se actualiza al abrir la app y al editar el horario; Android puede retrasar las actualizaciones si NexusDay está cerrado.
+          </Text>
+        </Card>
+
         <SectionTitle title="Notificaciones" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
@@ -795,7 +810,9 @@ export default function SettingsScreen({ navigation }) {
         onClose={() => setConfirmImport(null)}
         onConfirm={applyImport}
         title="¿Restaurar esta copia?"
-        message="¿Estás seguro? Los datos actuales se reemplazarán por los de la copia. Esta acción no se puede deshacer."
+        message={isPartialHistoricalBackup(confirmImport)
+          ? 'Esta copia historica no incluye todas las colecciones. Las colecciones omitidas conservaran sus datos actuales. Los adjuntos y grabaciones locales pueden no estar incluidos en otro dispositivo.'
+          : 'Estas seguro? Los datos actuales seran reemplazados. Los adjuntos y grabaciones locales pueden no estar incluidos al restaurar en otro dispositivo.'}
         confirmLabel="Sí, restaurar"
       />
     </>

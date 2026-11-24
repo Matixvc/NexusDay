@@ -14,23 +14,29 @@ import { uid } from '../utils/dates';
 export function usePersistentCollection(key, initialValue = []) {
   const [items, setItems] = useState(initialValue);
   const [hydrated, setHydrated] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(false);
   const initialRef = useRef(initialValue);
   // Set by `replaceAll`, which the app only uses to wipe everything (first run, Ajustes).
   // A wipe that lands before the read resolves must win, otherwise the sample data the
   // read is still returning would be written back on the next persist.
   const wipedRef = useRef(false);
+  const skipPersistRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const stored = await loadJSON(key, initialRef.current);
-      if (!alive) return;
-      if (wipedRef.current) {
+      try {
+        const stored = await loadJSON(key, initialRef.current);
+        if (!alive) return;
+        if (wipedRef.current) {
+          setHydrated(true);
+          return;
+        }
+        setItems(stored);
         setHydrated(true);
-        return;
+      } catch {
+        if (alive) setRecoveryError(true);
       }
-      setItems(stored);
-      setHydrated(true);
     })();
     return () => {
       alive = false;
@@ -39,6 +45,10 @@ export function usePersistentCollection(key, initialValue = []) {
 
   useEffect(() => {
     if (!hydrated) return;
+    if (skipPersistRef.current === items) {
+      skipPersistRef.current = null;
+      return;
+    }
     saveJSON(key, items);
   }, [key, items, hydrated]);
 
@@ -57,10 +67,11 @@ export function usePersistentCollection(key, initialValue = []) {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  const replaceAll = useCallback((next) => {
+  const replaceAll = useCallback((next, { persist = true } = {}) => {
     wipedRef.current = true;
+    if (!persist) skipPersistRef.current = next;
     setItems(next);
   }, []);
 
-  return { items, setItems, create, update, remove, replaceAll, hydrated };
+  return { items, setItems, create, update, remove, replaceAll, hydrated, recoveryError };
 }

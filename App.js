@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -14,6 +14,17 @@ import { tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
 import { useFonts } from './src/hooks/useFonts';
+import ScheduleWidgetSync from './src/components/ScheduleWidgetSync';
+
+// Expo Widgets is intentionally unavailable in Expo Go. Loading it behind a guard preserves
+// the regular app preview while a native development build registers the Android provider.
+if (Platform.OS === 'android') {
+  try {
+    require('./src/widgets/ScheduleWidget');
+  } catch {
+    // The widget becomes available after installing a build that includes the config plugin.
+  }
+}
 
 enableScreens();
 
@@ -42,6 +53,7 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AppDataProvider>
+          <ScheduleWidgetSync />
           <SwipeLockProvider>
             <AppStatusBar />
             <AppShell />
@@ -70,7 +82,7 @@ function AppStatusBar() {
  * the navigator (fresh styles) while `lastRoute` puts the user back on the tab they left.
  */
 function AppShell() {
-  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig } = useAppData();
+  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, storageRecoveryError } = useAppData();
   // Remembered so any navigator remount lands on the same registered route.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
   const [lastPrimaryRoute, setLastPrimaryRoute] = useState(HOME_TAB);
@@ -80,6 +92,7 @@ function AppShell() {
     if (PRIMARY_TAB_NAMES.includes(name)) setLastPrimaryRoute((previous) => (previous === name ? previous : name));
   }, []);
 
+  if (storageRecoveryError) return <BootScreen message="No pudimos recuperar el almacenamiento anterior. Cierra y vuelve a abrir NexusDay para reintentar." />;
   if (onboardingCompleted === null) return <BootScreen />;
 
   if (!onboardingCompleted) {
@@ -98,12 +111,12 @@ function AppShell() {
 }
 
 /** Shown for the few milliseconds it takes to read the tutorial flag from AsyncStorage. */
-function BootScreen() {
+function BootScreen({ message = 'Preparando tu d\u00eda\u2026' }) {
   return (
     <View style={styles.boot}>
       <Text style={styles.bootMark}>{APP_NAME.slice(0, 1)}</Text>
       <Text style={styles.bootName}>{APP_NAME}</Text>
-      <Text style={typography.caption}>Preparando tu día…</Text>
+      <Text style={typography.caption}>{message}</Text>
     </View>
   );
 }

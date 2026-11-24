@@ -45,7 +45,29 @@
       ],
       "expo-asset",
       "expo-sharing",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-widgets",
+        {
+          "enableAndroid": true,
+          "widgets": [
+            {
+              "name": "ScheduleWidget",
+              "displayName": "Mi horario",
+              "description": "Clases de hoy y próxima clase.",
+              "ios": null,
+              "android": {
+                "minWidth": 180,
+                "minHeight": 140,
+                "targetCellWidth": 3,
+                "targetCellHeight": 2,
+                "resizeMode": "both",
+                "initialLayout": "./src/widgets/ScheduleWidget.js"
+              }
+            }
+          ]
+        }
+      ]
     ],
     "owner": "matix03",
     "extra": {

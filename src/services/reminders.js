@@ -86,7 +86,7 @@ export async function syncEventReminder({ id, title, notes, dateKey, time, leadM
   await Notif.cancel(existingId);
 
   if (leadMinutes === -1 || leadMinutes == null) {
-    return { notificationId: null, notice: null };
+    return { notificationId: null, notice: null, status: 'disabled' };
   }
 
   const when = buildDateTime(dateKey, time);
@@ -99,8 +99,8 @@ export async function syncEventReminder({ id, title, notes, dateKey, time, leadM
     data: { kind: 'event', itemId: id },
   });
 
-  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
-  return { notificationId: null, notice: describe(result.status, result) };
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
+  return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }
 
 /**
@@ -138,11 +138,11 @@ export async function syncClassReminder({ id, title, day, start, location, leadM
   await Notif.cancel(existingId);
 
   if (leadMinutes === -1 || leadMinutes == null) {
-    return { notificationId: null, notice: null };
+    return { notificationId: null, notice: null, status: 'disabled' };
   }
 
   const when = nextClassOccurrence({ day, start, suspended });
-  if (!when) return { notificationId: null, notice: null };
+  if (!when) return { notificationId: null, notice: null, status: 'skipped' };
   when.setMinutes(when.getMinutes() - leadMinutes);
 
   const result = await Notif.scheduleAt({
@@ -152,8 +152,8 @@ export async function syncClassReminder({ id, title, day, start, location, leadM
     data: { kind: 'class', itemId: id },
   });
 
-  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
-  return { notificationId: null, notice: describe(result.status, result) };
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
+  return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }
 
 /**
@@ -170,34 +170,37 @@ export async function resyncReminders({ events = [], birthdays = [], habits = []
   const birthdayPatches = [];
   const habitPatches = [];
   const activityPatches = [];
+  const failures = [];
+  const recordOutcome = (result, domain, id, patches) => {
+    if (result.notificationId) patches.push({ id, notificationId: result.notificationId });
+    else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) {
+      failures.push({ domain, id, status: result.status });
+    }
+  };
 
   for (const event of events) {
     if (event.notificationId || (event.leadMinutes ?? -1) === -1) continue;
-    const { notificationId } = await syncEventReminder(event, null);
-    if (notificationId) eventPatches.push({ id: event.id, notificationId });
+    recordOutcome(await syncEventReminder(event, null), 'events', event.id, eventPatches);
   }
 
   for (const birthday of birthdays) {
     if (birthday.notificationId) continue;
-    const { notificationId } = await syncBirthdayReminder(birthday, null);
-    if (notificationId) birthdayPatches.push({ id: birthday.id, notificationId });
+    recordOutcome(await syncBirthdayReminder(birthday, null), 'birthdays', birthday.id, birthdayPatches);
   }
 
   for (const habit of habits) {
     if (habit.notificationId || !habit.remindAt) continue;
-    const { notificationId } = await syncHabitReminder(habit, null);
-    if (notificationId) habitPatches.push({ id: habit.id, notificationId });
+    recordOutcome(await syncHabitReminder(habit, null), 'habits', habit.id, habitPatches);
   }
 
   // Class reminders are one-shots for the next occurrence, so they must be re-armed every
   // start — exactly like habits — or the class would go silent after the one that fired.
   for (const activity of activities) {
     if (activity.notificationId || (activity.leadMinutes ?? -1) === -1) continue;
-    const { notificationId } = await syncClassReminder(activity, null);
-    if (notificationId) activityPatches.push({ id: activity.id, notificationId });
+    recordOutcome(await syncClassReminder(activity, null), 'activities', activity.id, activityPatches);
   }
 
-  return { eventPatches, birthdayPatches, habitPatches, activityPatches };
+  return { eventPatches, birthdayPatches, habitPatches, activityPatches, failures };
 }
 
 /**
@@ -208,7 +211,7 @@ export async function resyncReminders({ events = [], birthdays = [], habits = []
 export async function syncBirthdayReminder({ id, name, dateKey, time, daysBefore }, existingId) {
   await Notif.cancel(existingId);
 
-  if (daysBefore == null) return { notificationId: null, notice: null };
+  if (daysBefore == null) return { notificationId: null, notice: null, status: 'disabled' };
 
   const birth = fromDateKey(dateKey);
   const { hour, minute } = parseTime(time);
@@ -226,8 +229,8 @@ export async function syncBirthdayReminder({ id, name, dateKey, time, daysBefore
     data: { kind: 'birthday', itemId: id },
   });
 
-  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
-  return { notificationId: null, notice: describe(result.status, result) };
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
+  return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }
 
 /**
@@ -242,7 +245,7 @@ export async function syncHabitReminder({ id, name, emoji, marks, remindAt }, ex
 
   const today = todayKey();
   const done = Array.isArray(marks) && marks.includes(today);
-  if (!remindAt || done) return { notificationId: null, notice: null };
+  if (!remindAt || done) return { notificationId: null, notice: null, status: 'disabled' };
 
   const result = await Notif.scheduleAt({
     title: `${emoji || '✅'} ${name}`,
@@ -251,6 +254,6 @@ export async function syncHabitReminder({ id, name, emoji, marks, remindAt }, ex
     data: { kind: 'habit', itemId: id },
   });
 
-  if (result.status === 'scheduled') return { notificationId: result.id, notice: null };
-  return { notificationId: null, notice: describe(result.status, result) };
+  if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
+  return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }

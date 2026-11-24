@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { KEYS, loadValue, saveValue } from '../services/storage';
+import { KEYS, loadValue, persistRestoreSnapshot, saveValue } from '../services/storage';
+import { completeBackupCollections, validateBackup } from '../services/backupRestore';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
@@ -56,7 +57,7 @@ export function AppDataProvider({ children }) {
     loadValue(KEYS.onboarding, false).then((stored) => {
       if (!alive) return;
       setTutorial({ completed: Boolean(stored), replay: false });
-    });
+    }).catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -86,7 +87,7 @@ export function AppDataProvider({ children }) {
       }
 
       if (storedTabs) setTabConfigState(normalizeTabConfig(storedTabs));
-    })();
+    })().catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -182,6 +183,7 @@ export function AppDataProvider({ children }) {
     notes.hydrated &&
     habits.hydrated &&
     expenses.hydrated;
+  const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError);
 
   /** Wipes every local collection (used by Ajustes › Borrar datos and the first-run wipe). */
   const clearAllData = useCallback(() => {
@@ -193,36 +195,59 @@ export function AppDataProvider({ children }) {
     expenses.replaceAll([]);
   }, [activities, events, birthdays, notes, habits, expenses]);
 
-  /**
-   * Ajustes › "Importar copia de seguridad": reemplaza cada colección y los ajustes por los
-   * del archivo. Solo se llega acá tras validar el JSON y pasar el ConfirmSheet, porque aquí
-   * no hay vuelta atrás: lo anterior queda descartado (y persistido) en el mismo instante.
-   */
+  /** Persists a validated restore snapshot and updates memory only after verification. */
   const restoreBackup = useCallback(
     async (backup = {}) => {
+      if (validateBackup({ app: 'NexusDay', collections: backup }) !== null) {
+        throw new Error('RESTORE_INVALID_SNAPSHOT');
+      }
+      const sourceCollections = completeBackupCollections(backup, {
+        activities: activities.items,
+        events: events.items,
+        birthdays: birthdays.items,
+        notes: notes.items,
+        habits: habits.items,
+        expenses: expenses.items,
+      });
       // Los arrays locales son la fuente de verdad: `events.items` (por ejemplo) sigue
       // apuntando al render anterior hasta que React procesa el `setItems` nuevo. Se
       // elimina `notificationId` explícitamente para que `resyncReminders` genere
       // recordatorios válidos sobre los datos restaurados en este mismo dispositivo.
-      const restoredActivities = (backup.activities || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredEvents = (backup.events || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredBirthdays = (backup.birthdays || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredNotes = (backup.notes || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredHabits = (backup.habits || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredExpenses = (backup.expenses || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredActivities = sourceCollections.activities.map((item) => ({ ...item, notificationId: null }));
+      const restoredEvents = sourceCollections.events.map((item) => ({ ...item, notificationId: null }));
+      const restoredBirthdays = sourceCollections.birthdays.map((item) => ({ ...item, notificationId: null }));
+      const restoredNotes = sourceCollections.notes.map((item) => ({ ...item, notificationId: null }));
+      const restoredHabits = sourceCollections.habits.map((item) => ({ ...item, notificationId: null }));
+      const restoredExpenses = sourceCollections.expenses.map((item) => ({ ...item, notificationId: null }));
 
       // Un array puede estar vacío y el `Array.isArray` distingue un resultado válido de
       // una colección ausente: `replaceAll([])` limpia los registros anteriores.
-      if (Array.isArray(backup.activities)) activities.replaceAll(restoredActivities);
-      if (Array.isArray(backup.events)) events.replaceAll(restoredEvents);
-      if (Array.isArray(backup.birthdays)) birthdays.replaceAll(restoredBirthdays);
-      if (Array.isArray(backup.notes)) notes.replaceAll(restoredNotes);
-      if (Array.isArray(backup.habits)) habits.replaceAll(restoredHabits);
-      if (Array.isArray(backup.expenses)) expenses.replaceAll(restoredExpenses);
+      const nextSettings = backup.settings ? { ...settings, ...backup.settings } : null;
+      const nextUserName = typeof backup.userName === 'string' ? backup.userName.trim() : null;
+      const nextTabConfig = backup.tabConfig ? normalizeTabConfig(backup.tabConfig) : null;
+      const entries = [
+        [KEYS.activities, restoredActivities],
+        [KEYS.events, restoredEvents],
+        [KEYS.birthdays, restoredBirthdays],
+        [KEYS.notes, restoredNotes],
+        [KEYS.habits, restoredHabits],
+        [KEYS.expenses, restoredExpenses],
+      ].map(([key, value]) => ({ key, value: JSON.stringify(value) }));
+      if (nextSettings) entries.push({ key: KEYS.settings, value: JSON.stringify(nextSettings) });
+      if (nextUserName !== null) entries.push({ key: KEYS.userName, value: JSON.stringify(nextUserName) });
+      if (nextTabConfig) entries.push({ key: KEYS.tabConfig, value: JSON.stringify(nextTabConfig) });
 
-      if (backup.settings && typeof backup.settings === 'object') updateSettings(backup.settings);
-      if (typeof backup.userName === 'string') setUserName(backup.userName);
-      if (backup.tabConfig) setTabConfig(backup.tabConfig);
+      await persistRestoreSnapshot(entries);
+
+      activities.replaceAll(restoredActivities, { persist: false });
+      events.replaceAll(restoredEvents, { persist: false });
+      birthdays.replaceAll(restoredBirthdays, { persist: false });
+      notes.replaceAll(restoredNotes, { persist: false });
+      habits.replaceAll(restoredHabits, { persist: false });
+      expenses.replaceAll(restoredExpenses, { persist: false });
+      if (nextSettings) setSettings(nextSettings);
+      if (nextUserName !== null) setUserNameState(nextUserName);
+      if (nextTabConfig) setTabConfigState(nextTabConfig);
 
       // `resyncReminders` se ejecuta sobre los datos reales restaurados. Un fallo aquí no
       // revierte la restauración de datos.
@@ -237,13 +262,13 @@ export function AppDataProvider({ children }) {
         patches.birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
         patches.habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
         patches.activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
-        return { dataRestored: true, notificationsRecreated: true };
+        return { dataRestored: true, notificationsRecreated: patches.failures.length === 0 };
       } catch (error) {
-        console.warn('[restoreBackup] could not resync reminders', error);
+        void error;
         return { dataRestored: true, notificationsRecreated: false };
       }
     },
-    [activities, events, birthdays, notes, habits, expenses, updateSettings, setUserName, setTabConfig],
+    [activities, events, birthdays, notes, habits, expenses, settings],
   );
 
   /**
@@ -331,7 +356,8 @@ export function AppDataProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      hydrated: allHydrated,
+      hydrated: allHydrated && settingsLoaded,
+      storageRecoveryError,
 
       onboardingCompleted: tutorial.completed,
       tutorialReplay: tutorial.replay,
@@ -386,6 +412,7 @@ export function AppDataProvider({ children }) {
     }),
     [
       allHydrated,
+      storageRecoveryError,
       activities,
       events,
       birthdays,
