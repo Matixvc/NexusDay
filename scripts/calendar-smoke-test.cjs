@@ -21,7 +21,27 @@ require.extensions['.js'] = (module, filename) => {
 };
 
 const { birthdayDateKeyForYear, birthdayOccursOn } = require('../src/services/birthdayDates');
-const { buildCalendarMarks, buildDayAgenda } = require('../src/services/calendar');
+const { buildCalendarMarks, buildDayAgenda, calendarEmptyState, dateKeyInMonth, shiftCalendarMonth } = require('../src/services/calendar');
+const calendarScreen = fs.readFileSync(path.resolve(__dirname, '../src/screens/CalendarScreen.js'), 'utf8');
+const rootNavigator = fs.readFileSync(path.resolve(__dirname, '../src/navigation/RootNavigator.js'), 'utf8');
+assert.match(calendarScreen, /LocaleConfig\.defaultLocale = 'nexusEs'/);
+assert.match(calendarScreen, /'Domingo', 'Lunes', 'Martes', 'Miércoles'/);
+assert.match(calendarScreen, /accessibilityLabel="Mes anterior"[\s\S]*?accessibilityLabel="Mes siguiente"/);
+assert.match(calendarScreen, /hideExtraDays[\s\S]*?enableSwipeMonths/);
+assert.match(calendarScreen, /enableSwipeMonths=\{false\}/, 'El calendario debe dejar el cambio de mes exclusivamente en las flechas para que sus gestos no compitan con el pager principal.');
+assert.match(calendarScreen, /onTouchStart=\{beginCalendarTouch\}[\s\S]*?onTouchEnd=\{endCalendarTouch\}/);
+assert.match(calendarScreen, /const beginCalendarTouch = useCallback\(\(\) => \{[\s\S]*?acquireSwipe\(\)/, 'Al tocar la cuadrícula el pager principal debe quedar bloqueado hasta finalizar el gesto.');
+assert.match(rootNavigator, /swipeEnabled:\s*!locked/, 'El swipe entre secciones principales debe seguir disponible fuera de la región del calendario.');
+assert.match(calendarScreen, /width <= 374 \? styles\.calendarCardCompact/);
+
+assert.equal(shiftCalendarMonth('2026-01-01', -1), '2025-12-01');
+assert.equal(shiftCalendarMonth('2026-12-01', 1), '2027-01-01');
+assert.equal(dateKeyInMonth('2024-01-31', '2024-02-01'), '2024-02-29');
+assert.equal(dateKeyInMonth('2025-01-31', '2025-02-01'), '2025-02-28');
+assert.deepEqual(calendarEmptyState('birthdays'), { title: 'Sin cumpleaños', hint: 'No hay cumpleaños para esta fecha.' });
+assert.deepEqual(calendarEmptyState('classes'), { title: 'Sin clases', hint: 'No hay clases programadas para esta fecha.' });
+assert.deepEqual(calendarEmptyState('events'), { title: 'Sin eventos', hint: 'No hay eventos personales para esta fecha.' });
+assert.deepEqual(calendarEmptyState('all'), { title: 'Día libre', hint: 'No hay eventos, clases ni cumpleaños para esta fecha.' });
 
 const leapBirthday = { id: 'b1', name: 'Alex', dateKey: '2000-02-29', time: '09:00' };
 assert.equal(birthdayDateKeyForYear(leapBirthday, 2024), '2024-02-29');
@@ -56,5 +76,7 @@ const marks = buildCalendarMarks({
 });
 assert.deepEqual(marks[dateKey].dots.map((dot) => dot.key), ['events', 'birthdays']);
 assert.equal(marks[dateKey].dots.length, 2);
+assert.equal(marks[dateKey].selected, true);
+assert.equal(marks[dateKey].disableTouchEvent, false);
 
-console.log('calendar-smoke-test: 8 assertions passed');
+console.log('calendar-smoke-test: 24 assertions passed');

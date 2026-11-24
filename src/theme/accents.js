@@ -121,6 +121,15 @@ export function getAccentTheme(id) {
  * todas las opciones a la vez.
  */
 export function resolveAccent(theme, surfaceId) {
+  if (surfaceId === 'mono' || surfaceId === 'amoled') {
+    return {
+      accent: '#EFEFEF',
+      accentSoft: 'rgba(239, 239, 239, 0.14)',
+      accentInk: '#0E0E0E',
+      alt: '#B8B8B8',
+      swatch: '#EFEFEF',
+    };
+  }
   if (surfaceId === 'light') {
     return {
       accent: theme.light.accent,
@@ -137,5 +146,9 @@ export function resolveAccent(theme, surfaceId) {
     alt: theme.alt,
     swatch: theme.accent,
   };
+}
+
+export function resolvePreviewAccent(theme, previewSurfaceId, activeSurfaceId) {
+  return resolveAccent(theme, activeSurfaceId === 'mono' ? 'mono' : previewSurfaceId);
 }
 

@@ -1,25 +1,20 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
-  EmptyState,
-  Notice,
   Pill,
   PrimaryButton,
   SectionTitle,
-  Stat,
   TextButton,
 } from '../components/ui/primitives';
 import { SearchField, SearchResults } from '../components/ui/SearchField';
 import { buildDashboard } from '../services/dashboard';
 import { searchEverything } from '../services/search';
-import { tap as tapHaptic } from '../services/haptics';
-import { formatMoney } from '../utils/money';
-import { plural } from '../utils/text';
+import { formatDateShort, formatTime, relativeDayLabel } from '../utils/dates';
 import { Icon } from '../components/Icon';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import { AppHeader } from '../components/ui/AppHeader';
@@ -27,48 +22,12 @@ import { AppHeader } from '../components/ui/AppHeader';
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
-/**
- * Nombres de iconos de Lucide para las tarjetas de acceso rápido.
- * Se usa el componente Icon centralizado en lugar de emojis.
- */
-const QUICK_ACCESS_ICONS = {
-  Horario: 'schedule',
-  Agenda: 'calendar',
-  'Cumpleaños': 'birthdays',
-  Notas: 'note',
-};
-
-/**
- * La línea resumen del banner. Se resuelve con frases completas en lugar de un
- * `1 cosa(s)`: así el número y el sustantivo siempre concuerdan.
- */
-function commitmentSummary(count) {
-  if (!count) return 'No tienes compromisos pendientes para hoy.';
-  return `Tienes ${plural(count, 'compromiso pendiente', 'compromisos pendientes')} para hoy.`;
-}
-
-/**
- * Accesos rápidos: un toque abre la sección correspondiente del pager deslizable.
- * Los colores son moderados y se derivan del acento activo para no saturar la UI.
- */
-function buildQuickAccess(data) {
-  const accent = colors.accent;
-  return [
-    { route: 'Horario', icon: QUICK_ACCESS_ICONS.Horario, title: 'Horario semanal', hint: `${data.todayActivities.length} actividades hoy`, color: accent },
-    { route: 'Agenda', icon: QUICK_ACCESS_ICONS.Agenda, title: 'Calendario', hint: 'Eventos y recordatorios', color: accent },
-    { route: 'Cumpleaños', icon: QUICK_ACCESS_ICONS['Cumpleaños'], title: 'Cumpleaños', hint: 'Próximos cumpleaños', color: accent },
-    { route: 'Notas', icon: QUICK_ACCESS_ICONS.Notas, title: 'Notas', hint: 'Texto, voz y adjuntos', color: accent },
-  ];
-}
-
 export default function HomeScreen({ navigation }) {
   const {
     activities,
     events,
     birthdays,
     notes,
-    habits,
-    expenses,
     settings,
     userName,
     permission,
@@ -77,12 +36,11 @@ export default function HomeScreen({ navigation }) {
   } = useAppData();
 
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
 
   const data = useMemo(
-    () => buildDashboard({ activities, events, birthdays, notes, habits, expenses }),
-    [activities, events, birthdays, notes, habits, expenses],
+    () => buildDashboard({ activities, events, birthdays, notes }),
+    [activities, events, birthdays, notes],
   );
 
   // Real-time: the three primary domains reachable from the dashboard, ranked by relevance.
@@ -92,12 +50,14 @@ export default function HomeScreen({ navigation }) {
   );
   const searching = query.trim().length > 0;
 
-  const quickAccess = useMemo(() => buildQuickAccess(data), [data]);
-  const cardWidth = (width - layout.gutter * 2 - spacing.md) / 2;
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
   // v1.1 name (written by the tutorial) wins; the v1.0 profile field stays as a fallback.
   const name = (userName || settings?.displayName || '').trim();
   const greeting = name ? `¡Hola, ${name}!` : data.greeting;
+  const currentTime = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+  const remainingClasses = data.todayActivities.filter((item) => String(item.end || item.start) > currentTime);
+  const scheduleItems = (remainingClasses.length ? remainingClasses : data.todayActivities).slice(0, 3);
+  const upcomingEvents = data.upcomingEvents.slice(0, 3);
 
   /** One tap: jump to the section and let it highlight the exact item. */
   const openResult = useCallback(
@@ -126,38 +86,12 @@ export default function HomeScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <AppHeader
-          title="Día a Día"
-          variant="compact"
+          title={greeting}
+          subtitle={data.dateLabel}
+          variant="large"
           headerRight={<HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={goToSettings} />}
         />
-
-        {/* El héroe solo existe mientras se navega. Buscando, se oculta para que los resultados
-            empiecen arriba sin competir con la imagen. */}
-        {searching ? null : (
-          <View style={styles.hero}>
-            <View style={styles.heroBody}>
-              <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
-                {data.dateLabel}
-              </Text>
-              <Text style={typography.display} numberOfLines={2}>
-                {greeting}
-              </Text>
-              <Text style={[typography.small, styles.heroHint]} numberOfLines={3}>
-                {name ? `${data.greeting}. ` : ''}
-                {commitmentSummary(data.todayCommitments)}
-              </Text>
-              <View style={styles.heroPills}>
-                <Pill label={`${data.todayActivities.length} en el horario`} tone="accent" />
-                <Pill label={`${data.todayEvents.length} en la agenda`} tone="accent" />
-                {data.pendingHabits.length ? (
-                  <Pill label={plural(data.pendingHabits.length, 'hábito pendiente', 'hábitos pendientes')} />
-                ) : (
-                  <Pill label="Hábitos al día" />
-                )}
-              </View>
-            </View>
-          </View>
-        )}
+        {searching ? null : <Text style={[typography.overline, styles.eyebrow]}>DÍA A DÍA</Text>}
 
         <SearchField
           value={query}
@@ -174,66 +108,86 @@ export default function HomeScreen({ navigation }) {
           />
         ) : (
           <>
-          {/* Orden del dashboard (pedido explícito):
-              1º Barra de búsqueda global (arriba, ya renderizada)
-              2º Accesos rápidos
-              3º Próximas actividades / eventos
-              4º Bloques de resumen: Gastado Hoy · Notas Fijas · Pendientes
-            Lo que se usa todos los días queda arriba; las cifras, al final del scroll. */}
-          <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
+          <View style={styles.scheduleCard}>
+            <View style={styles.scheduleHeading}>
+              <View style={styles.scheduleTitleWrap}>
+                <Text style={[typography.overline, styles.scheduleKicker]}>TU SEMANA, EN CONTEXTO</Text>
+                <Text style={[typography.h2, styles.scheduleTitle]} accessibilityRole="header">Horario · {data.weekdayLabel}</Text>
+              </View>
+              <Pressable onPress={() => navigation.navigate('Horario')} accessibilityRole="button" accessibilityLabel="Abrir horario semanal" style={styles.scheduleLink}>
+                <Icon name="arrow-up-right" size={20} color={colors.accent} />
+              </Pressable>
+            </View>
 
-          <View style={styles.grid}>
-            {quickAccess.map((item) => (
-              <MemoQuickCard key={item.route} item={item} width={cardWidth} navigation={navigation} />
-            ))}
-          </View>
-
-          <SectionTitle
-            title="Próximas actividades"
-            count={data.nextUp.length}
-            right={<TextButton label="Ver calendario" onPress={goToAgenda} />}
-          />
-
-          {data.nextUp.length === 0 ? (
-            <EmptyState
-              emoji="☕"
-              title="Nada por delante"
-              hint="Agenda un evento o registra una actividad en el horario y va a aparecer aquí."
-            />
-          ) : (
-            data.nextUp.map((item) => (
-              <Card
-                key={item.id}
-                accent={item.color}
-                onPress={() => navigation.navigate(item.kind === 'event' ? 'Agenda' : 'Horario')}
-                style={styles.nextCard}
-              >
-                <View style={styles.nextRow}>
-                  <Text style={[styles.nextTime, typography.tabular]}>{item.time}</Text>
-                  <View style={styles.nextBody}>
-                    <Text style={typography.bodyStrong} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={typography.caption} numberOfLines={1}>
-                      {item.detail}
-                    </Text>
-                  </View>
-                  <Pill
-                    label={item.kind === 'event' ? 'Calendario' : 'Horario'}
-                    tone={item.kind === 'event' ? 'accent' : 'neutral'}
-                  />
+            {activities.length === 0 ? (
+              <View style={styles.scheduleEmpty}>
+                <Icon name="calendar" size={24} color={colors.accent} />
+                <View style={styles.scheduleEmptyCopy}>
+                  <Text style={typography.bodyStrong}>Tu semana está libre</Text>
+                  <Text style={typography.small}>Agrega tus clases para tenerlas a mano cada día.</Text>
                 </View>
-              </Card>
-            ))
-          )}
-
-          <SectionTitle title="Resumen de hoy" />
-
-          <View style={styles.statsRow}>
-            <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
-            <Stat value={data.pinnedNotes} label="Notas fijadas" />
-            <Stat value={data.pendingHabits.length} label="Pendientes" />
+                <TextButton label="Configurar" onPress={() => navigation.navigate('Horario')} />
+              </View>
+            ) : data.todayActivities.length === 0 && data.suspendedToday.length > 0 ? (
+              <View style={styles.scheduleEmpty}>
+                <Icon name="pause" size={24} color={colors.accent} />
+                <View style={styles.scheduleEmptyCopy}>
+                  <Text style={typography.bodyStrong}>Clases suspendidas hoy</Text>
+                  <Text style={typography.small}>El horario semanal conserva tus clases; puedes reactivarlas desde aquí.</Text>
+                </View>
+                <TextButton label="Ver" onPress={() => navigation.navigate('Horario')} />
+              </View>
+            ) : data.todayActivities.length === 0 ? (
+              <View style={styles.scheduleEmpty}>
+                <Icon name="sun" size={24} color={colors.accent} />
+                <View style={styles.scheduleEmptyCopy}>
+                  <Text style={typography.bodyStrong}>Sin clases hoy</Text>
+                  <Text style={typography.small}>Tu próximo día de clases sigue en el horario semanal.</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.classList}>
+                {scheduleItems.map((item, index) => {
+                  const inProgress = item.start <= currentTime && String(item.end || item.start) > currentTime;
+                  const finished = !remainingClasses.length;
+                  return (
+                    <View key={item.id} style={[styles.classRow, index ? styles.classDivider : null]}>
+                      <View style={styles.classTime}>
+                        <Text style={[typography.tabular, styles.classTimeText]}>{item.start}</Text>
+                        <Text style={typography.caption}>{item.end}</Text>
+                      </View>
+                      <View style={[styles.classMarker, { backgroundColor: item.color || colors.accent }]} />
+                      <View style={styles.classCopy}>
+                        <Text style={typography.bodyStrong} numberOfLines={1}>{item.title}</Text>
+                        <Text style={typography.caption} numberOfLines={1}>{item.location || 'Clase'}</Text>
+                      </View>
+                      {inProgress ? <Pill label="En curso" tone="accent" /> : finished ? null : index === 0 ? <Pill label="Siguiente" tone="accent" /> : null}
+                    </View>
+                  );
+                })}
+                <TextButton label="Ver horario semanal" onPress={() => navigation.navigate('Horario')} />
+              </View>
+            )}
           </View>
+
+          <SectionTitle title="Próximos eventos" count={upcomingEvents.length} right={<TextButton label="Ver calendario" onPress={goToAgenda} />} />
+
+          {upcomingEvents.length === 0 ? (
+            <View style={styles.eventsEmpty}>
+              <Text style={typography.small}>No tienes eventos próximos en la agenda.</Text>
+            </View>
+          ) : upcomingEvents.map((item) => (
+            <Card key={item.id} accent={item.color} onPress={goToAgenda} style={styles.nextCard}>
+              <View style={styles.nextRow}>
+                <Text style={[styles.nextTime, typography.tabular]}>{item.dateKey === data.today ? formatTime(item.time) : formatDateShort(item.dateKey)}</Text>
+                <View style={styles.nextBody}>
+                  <Text style={typography.bodyStrong} numberOfLines={1}>{item.title}</Text>
+                  <Text style={typography.caption} numberOfLines={1}>{relativeDayLabel(item.dateKey)}</Text>
+                </View>
+                <Icon name="chevron-right" size={18} color={colors.textMuted} />
+              </View>
+            </Card>
+          ))}
 
           {showPermissionCard ? (
             <Card accent={colors.warning}>
@@ -252,48 +206,12 @@ export default function HomeScreen({ navigation }) {
             </Card>
           ) : null}
 
-          <Notice text="Usa la barra inferior para cambiar de sección, o toca una tarjeta para abrir un acceso secundario." />
           </>
         )}
       </ScrollView>
     </View>
   );
 }
-
-/**
- * One tile of the access grid.
- *
- * It receives the `navigation` object instead of an `onPress` callback on purpose: an
- * inline arrow would be a new function on every render and `memo` could never hit. With
- * `navigation` being stable, the eight tiles only reconcile when `item` or `width` changes.
- */
-function QuickCard({ item, width, navigation }) {
-  const handlePress = useCallback(() => {
-    tapHaptic();
-    navigation.navigate(item.route);
-  }, [item.route, navigation]);
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.title}. ${item.hint}`}
-      style={({ pressed }) => [styles.quickCard, { width }, pressed ? styles.pressed : null]}
-    >
-      <View style={[styles.quickIcon, { borderColor: item.color }]}>
-        <Icon name={item.icon} size={20} color={item.color} />
-      </View>
-      <Text style={typography.bodyStrong} numberOfLines={1}>
-        {item.title}
-      </Text>
-      <Text style={typography.caption} numberOfLines={1}>
-        {item.hint}
-      </Text>
-    </Pressable>
-  );
-}
-
-const MemoQuickCard = memo(QuickCard);
 
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
@@ -304,22 +222,31 @@ const styles = themedStyles({
     gap: spacing.lg,
   },
 
-  hero: {
+  eyebrow: { color: colors.accent, letterSpacing: 1.2, marginTop: -spacing.sm },
+  scheduleCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
     overflow: 'hidden',
-    minHeight: 210,
-    padding: spacing.xl,
-    gap: spacing.sm,
   },
-  heroBody: { gap: spacing.sm },
-  heroDate: { color: colors.accent, fontWeight: '700' },
-  heroHint: { color: colors.textSecondary },
-  heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
-
-  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  scheduleHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  scheduleTitleWrap: { flex: 1, gap: spacing.xs },
+  scheduleKicker: { color: colors.accent, letterSpacing: 0.9 },
+  scheduleTitle: { color: colors.text },
+  scheduleLink: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  scheduleEmpty: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  scheduleEmptyCopy: { flex: 1, gap: spacing.xs },
+  classList: { gap: spacing.sm },
+  classRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  classDivider: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  classTime: { width: 48, alignItems: 'flex-start', gap: 1 },
+  classTimeText: { color: colors.accent },
+  classMarker: { width: 3, height: 38, borderRadius: radius.pill },
+  classCopy: { flex: 1, gap: 2 },
+  eventsEmpty: { padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
@@ -329,24 +256,7 @@ const styles = themedStyles({
   nextTime: { fontSize: 15.5, fontWeight: '700', color: colors.text, width: 54 },
   nextBody: { flex: 1, gap: 2 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  quickCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
   pressed: { opacity: 0.7 },
-  quickIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   bannerCard: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.lg,

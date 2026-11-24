@@ -16,13 +16,12 @@ import { themedStyles, colors, layout, radius, spacing, typography } from '../th
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
 import { Icon } from '../components/Icon';
 import { useAppData } from '../context/AppDataContext';
-import { plural } from '../utils/text';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 /** Decorative hero, the same asset the dashboard uses. */
-const WELCOME_BG = require('../../assets/welcome-bg.jpg');
+const WELCOME_BG = require('../../assets/nexusday-onboarding.png');
 
 /** Tab names of the demo bar, in the same order as the real one. */
 const DEMO_TABS = ['Día a Día', 'Bloc de Notas', 'Calendario'];
@@ -47,89 +46,41 @@ const TAB_ICON_MAP = {
  */
 const SLIDES = [
   {
-    key: 'hub',
-    emoji: '🏠',
+    key: 'day',
     icon: 'home',
-    title: 'Todo arranca en Día a Día',
-    body: 'Día a Día es tu hub central: en una sola pantalla ves cómo viene la jornada.',
-    points: [
-      'Saludo y resumen de tus compromisos.',
-      'Las próximas actividades, ordenadas por hora.',
-      'Acceso directo al horario universitario.',
-    ],
-    tip: 'Prueba el buscador de la demo: filtra notas, clases y eventos mientras escribes.',
+    title: 'Haz espacio para tu día',
+    body: 'NexusDay reúne lo que tienes por delante en un lugar sereno y fácil de consultar.',
+    points: ['Tus clases aparecen junto a los próximos eventos.', 'Abre Horario desde Día a Día para revisar o ajustar tu semana.', 'Usa el resumen para orientarte; tus registros privados no aparecen aquí.'],
+    tip: 'Empieza con lo próximo y entra en Horario cuando necesites ver la semana completa.',
     demo: 'search',
     field: true,
   },
   {
-    key: 'nav',
-    emoji: '👆',
-    icon: 'settings',
-    title: 'Tres destinos, siempre a mano',
-    body: 'La barra inferior reúne las tres secciones principales de NexusDay.',
-    points: [
-      'Día a Día · Bloc de Notas · Calendario.',
-      'El horario se abre desde Día a Día.',
-      'Ajustes está en el encabezado y permite volver donde estabas.',
-    ],
-    tip: 'Toca un destino de la demo para ver cómo funciona la nueva barra.',
-    demo: 'tabs',
-  },
-  {
     key: 'notes',
-    emoji: '🎙️',
     icon: 'note',
-    title: 'Notas con voz y adjuntos',
-    body: 'Las notas aceptan audio y documentos, con listas y etiquetas; y toda la app se respalda en un archivo .json.',
-    points: [
-      'Graba una nota de voz y guárdala junto al texto.',
-      'Adjunta un documento sin salir de la app.',
-      'La copia .json de Ajustes guarda todo lo tuyo para restaurarlo cuando quieras.',
-    ],
-    tip: 'Toca el micrófono de la demo: la grabación se guarda dentro de la app, nunca sube a la nube.',
+    title: 'Guarda lo que importa',
+    body: 'Crea notas para tus ideas y encuentra la información cuando la necesites.',
+    points: ['Crea una nota con título y contenido.', 'Busca y organiza con etiquetas.', 'Marca una nota como privada para proteger su acceso.'],
+    tip: 'Las notas privadas requieren autorización al abrirse y no se muestran en resúmenes.',
     demo: 'note',
   },
   {
-    key: 'habits',
-    emoji: '💪',
-    icon: 'habit',
-    title: 'Horario y calendario conectados',
-    body: 'Consulta tus clases desde Día a Día y organiza eventos en Calendario.',
-    points: [
-      'Consulta, crea y modifica clases como siempre.',
-      'Revisa clases y eventos juntos en el calendario.',
-      'Mantén tus recordatorios locales y sin cuenta.',
-    ],
-    tip: 'El horario conserva sus herramientas y se abre sin recargar el inicio.',
-    demo: 'tabs',
+    key: 'calendar',
+    icon: 'calendar',
+    title: 'Mira el mes, planea el día',
+    body: 'Calendario conecta tus fechas importantes con la agenda de cada día.',
+    points: ['Toca un día para consultar su agenda.', 'Crea eventos y revisa los que ya tienes.', 'Los cumpleaños se repiten cada año y permanecen en Calendario.'],
+    tip: 'Selecciona una fecha del mes para ver sus eventos y cumpleaños.',
+    demo: 'calendar',
   },
   {
-    key: 'ai',
-    emoji: '🤖',
-    icon: 'ai',
-    title: 'Nexus AI — próximamente',
-    body: 'El asistente no forma parte de la navegación principal en esta versión.',
-    points: [
-      'La función actual queda desactivada desde los accesos principales.',
-      'Tus datos existentes se conservan en el dispositivo.',
-      'NexusDay sigue funcionando completamente sin el asistente.',
-    ],
-    tip: 'Las tres secciones principales concentran las tareas cotidianas.',
-    demo: 'tabs',
-  },
-  {
-    key: 'theme',
-    emoji: '🎨',
-    icon: 'palette',
-    title: 'Elige tu look: Claro o AMOLED',
-    body: 'Dos superficies y seis acentos para que la app se vea exactamente como tú quieres.',
-    points: [
-      'Oscuro puro (AMOLED): píxeles apagados, batería que rinde más.',
-      'Claro puro: blanco real para leer a plena luz.',
-      'Seis acentos: Verde, Cian, Azul, Rojo, Amarillo, Púrpura.',
-    ],
-    tip: 'Ve a Ajustes › Tema para cambiar el acento y la superficie en cualquier momento.',
-    demo: 'theme',
+    key: 'settings',
+    icon: 'settings',
+    title: 'A tu manera, en Ajustes',
+    body: 'Personaliza la apariencia y vuelve a esta guía cuando quieras.',
+    points: ['Elige entre Claro, Oscuro, Blanco y negro o Nex.', 'Ajusta el acento para reconocer NexusDay a primera vista.', 'Abre Ajustes desde el encabezado de las secciones.'],
+    tip: 'En Ajustes › Ayuda puedes repetir este tutorial; tus datos y preferencias se conservan.',
+    demo: 'settings',
   },
 ];
 
@@ -240,7 +191,7 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
           getItemLayout={itemLayout}
           initialScrollIndex={0}
           contentContainerStyle={styles.pagerContent}
-          // Five slides is nothing: render them all. Windowing would recycle pages mid-swipe and
+          // Four slides is nothing: render them all. Windowing would recycle pages mid-swipe and
           // the tallest slide would keep resizing the list under the footer.
           initialNumToRender={SLIDES.length}
           extraData={{ openTip, draft }}
@@ -266,9 +217,9 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
                   unit={unit}
                   openTip={openTip}
                   onToggleTip={toggleTip}
-                  nameDraft={item.field ? draft : ''}
-                  onChangeName={item.field ? setDraft : null}
-                  onSaveName={item.field ? saveName : null}
+                  nameDraft={firstRun && item.field ? draft : ''}
+                  onChangeName={firstRun && item.field ? setDraft : null}
+                  onSaveName={firstRun && item.field ? saveName : null}
                 />
               </ScrollView>
             </View>
@@ -300,6 +251,9 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
           </View>
 
           <View style={styles.actions}>
+            {index > 0 ? (
+              <TextButton label="Atrás" tone="ghost" onPress={() => goTo(index - 1)} style={styles.back} />
+            ) : <View style={styles.backPlaceholder} />}
             <TextButton label={firstRun ? 'Omitir' : 'Cerrar'} tone="ghost" onPress={onFinish} style={styles.skip} />
             <PrimaryButton
               label={last ? (firstRun ? 'Comenzar a usar NexusDay' : 'Volver a NexusDay') : 'Siguiente'}
@@ -319,7 +273,7 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
   );
 }
 
-/** One page: the headline, the name field (slide 1), a live mini-demo and the points. */
+/** One page: the headline, optional name field, mini-demo and practical pointers. */
 function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onSaveName }) {
   return (
     <View style={styles.slideBody}>
@@ -426,11 +380,61 @@ function Demo({ kind, unit }) {
   if (kind === 'search') return <SearchDemo unit={unit} />;
   if (kind === 'tabs') return <TabsDemo unit={unit} />;
   if (kind === 'note') return <NoteDemo unit={unit} />;
-  if (kind === 'habits') return <HabitsDemo unit={unit} />;
-  return <AiDemo unit={unit} />;
+  if (kind === 'calendar') return <CalendarDemo unit={unit} />;
+  if (kind === 'settings') return <SettingsDemo unit={unit} />;
+  return <TabsDemo unit={unit} />;
 }
 
-/** Dashboard: a working search that filters four fake collections. */
+function CalendarDemo({ unit }) {
+  return (
+    <DemoFrame caption="Calendario · tu agenda">
+      <View style={styles.calendarDemoHeader}>
+        <Text style={[typography.small, styles.demoRowLabel]}>VISTA MENSUAL</Text>
+        <Text style={[typography.caption, { color: colors.accent }]}>Día seleccionado</Text>
+      </View>
+      <View style={styles.calendarDemoDays}>
+        {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => (
+          <View key={day} style={[styles.calendarDemoDay, index === 0 ? { backgroundColor: colors.accent, borderRadius: radius.pill } : null]}>
+            <Text style={[typography.caption, { color: index === 0 ? colors.accentInk : colors.textMuted, fontSize: unit(10) }]}>{day}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.demoRow}>
+        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
+          <Icon name="calendar" size={unit(14)} color={colors.accent} />
+        </View>
+        <View style={styles.demoRowBody}>
+          <Text style={[typography.small, styles.demoRowLabel]}>Agenda del día</Text>
+          <Text style={typography.caption}>Eventos y cumpleaños</Text>
+        </View>
+      </View>
+    </DemoFrame>
+  );
+}
+
+function SettingsDemo({ unit }) {
+  return (
+    <DemoFrame caption="Ajustes · apariencia">
+      <Text style={[typography.small, styles.demoRowLabel]}>Elige una identidad</Text>
+      <View style={styles.demoActions}>
+        {[
+          ['Claro', colors.surface],
+          ['Oscuro', colors.background],
+          ['B y N', colors.text],
+          ['Nex', colors.accent],
+        ].map(([label, color]) => (
+          <View key={label} style={styles.settingsDemoOption}>
+            <View style={[styles.settingsDemoSwatch, { backgroundColor: color }]} />
+            <Text style={[styles.demoChipLabel, { fontSize: unit(10) }]}>{label}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={typography.caption}>Personaliza el tema y el acento desde Ajustes.</Text>
+    </DemoFrame>
+  );
+}
+
+/** Dashboard: a working search over illustrative sample rows. */
 function SearchDemo({ unit }) {
   const [query, setQuery] = useState('');
   const pool = [
@@ -560,100 +564,10 @@ function NoteDemo({ unit }) {
   );
 }
 
-/** Habit tick with a live streak plus a quick expense. */
-function HabitsDemo({ unit }) {
-  const [days, setDays] = useState(3);
-  const [spent, setSpent] = useState(0);
-
-  return (
-    <DemoFrame caption="Hábitos y gastos">
-      <View style={styles.demoRow}>
-        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-          <Text style={{ fontSize: unit(14) }}>💧</Text>
-        </View>
-        <View style={styles.demoRowBody}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            Tomar 2 L de agua
-          </Text>
-          <Text style={typography.caption}>{`Racha: ${plural(days, 'día')}`}</Text>
-        </View>
-        <Pressable
-          onPress={() => setDays((value) => value + 1)}
-          accessibilityRole="button"
-          accessibilityLabel="Marcar el hábito de hoy"
-          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
-        >
-          <Text style={{ fontSize: unit(14) }}>✓</Text>
-        </Pressable>
-      </View>
-      <View style={styles.demoRow}>
-        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-          <Text style={{ fontSize: unit(14) }}>💰</Text>
-        </View>
-        <View style={styles.demoRowBody}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            {`Gastado hoy: $${spent}`}
-          </Text>
-          <Text style={typography.caption}>Un toque y queda cargado</Text>
-        </View>
-        <Pressable
-          onPress={() => setSpent((value) => value + 500)}
-          accessibilityRole="button"
-          accessibilityLabel="Agregar un gasto"
-          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
-        >
-          <Text style={{ fontSize: unit(15) }}>+</Text>
-        </Pressable>
-      </View>
-    </DemoFrame>
-  );
-}
-
-/** Assistant: tap a suggestion, get the answer bubble. */
-function AiDemo({ unit }) {
-  const [answer, setAnswer] = useState(null);
-  const suggestions = ['¿Qué tengo hoy?', '¿Cuánto gasté?', '¿Qué hábitos me faltan?'];
-
-  return (
-    <DemoFrame caption="Nexus AI · 100% offline">
-      <View style={styles.demoActions}>
-        {suggestions.map((item) => (
-          <Pressable
-            key={item}
-            onPress={() => setAnswer(item)}
-            accessibilityRole="button"
-            accessibilityLabel={item}
-            style={({ pressed }) => [
-              styles.demoChip,
-              answer === item ? { backgroundColor: colors.accentSoft, borderColor: colors.accent } : null,
-              pressed ? styles.pointPressed : null,
-            ]}
-          >
-            <Text style={[styles.demoChipLabel, { fontSize: unit(9.5) }]}>{item}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {answer ? (
-        <View style={styles.demoBubble}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={2}>
-            {answer === '¿Cuánto gasté?'
-              ? 'Hoy llevas $1.850 en 1 movimiento.'
-              : answer === '¿Qué hábitos me faltan?'
-                ? 'Te falta 1 hábito hoy: Tomar 2 L de agua.'
-                : 'Tienes 1 cosa por delante: 18:30 Entrega del proyecto.'}
-          </Text>
-        </View>
-      ) : (
-        <Text style={styles.demoEmpty}>Toca una sugerencia para ver una respuesta.</Text>
-      )}
-    </DemoFrame>
-  );
-}
-
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   // The photo is decoration only: dropping its opacity is what keeps the white text readable.
-  rootImage: { opacity: 0.38 },
+  rootImage: { opacity: 0.58 },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: `${colors.background}b8` },
   scrimBottom: {
     position: 'absolute',
@@ -754,8 +668,10 @@ const styles = themedStyles({
   footer: { gap: spacing.md, paddingHorizontal: layout.gutter },
   dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   dot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.surfacePlus },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  skip: { flex: 0, paddingHorizontal: spacing.lg },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  back: { flex: 0, paddingHorizontal: spacing.sm },
+  backPlaceholder: { width: 56 },
+  skip: { flex: 0, paddingHorizontal: spacing.sm },
   next: { flex: 1, paddingHorizontal: spacing.lg },
   wipeNote: { textAlign: 'center', lineHeight: 16 },
 
@@ -817,6 +733,11 @@ const styles = themedStyles({
     justifyContent: 'center',
   },
   demoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  calendarDemoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calendarDemoDays: { flexDirection: 'row', justifyContent: 'space-between' },
+  calendarDemoDay: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  settingsDemoOption: { minWidth: 64, flexGrow: 1, alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.xs },
+  settingsDemoSwatch: { width: 24, height: 24, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
   demoChip: {
     borderRadius: radius.pill,
     borderWidth: 1,

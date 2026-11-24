@@ -1,6 +1,7 @@
 import type { ElementType } from 'react';
-import Svg, { SvgProps } from 'react-native-svg';
+import Svg, { Circle, SvgProps } from 'react-native-svg';
 import AlertCircle from 'lucide-react-native/icons/alert-circle';
+import ArrowUpRight from 'lucide-react-native/icons/arrow-up-right';
 import Bell from 'lucide-react-native/icons/bell';
 import Bot from 'lucide-react-native/icons/bot';
 import Cake from 'lucide-react-native/icons/cake';
@@ -53,6 +54,7 @@ export interface IconProps extends Omit<SvgProps, 'color'> {
 }
 
 const LUCIDE_ICONS: Record<string, ElementType> = {
+  'arrow-up-right': ArrowUpRight,
   home: Home,
   schedule: Grid,
   calendar: Calendar,
@@ -108,7 +110,7 @@ export function Icon({ name, size = 24, color, strokeWidth = 2, ...rest }: IconP
     }
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} {...rest}>
-        <circle cx="12" cy="12" r="10" stroke={color} strokeWidth={strokeWidth} fill="none" />
+        <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={strokeWidth} fill="none" />
       </Svg>
     );
   }

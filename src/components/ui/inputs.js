@@ -49,7 +49,7 @@ export function TextField({
   );
 }
 
-export function TextArea({ label, value, onChangeText, placeholder, minHeight = 96, autoFocus, hint, error, disabled = false }) {
+export function TextArea({ label, value, onChangeText, placeholder, minHeight = 96, autoFocus, hint, error, disabled = false, style }) {
   return (
     <Field label={label} hint={hint} error={error}>
       <TextInput
@@ -62,7 +62,7 @@ export function TextArea({ label, value, onChangeText, placeholder, minHeight = 
         autoFocus={autoFocus}
         editable={!disabled}
         accessibilityState={{ disabled }}
-        style={[styles.input, styles.textArea, error ? styles.inputError : null, disabled ? styles.disabled : null, { minHeight }]}
+        style={[styles.input, styles.textArea, error ? styles.inputError : null, disabled ? styles.disabled : null, { minHeight }, style]}
         selectionColor={colors.accent}
         cursorColor={colors.accent}
       />

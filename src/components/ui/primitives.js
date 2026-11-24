@@ -1,11 +1,15 @@
-import { memo, useCallback } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useRef } from 'react';
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { brand, themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
+import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../../theme/theme';
+import { useSwipeLockActions } from '../../context/SwipeLockContext';
+import { navigateToRoute } from '../../navigation/navigateToRoute';
 import { tap as tapHaptic } from '../../services/haptics';
 import { Icon } from '../Icon';
 import { useResponsiveLayout } from '../../theme/responsive';
 import { AppHeader } from './AppHeader';
+import { HeaderIconButton } from './HeaderIconButton';
 
 /**
  * Page scaffold: dark background, large title, scrollable body.
@@ -14,13 +18,23 @@ import { AppHeader } from './AppHeader';
  * inherits the right padding: the title never collides with the notch and the last
  * card is never hidden behind the Android nav bar / iOS home indicator.
  */
-export function Screen({ title, subtitle, headerLeft, headerRight, children, contentStyle }) {
+export function Screen({ title, subtitle, headerLeft, headerRight, children, contentStyle, backButton = true }) {
   const insets = useSafeAreaInsets();
   const responsive = useResponsiveLayout();
+  const navigation = useNavigation();
+  const routeState = navigation.getState?.();
+  const secondaryRoute = routeState?.type === 'stack' && routeState.routes?.[routeState.index]?.name !== 'Principal';
+  const defaultBack = backButton && secondaryRoute ? (
+    <HeaderIconButton
+      icon="chevronLeft"
+      label="Volver"
+      onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigateToRoute(navigation, 'Inicio'))}
+    />
+  ) : null;
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md, paddingHorizontal: responsive.gutter }]}>
-        <AppHeader title={title} subtitle={subtitle} headerLeft={headerLeft} headerRight={headerRight} />
+        <AppHeader title={title} subtitle={subtitle} headerLeft={headerLeft ?? defaultBack} headerRight={headerRight} />
       </View>
       <ScrollView
         style={styles.scroll}
@@ -161,7 +175,7 @@ function Button({ label, onPress, variant = 'primary', disabled = false, loading
     destructive: { container: styles.buttonDestructive, text: styles.buttonDestructiveText },
   };
   const active = variants[variant] || variants.primary;
-  const indicatorColor = variant === 'primary' ? brand.onPrimaryAction : active.text.color;
+  const indicatorColor = variant === 'primary' ? colors.accentInk : active.text.color;
 
   const handlePress = useCallback(() => {
     if (inactive) return;
@@ -229,10 +243,18 @@ function Notice({ text, tone = 'info' }) {
   );
 }
 
-function EmptyState({ emoji, icon, title, hint, action }) {
+function EmptyState({ emoji, icon, image, title, hint, action }) {
   return (
     <View style={styles.empty}>
-      {icon ? <View style={styles.emptyIcon}><Icon name={icon} size={30} color={colors.accent} /></View> : <Text style={styles.emptyEmoji}>{emoji}</Text>}
+      {image ? (
+        <Image
+          source={image}
+          style={styles.emptyIllustration}
+          resizeMode="contain"
+          accessible={false}
+          importantForAccessibility="no"
+        />
+      ) : icon ? <View style={styles.emptyIcon}><Icon name={icon} size={30} color={colors.accent} /></View> : <Text style={styles.emptyEmoji}>{emoji}</Text>}
       <Text style={[typography.title, styles.emptyTitle]}>{title}</Text>
       {hint ? <Text style={[typography.small, styles.emptyHint]}>{hint}</Text> : null}
       {action}
@@ -242,6 +264,26 @@ function EmptyState({ emoji, icon, title, hint, action }) {
 
 /** Horizontally scrolling row of Chips (day tabs, filters). */
 function ChipScroller({ children, style, contentContainerStyle, horizontal = true }) {
+  const { acquireSwipe } = useSwipeLockActions();
+  const releaseRef = useRef(null);
+  const beginTouch = () => {
+    releaseRef.current?.();
+    releaseRef.current = acquireSwipe();
+  };
+  const endTouch = (event) => {
+    if (event?.nativeEvent?.touches?.length > 0) return;
+    releaseRef.current?.();
+    releaseRef.current = null;
+  };
+  const cancelTouch = () => {
+    releaseRef.current?.();
+    releaseRef.current = null;
+  };
+  useEffect(() => () => {
+    releaseRef.current?.();
+    releaseRef.current = null;
+  }, []);
+
   if (!horizontal) return <View style={[styles.chipWrap, style]}>{children}</View>;
   return (
     <ScrollView
@@ -249,6 +291,9 @@ function ChipScroller({ children, style, contentContainerStyle, horizontal = tru
       showsHorizontalScrollIndicator={false}
       style={[styles.chipScroll, style]}
       contentContainerStyle={[styles.chipScrollContent, contentContainerStyle]}
+      onTouchStart={beginTouch}
+      onTouchEnd={endTouch}
+      onTouchCancel={cancelTouch}
     >
       {children}
     </ScrollView>
@@ -365,8 +410,8 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonPrimary: { backgroundColor: brand.primaryAction },
-  buttonPrimaryText: { color: brand.onPrimaryAction },
+  buttonPrimary: { backgroundColor: colors.accent },
+  buttonPrimaryText: { color: colors.accentInk },
   buttonSecondary: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.borderStrong },
   buttonSecondaryText: { color: colors.text },
   buttonGhost: { backgroundColor: 'transparent' },
@@ -407,6 +452,7 @@ const styles = themedStyles({
   noticeText: { ...typography.caption, fontSize: 12.5 },
 
   empty: { alignItems: 'center', paddingVertical: spacing.xxxl, gap: spacing.sm },
+  emptyIllustration: { width: 176, height: 120, marginBottom: spacing.xs },
   emptyEmoji: { fontSize: 38, marginBottom: spacing.xs },
   emptyIcon: { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs },
   emptyTitle: { textAlign: 'center' },

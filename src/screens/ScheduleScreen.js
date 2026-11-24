@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { navigateToRoute } from '../navigation/navigateToRoute';
 import { useFocusId } from '../hooks/useFocusId';
 import {
   Card,
@@ -202,7 +203,7 @@ export default function ScheduleScreen({ navigation }) {
     });
     setHubId(null);
     successHaptic();
-    navigation.navigate('Notas', { focusId: note.id });
+    navigateToRoute(navigation, 'Notas', { focusId: note.id });
   };
 
   /** b) Agendar Evaluación: evento en la Agenda vinculado al ramo. */
@@ -219,7 +220,7 @@ export default function ScheduleScreen({ navigation }) {
     });
     setHubId(null);
     successHaptic();
-    navigation.navigate('Agenda', { focusId: event.id });
+    navigateToRoute(navigation, 'Agenda', { focusId: event.id });
   };
 
   return (
@@ -231,7 +232,7 @@ export default function ScheduleScreen({ navigation }) {
           <HeaderIconButton
             icon="chevronLeft"
             label="Volver a Día a Día"
-            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Inicio'))}
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigateToRoute(navigation, 'Inicio'))}
           />
         }
         headerRight={<Pill label={`${activities.length} actividades`} />}

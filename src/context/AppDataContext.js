@@ -20,7 +20,7 @@ const AppDataContext = createContext(null);
 
 const UNKNOWN_PERMISSION = { status: 'unknown', granted: false, canAskAgain: true, checked: false };
 
-const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true };
+const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true, reduceMotion: false, lastBackupAt: null };
 
 /**
  * First-run tutorial.

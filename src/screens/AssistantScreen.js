@@ -1,8 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
+import { navigateToRoute } from '../navigation/navigateToRoute';
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import { Card, Chip, ChipScroller, Pill, PrimaryButton, TextButton } from '../components/ui/primitives';
 import { Glyph } from '../navigation/TabGlyphs';
 import { ASSISTANT_SUGGESTIONS, answerQuestion } from '../services/assistant';
@@ -11,6 +13,8 @@ import { toggleCheckItem } from '../services/notes';
 import { dropReminder } from '../services/reminders';
 import { success as successHaptic } from '../services/haptics';
 import { todayKey } from '../utils/dates';
+import { authorizePrivateAction } from '../services/privacy';
+import { PRIVATE_ACTIONS } from '../services/privacyPolicy';
 
 /**
  * Nexus AI — panel del asistente.
@@ -43,6 +47,18 @@ export default function AssistantScreen({ navigation }) {
   const scrollRef = useRef(null);
   const [question, setQuestion] = useState('');
   const [log, setLog] = useState([]);
+  const privacyRevision = useMemo(
+    () => [notes, expenses]
+      .flatMap((items) => items.filter((item) => item.private).map((item) => item.id))
+      .sort()
+      .join('|'),
+    [expenses, notes],
+  );
+  const [logPrivacyRevision, setLogPrivacyRevision] = useState(privacyRevision);
+  if (logPrivacyRevision !== privacyRevision) {
+    setLogPrivacyRevision(privacyRevision);
+    setLog([]);
+  }
 
   /**
    * Una orden ("crea una nota de la reunión") se ejecuta sobre las colecciones; lo demás es
@@ -76,7 +92,7 @@ export default function AssistantScreen({ navigation }) {
    * El chip ejecutado desaparece de la burbuja — la acción ya quedó aplicada.
    */
   const runAction = useCallback(
-    (entryId, action) => {
+    async (entryId, action) => {
       if (action.kind === 'habit') {
         const habit = habits.find((item) => item.id === action.id);
         if (!habit) return;
@@ -88,8 +104,16 @@ export default function AssistantScreen({ navigation }) {
       } else if (action.kind === 'checkitem') {
         const note = notes.find((item) => item.id === action.noteId);
         if (!note) return;
-        successHaptic();
-        updateNote(note.id, { items: toggleCheckItem(note.items, action.itemId), updatedAt: Date.now() });
+        const result = await authorizePrivateAction({
+          record: note,
+          action: PRIVATE_ACTIONS.mutate,
+          promptMessage: 'Autoriza modificar la nota privada',
+          onAuthorized: () => {
+            successHaptic();
+            updateNote(note.id, { items: toggleCheckItem(note.items, action.itemId), updatedAt: Date.now() });
+          },
+        });
+        if (!result.ok) return;
       } else {
         return;
       }
@@ -121,6 +145,11 @@ export default function AssistantScreen({ navigation }) {
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.headerTop}>
+          <HeaderIconButton
+            icon="chevronLeft"
+            label="Volver"
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigateToRoute(navigation, 'Inicio'))}
+          />
           <View style={styles.headerText}>
             <Text style={typography.display} numberOfLines={1}>
               Nexus AI
@@ -187,7 +216,7 @@ export default function AssistantScreen({ navigation }) {
               {entry.route ? (
                 <TextButton
                   label={entry.routeLabel || `Abrir ${entry.route}`}
-                  onPress={() => navigation.navigate(entry.route)}
+                  onPress={() => navigateToRoute(navigation, entry.route)}
                 />
               ) : null}
             </Card>

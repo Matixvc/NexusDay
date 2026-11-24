@@ -431,7 +431,7 @@ export function DeveloperModeScreen() {
   };
 
   return (
-    <Screen title="Modo Desarrollador" subtitle="Entorno de pruebas aislado. Los datos reales no se modifican.">
+    <Screen title="Modo Desarrollador" subtitle="Entorno de pruebas aislado. Los datos reales no se modifican." backButton={false}>
       <View style={styles.headerBadge}>
         <Text style={styles.badgeText}>DEV</Text>
         <Text style={styles.badgeHint}>Solo disponible en builds de desarrollo</Text>

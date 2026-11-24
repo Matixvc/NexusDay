@@ -1,165 +1,102 @@
 /**
- * Bases de pantalla (Ajustes › Modo de pantalla).
- *
- * El acento tiñe la interfaz; la *base* decide sobre qué se pinta. Modern Dark es la opción
- * inicial, AMOLED conserva negro puro y Claro usa una base fría de alta legibilidad. Las tres
- * declaran los mismos nombres de token, así
- * que el resto de la app nunca bifurca: sigue leyendo `colors.surface`, `colors.textMuted`… y
- * `applyTheme` los repinta.
- *
- * Los tonos de texto se eligen *por base* — los grises que se leen a 7:1 sobre negro caen bajo
- * 2:1 sobre blanco — así que el contraste vive aquí y no en `typography`.
- *
- * La unicidad de valores dentro de una base importa: `applyTheme` repinta las hojas de estilo
- * congeladas intercambiando cadenas de color, así que dos tokens que compartieran valor en la
- * misma base serían indistinguibles al intercambiar. `findTokenCollisions` vigila ese
- * invariante si una paleta se edita.
- *
- * Data pura, sin imports a propósito: `theme.js` la lee, así que cualquier archivo puede
- * importarla también.
+ * Las cuatro identidades visuales seleccionables de NexusDay.
+ * Todas exponen el mismo contrato de tokens. `amoled` se conserva como alias de lectura:
+ * al hidratar una preferencia histórica se normaliza a `mono`.
  */
 export const SURFACE_MODES = [
   {
-    id: 'dark',
-    label: 'Modern Dark',
-    hint: 'Azul noche profundo con superficies vibrantes y contraste c\u00f3modo.',
-    dark: true,
-    statusBar: 'light',
-    swatch: ['#101422', '#F7F8FC'],
+    id: 'light', label: 'Claro',
+    hint: 'Base luminosa, tarjetas limpias y textos oscuros de alta legibilidad.',
+    dark: false, statusBar: 'dark', swatch: ['#F7F8FC', '#171A26'],
     tokens: {
-      background: '#101422',
-      elevated: '#151A2A',
-      surface: '#1A2032',
-      surfaceAlt: '#222A40',
-      surfacePlus: '#2A334B',
-      border: '#303A54',
-      borderStrong: '#66718B',
-      text: '#F7F8FC',
-      textSecondary: '#C9CEDD',
-      textMuted: '#9EA7BC',
-      scrim: 'rgba(5, 7, 14, 0.70)',
-      scrimStrong: 'rgba(5, 7, 14, 0.86)',
-      scrimMax: 'rgba(5, 7, 14, 0.94)',
-      panel: 'rgba(26, 32, 50, 0.84)',
-      panelStrong: 'rgba(26, 32, 50, 0.97)',
-      mint: '#5EDDD4',
-      mintSoft: 'rgba(94, 221, 212, 0.14)',
-      mintInk: '#082A2A',
-      amber: '#FFC478',
-      amberSoft: 'rgba(255, 196, 120, 0.15)',
-      amberInk: '#321A00',
-      coral: '#FF8BAD',
-      coralSoft: 'rgba(255, 139, 173, 0.15)',
-      coralInk: '#3A071A',
-      warning: '#FFD166',
-      warningSoft: 'rgba(255, 209, 102, 0.13)',
-      danger: '#FF7188',
-      dangerSoft: 'rgba(255, 113, 136, 0.14)',
+      background: '#F7F8FC', elevated: '#FFFFFF', surface: '#F1F3F8', surfaceAlt: '#E8ECF4', surfacePlus: '#DDE3EE',
+      border: '#D9DFEA', borderStrong: '#8792A8', text: '#171A26', textSecondary: '#4D5568', textMuted: '#626B7F',
+      scrim: 'rgba(255, 255, 255, 0.69)', scrimStrong: 'rgba(255, 255, 255, 0.85)', scrimMax: 'rgba(255, 255, 255, 0.93)',
+      panel: 'rgba(241, 243, 248, 0.86)', panelStrong: 'rgba(241, 243, 248, 0.98)',
+      mint: '#06766F', mintSoft: 'rgba(6, 118, 111, 0.11)', mintInk: '#F3FFFE',
+      amber: '#8A4B00', amberSoft: 'rgba(138, 75, 0, 0.11)', amberInk: '#FFF9F0',
+      coral: '#B42355', coralSoft: 'rgba(180, 35, 85, 0.11)', coralInk: '#FFF4F7',
+      warning: '#A15C00', warningSoft: 'rgba(161, 92, 0, 0.12)', danger: '#C40024', dangerSoft: 'rgba(196, 0, 36, 0.12)',
     },
   },
   {
-    id: 'amoled',
-    label: 'Oscuro puro (AMOLED)',
-    hint: 'Fondo #000000 real: los píxeles se apagan y la batería rinde más.',
-    dark: true,
-    statusBar: 'light',
-    swatch: ['#000000', '#F5F5F7'],
+    id: 'dark', label: 'Oscuro',
+    hint: 'Azul noche equilibrado, con superficies separadas y contraste cómodo.',
+    dark: true, statusBar: 'light', swatch: ['#101422', '#F7F8FC'],
     tokens: {
-      background: '#000000',
-      elevated: '#08080B',
-      surface: '#0D0D11',
-      surfaceAlt: '#15151C',
-      surfacePlus: '#202028',
-      border: '#1E1E26',
-      borderStrong: '#2E2E3A',
-      text: '#F5F5F7',
-      // Medido sobre `surface` (#0D0D11): textSecondary 9.1:1, textMuted 6.6:1 — ambos superan
-      // WCAG AA sobre cada panel de la base.
-      textSecondary: '#C7C7CF',
-      textMuted: '#9A9AA6',
-      scrim: 'rgba(0, 0, 0, 0.69)',
-      scrimStrong: 'rgba(0, 0, 0, 0.85)',
-      scrimMax: 'rgba(0, 0, 0, 0.93)',
-      panel: 'rgba(13, 13, 17, 0.82)',
-      panelStrong: 'rgba(13, 13, 17, 0.96)',
-      mint: '#61E2D8',
-      mintSoft: 'rgba(97, 226, 216, 0.14)',
-      mintInk: '#062521',
-      amber: '#FFCA85',
-      amberSoft: 'rgba(255, 202, 133, 0.15)',
-      amberInk: '#2F1900',
-      coral: '#FF91B1',
-      coralSoft: 'rgba(255, 145, 177, 0.15)',
-      coralInk: '#350616',
-      // Sobre el negro puro los tonos de aviso suben un punto para seguir legibles.
-      warning: '#FFC400',
-      warningSoft: 'rgba(255, 196, 0, 0.16)',
-      danger: '#FF4D5E',
-      dangerSoft: 'rgba(255, 77, 94, 0.16)',
+      background: '#101422', elevated: '#151A2A', surface: '#1A2032', surfaceAlt: '#222A40', surfacePlus: '#2A334B',
+      border: '#303A54', borderStrong: '#66718B', text: '#F7F8FC', textSecondary: '#C9CEDD', textMuted: '#9EA7BC',
+      scrim: 'rgba(5, 7, 14, 0.70)', scrimStrong: 'rgba(5, 7, 14, 0.86)', scrimMax: 'rgba(5, 7, 14, 0.94)',
+      panel: 'rgba(26, 32, 50, 0.84)', panelStrong: 'rgba(26, 32, 50, 0.97)',
+      mint: '#5EDDD4', mintSoft: 'rgba(94, 221, 212, 0.14)', mintInk: '#082A2A',
+      amber: '#FFC478', amberSoft: 'rgba(255, 196, 120, 0.15)', amberInk: '#321A00',
+      coral: '#FF8BAD', coralSoft: 'rgba(255, 139, 173, 0.15)', coralInk: '#3A071A',
+      warning: '#FFD166', warningSoft: 'rgba(255, 209, 102, 0.13)', danger: '#FF7188', dangerSoft: 'rgba(255, 113, 136, 0.14)',
     },
   },
   {
-    id: 'light',
-    label: 'Claro',
-    hint: 'Base luminosa suave con textos oscuros y bordes discretos.',
-    dark: false,
-    statusBar: 'dark',
-    swatch: ['#F7F8FC', '#171A26'],
+    id: 'mono', label: 'Blanco y negro',
+    hint: 'Negro puro, blanco y grises neutros; conserva tu acento sin mostrar color.',
+    dark: true, statusBar: 'light', swatch: ['#050505', '#F7F7F7'],
     tokens: {
-      background: '#F7F8FC',
-      // Un modo claro no apila paneles como uno oscuro (no hay nada más brillante a dónde ir),
-      // así que el eje se invierte: la página es blanca y las tarjetas bajan a gris.
-      elevated: '#FFFFFF',
-      surface: '#F1F3F8',
-      surfaceAlt: '#E8ECF4',
-      surfacePlus: '#DDE3EE',
-      border: '#D9DFEA',
-      borderStrong: '#8792A8',
-      text: '#171A26',
-      // Afinados sobre `surface` para conservar AA a plena luz.
-      textSecondary: '#4D5568',
-      textMuted: '#626B7F',
-      scrim: 'rgba(255, 255, 255, 0.69)',
-      scrimStrong: 'rgba(255, 255, 255, 0.85)',
-      scrimMax: 'rgba(255, 255, 255, 0.93)',
-      panel: 'rgba(241, 243, 248, 0.86)',
-      panelStrong: 'rgba(241, 243, 248, 0.98)',
-      mint: '#06766F',
-      mintSoft: 'rgba(6, 118, 111, 0.11)',
-      mintInk: '#F3FFFE',
-      amber: '#8A4B00',
-      amberSoft: 'rgba(138, 75, 0, 0.11)',
-      amberInk: '#FFF9F0',
-      coral: '#B42355',
-      coralSoft: 'rgba(180, 35, 85, 0.11)',
-      coralInk: '#FFF4F7',
-      // Ámbar y coral afinados para la luz del día: `#FFC400` sobre blanco es 1.4:1, así que la
-      // base clara usa sus contrapartes tostadas (4.6:1 y 5.0:1).
-      warning: '#A15C00',
-      warningSoft: 'rgba(161, 92, 0, 0.12)',
-      danger: '#C40024',
-      dangerSoft: 'rgba(196, 0, 36, 0.12)',
+      background: '#050505', elevated: '#0B0B0B', surface: '#121212', surfaceAlt: '#1A1A1A', surfacePlus: '#242424',
+      border: '#303030', borderStrong: '#707070', text: '#F7F7F7', textSecondary: '#D0D0D0', textMuted: '#A5A5A5',
+      scrim: 'rgba(0, 0, 0, 0.69)', scrimStrong: 'rgba(0, 0, 0, 0.85)', scrimMax: 'rgba(0, 0, 0, 0.93)',
+      panel: 'rgba(18, 18, 18, 0.82)', panelStrong: 'rgba(18, 18, 18, 0.96)',
+      mint: '#E8E8E8', mintSoft: 'rgba(232, 232, 232, 0.12)', mintInk: '#161616',
+      amber: '#DADADA', amberSoft: 'rgba(218, 218, 218, 0.13)', amberInk: '#101010',
+      coral: '#CCCCCC', coralSoft: 'rgba(204, 204, 204, 0.14)', coralInk: '#080808',
+      warning: '#BEBEBE', warningSoft: 'rgba(190, 190, 190, 0.15)', danger: '#B0B0B0', dangerSoft: 'rgba(176, 176, 176, 0.16)',
+    },
+  },
+  {
+    id: 'nex', label: 'Nex',
+    hint: 'Grafito y carbón con acentos definidos, tarjetas elegantes y jerarquía firme.',
+    dark: true, statusBar: 'light', swatch: ['#111315', '#F5F7FA'],
+    tokens: {
+      background: '#111315', elevated: '#171A1D', surface: '#1D2125', surfaceAlt: '#252A2F', surfacePlus: '#2E343A',
+      border: '#343B42', borderStrong: '#77818B', text: '#F5F7FA', textSecondary: '#CDD3DA', textMuted: '#A4ADB6',
+      scrim: 'rgba(7, 9, 11, 0.70)', scrimStrong: 'rgba(7, 9, 11, 0.86)', scrimMax: 'rgba(7, 9, 11, 0.94)',
+      panel: 'rgba(29, 33, 37, 0.84)', panelStrong: 'rgba(29, 33, 37, 0.97)',
+      mint: '#61E2D8', mintSoft: 'rgba(97, 226, 216, 0.14)', mintInk: '#062521',
+      amber: '#FFCA85', amberSoft: 'rgba(255, 202, 133, 0.15)', amberInk: '#2F1900',
+      coral: '#FF91B1', coralSoft: 'rgba(255, 145, 177, 0.15)', coralInk: '#350616',
+      warning: '#FFD166', warningSoft: 'rgba(255, 209, 102, 0.13)', danger: '#FF7188', dangerSoft: 'rgba(255, 113, 136, 0.14)',
     },
   },
 ];
 
-export const DEFAULT_SURFACE_ID = 'dark';
+export const DEFAULT_SURFACE_ID = 'nex';
 
+const SURFACE_ALIASES = Object.freeze({ amoled: 'mono' });
 const SURFACE_INDEX = new Map(SURFACE_MODES.map((mode) => [mode.id, mode]));
 
+export function normalizeSurfaceId(id) {
+  const normalized = SURFACE_ALIASES[id] || id;
+  return SURFACE_INDEX.has(normalized) ? normalized : DEFAULT_SURFACE_ID;
+}
+
+export function resolveSurfacePreference(id) {
+  const surfaceId = normalizeSurfaceId(id);
+  return { surfaceId, shouldPersist: typeof id === 'string' && id !== surfaceId };
+}
+
+export async function resolveHydratedSurfacePreference(id, { persist, canApply } = {}) {
+  const preference = resolveSurfacePreference(id);
+  if (preference.shouldPersist && typeof persist === 'function') {
+    await persist(preference.surfaceId);
+  }
+  return typeof canApply !== 'function' || canApply() ? preference.surfaceId : null;
+}
+
 export function getSurfaceMode(id) {
-  return SURFACE_INDEX.get(id) || SURFACE_INDEX.get(DEFAULT_SURFACE_ID);
+  return SURFACE_INDEX.get(normalizeSurfaceId(id));
 }
 
 export function isSurfaceId(id) {
-  return SURFACE_INDEX.has(id);
+  return SURFACE_INDEX.has(id) || Object.prototype.hasOwnProperty.call(SURFACE_ALIASES, id);
 }
 
-/**
- * Cross-checks a resolved palette for two tokens sharing one colour string. `applyTheme`
- * repaints the frozen style sheets by swapping value strings, so a duplicate would silently
- * repaint the wrong property. Only a development guard — never throws in the app.
- */
 export function findTokenCollisions(tokens) {
   const seen = new Map();
   const clashes = [];

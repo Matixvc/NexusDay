@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { DarkTheme } from '@react-navigation/native';
 import { DEFAULT_ACCENT_ID, getAccentTheme, isAccentId, resolveAccent } from './accents';
-import { DEFAULT_SURFACE_ID, findTokenCollisions, getSurfaceMode, isSurfaceId } from './surfaces';
+import { DEFAULT_SURFACE_ID, findTokenCollisions, getSurfaceMode, isSurfaceId, normalizeSurfaceId } from './surfaces';
 
 /**
  * Which theme is painted right now, and how to repaint it.
@@ -147,22 +147,20 @@ export const calendarTheme = {
   textDayFontWeight: '500',
   textMonthFontWeight: '700',
   textDayHeaderFontWeight: '600',
-  textDayFontSize: 15,
-  textMonthFontSize: 15.5,
+  textDayFontSize: 16,
+  textMonthFontSize: 17,
   textDayHeaderFontSize: 10.5,
   'stylesheet.calendar.header': {
     week: { marginTop: spacing.md, flexDirection: 'row', justifyContent: 'space-between' },
-    month: { paddingTop: spacing.sm, alignItems: 'center' },
   },
   'stylesheet.calendar.main': {
     container: { paddingHorizontal: 0, paddingTop: spacing.sm, paddingBottom: 0 },
-    week: { marginVertical: 1, flexDirection: 'row', justifyContent: 'space-between' },
+    week: { marginVertical: 3, flexDirection: 'row', justifyContent: 'space-between' },
   },
   'stylesheet.day.basic': {
-    base: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    base: { flex: 1, minWidth: 0, minHeight: 44, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
     selected: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent },
     today: { borderColor: 'transparent', borderRadius: radius.pill },
-    text: { color: colors.text, fontWeight: '500' },
     selectedText: { color: colors.accent, fontWeight: '700' },
   },
 };
@@ -266,7 +264,7 @@ function buildRepaintMap(resolved) {
 export function applyTheme(patch = {}) {
   const next = {
     accentId: isAccentId(patch.accentId) ? patch.accentId : applied.accentId,
-    surfaceId: isSurfaceId(patch.surfaceId) ? patch.surfaceId : applied.surfaceId,
+    surfaceId: isSurfaceId(patch.surfaceId) ? normalizeSurfaceId(patch.surfaceId) : applied.surfaceId,
   };
   const resolved = resolveTokens(next);
   const { changes, clashes } = buildRepaintMap(resolved);

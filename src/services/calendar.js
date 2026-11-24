@@ -11,6 +11,34 @@ export const CALENDAR_FILTERS = [
 const FILTER_BY_KIND = { event: 'events', class: 'classes', birthday: 'birthdays' };
 const included = (filter, kind) => filter === 'all' || filter === FILTER_BY_KIND[kind];
 
+/** Month key used by the calendar pager, normalized to the first day. */
+export function shiftCalendarMonth(monthKey, amount) {
+  const [year, month] = String(monthKey || '').split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(amount)) {
+    return monthKey;
+  }
+  const shifted = new Date(year, month - 1 + amount, 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/** Keep the selected day when navigating months, clamped to shorter months. */
+export function dateKeyInMonth(dateKey, monthKey) {
+  const [year, month] = String(monthKey || '').split('-').map(Number);
+  const day = Number(String(dateKey || '').slice(8, 10));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day)) {
+    return dateKey;
+  }
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+export function calendarEmptyState(filter = 'all') {
+  if (filter === 'events') return { title: 'Sin eventos', hint: 'No hay eventos personales para esta fecha.' };
+  if (filter === 'birthdays') return { title: 'Sin cumpleaños', hint: 'No hay cumpleaños para esta fecha.' };
+  if (filter === 'classes') return { title: 'Sin clases', hint: 'No hay clases programadas para esta fecha.' };
+  return { title: 'Día libre', hint: 'No hay eventos, clases ni cumpleaños para esta fecha.' };
+}
+
 export function buildDayAgenda({ dateKey, events = [], activities = [], birthdays = [], filter = 'all' }) {
   const dayOfWeek = weekdayIndex(fromDateKey(dateKey));
   const rows = [];

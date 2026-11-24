@@ -1,72 +1,104 @@
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createContext, useContext, useMemo } from 'react';
 import { View } from 'react-native';
-import { useMemo } from 'react';
+import { useSwipeLock } from '../context/SwipeLockContext';
+import { useAppData } from '../context/AppDataContext';
+import { useTheme } from '../context/ThemeContext';
 import { themedStyles, colors, navigationTheme } from '../theme/theme';
 import { BottomTabBar } from './BottomTabBar';
-import { TABS, HOME_TAB } from './tabs';
-import { useTheme } from '../context/ThemeContext';
+import { HOME_TAB, PRIMARY_TAB_NAMES, TABS } from './tabs';
 
+const Stack = createNativeStackNavigator();
 const Tab = createMaterialTopTabNavigator();
+const RouteChangeContext = createContext(() => {});
+const PRIMARY_NAVIGATOR_ROUTE = 'Principal';
 
 /**
- * Main navigation.
- *
- * The custom bottom bar exposes three destinations. All historical routes remain registered
- * for focused flows and legacy links, while paging is disabled so secondary routes cannot
- * appear through an accidental horizontal swipe.
- *
- * The navigator subscribes to the theme revision so that `NavigationContainer` receives a
- * fresh `theme` reference whenever the accent or surface changes. The navigator itself is
- * never unmounted by a theme change, so the user stays on the same screen and keeps their
- * scroll position.
+ * Three swipeable primary pages live inside a native stack. Secondary destinations are
+ * pushed above them, so a horizontal page gesture can never land on Settings or a module.
  */
-export default function RootNavigator({ initialRouteName = HOME_TAB, onRouteChange }) {
-  // Theme changes repaint styles in place, but NavigationContainer needs a new theme
-  // reference to refresh its internal context. We force a re-render on revision change
-  // without unmounting the navigator.
+export default function RootNavigator({ initialRouteName = HOME_TAB, initialPrimaryRouteName = HOME_TAB, onRouteChange }) {
+  const navigationRef = useNavigationContainerRef();
   const { revision } = useTheme();
+  const { settings } = useAppData();
+  const reduceMotion = settings?.reduceMotion === true;
   const theme = useMemo(
-    () => ({
-      ...navigationTheme,
-      colors: { ...navigationTheme.colors },
-      revision,
-    }),
+    () => ({ ...navigationTheme, colors: { ...navigationTheme.colors }, revision }),
     [revision],
   );
+  const isPrimaryRoute = PRIMARY_TAB_NAMES.includes(initialRouteName);
+  const isSecondaryRoute = !isPrimaryRoute && TABS.some((tab) => tab.name === initialRouteName);
+  const primaryRoute = PRIMARY_TAB_NAMES.includes(initialPrimaryRouteName) ? initialPrimaryRouteName : HOME_TAB;
+  const openRestoredSecondaryRoute = () => {
+    if (isSecondaryRoute) navigationRef.navigate(initialRouteName);
+  };
 
   return (
-    <NavigationContainer theme={theme}>
-      <Tab.Navigator
-        initialRouteName={TABS.some((tab) => tab.name === initialRouteName) ? initialRouteName : HOME_TAB}
-        tabBarPosition="bottom"
-        tabBar={(props) => <BottomTabBar {...props} />}
-        screenOptions={{
-          swipeEnabled: false,
-          animationEnabled: true,
-          lazy: true,
-          lazyPreloadDistance: 1,
-          lazyPlaceholder: Placeholder,
-          sceneStyle: styles.scene,
-          tabBarActiveTintColor: colors.accent,
-          tabBarInactiveTintColor: colors.textMuted,
-        }}
-      >
-        {TABS.map((tab) => (
-          <Tab.Screen
-            key={tab.name}
-            name={tab.name}
-            component={tab.component}
-            listeners={{ focus: () => onRouteChange?.(tab.name) }}
-            options={{ title: tab.label }}
+    <NavigationContainer ref={navigationRef} theme={theme} onReady={openRestoredSecondaryRoute}>
+      <RouteChangeContext.Provider value={onRouteChange}>
+        <Stack.Navigator
+          initialRouteName={PRIMARY_NAVIGATOR_ROUTE}
+          screenOptions={{ headerShown: false, animation: reduceMotion ? 'none' : 'default', contentStyle: styles.scene }}
+        >
+          <Stack.Screen
+            name={PRIMARY_NAVIGATOR_ROUTE}
+            component={PrimaryTabNavigator}
+            initialParams={{ initialRouteName: isPrimaryRoute ? initialRouteName : primaryRoute }}
+            options={{ headerShown: false }}
           />
-        ))}
-      </Tab.Navigator>
+          {TABS.filter((tab) => !PRIMARY_TAB_NAMES.includes(tab.name)).map((tab) => (
+            <Stack.Screen
+              key={tab.name}
+              name={tab.name}
+              component={tab.component}
+              listeners={{ focus: () => onRouteChange?.(tab.name) }}
+              options={{ headerShown: false }}
+            />
+          ))}
+        </Stack.Navigator>
+      </RouteChangeContext.Provider>
     </NavigationContainer>
   );
 }
 
-/** Shown for the split second a lazily-mounted section needs to render. */
+function PrimaryTabNavigator({ route }) {
+  const { locked } = useSwipeLock();
+  const onRouteChange = useContext(RouteChangeContext);
+  const requestedRoute = route.params?.initialRouteName;
+  const initialRouteName = PRIMARY_TAB_NAMES.includes(requestedRoute) ? requestedRoute : HOME_TAB;
+
+  return (
+    <Tab.Navigator
+      initialRouteName={initialRouteName}
+      tabBarPosition="bottom"
+      tabBar={(props) => <BottomTabBar {...props} />}
+      screenOptions={{
+        swipeEnabled: !locked,
+        animationEnabled: false,
+        lazy: true,
+        lazyPreloadDistance: 1,
+        lazyPlaceholder: Placeholder,
+        sceneStyle: styles.scene,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textMuted,
+      }}
+    >
+      {TABS.filter((tab) => PRIMARY_TAB_NAMES.includes(tab.name)).map((tab) => (
+        <Tab.Screen
+          key={tab.name}
+          name={tab.name}
+          component={tab.component}
+          listeners={{ focus: () => onRouteChange?.(tab.name) }}
+          options={{ title: tab.label }}
+        />
+      ))}
+    </Tab.Navigator>
+  );
+}
+
+/** Shown for the brief moment before a lazily mounted page is ready. */
 function Placeholder() {
   return <View style={styles.placeholder} />;
 }

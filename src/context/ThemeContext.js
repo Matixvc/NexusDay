@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_ACCENT_ID, getAccentTheme, isAccentId, resolveAccent } from '../theme/accents';
-import { DEFAULT_SURFACE_ID, getSurfaceMode, isSurfaceId } from '../theme/surfaces';
+import {
+  DEFAULT_SURFACE_ID,
+  getSurfaceMode,
+  isSurfaceId,
+  normalizeSurfaceId,
+  resolveHydratedSurfacePreference,
+} from '../theme/surfaces';
 import { applyTheme } from '../theme/theme';
 import { KEYS, loadValue, saveValue } from '../services/storage';
 
@@ -42,9 +48,14 @@ export function ThemeProvider({ children }) {
       // used to land *after* an early tap and paint the old theme over the new one, so the
       // second tap looked like the only one that worked.
       if (!alive || picked.current) return;
+      const hydratedSurfaceId = await resolveHydratedSurfacePreference(surface, {
+        persist: (surfaceId) => saveValue(KEYS.surface, surfaceId),
+        canApply: () => alive && !picked.current,
+      });
+      if (!hydratedSurfaceId) return;
       const wanted = {
         accentId: isAccentId(accent) ? accent : DEFAULT_ACCENT_ID,
-        surfaceId: isSurfaceId(surface) ? surface : DEFAULT_SURFACE_ID,
+        surfaceId: hydratedSurfaceId,
       };
       // The default pair is already painted, and remounting the whole app to paint it again
       // would be the cost of a cold start with nothing stored.
@@ -61,7 +72,7 @@ export function ThemeProvider({ children }) {
   const setTheme = useCallback((patch) => {
     const next = {
       accentId: isAccentId(patch.accentId) ? patch.accentId : painted.current.accentId,
-      surfaceId: isSurfaceId(patch.surfaceId) ? patch.surfaceId : painted.current.surfaceId,
+      surfaceId: isSurfaceId(patch.surfaceId) ? normalizeSurfaceId(patch.surfaceId) : painted.current.surfaceId,
     };
     if (next.accentId === painted.current.accentId && next.surfaceId === painted.current.surfaceId) return;
     picked.current = true;

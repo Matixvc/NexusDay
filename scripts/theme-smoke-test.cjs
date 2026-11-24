@@ -47,6 +47,8 @@ const surfaceModule = loadPureModule('src/theme/surfaces.js', [
   'DEFAULT_SURFACE_ID',
   'getSurfaceMode',
   'isSurfaceId',
+  'normalizeSurfaceId',
+  'resolveSurfacePreference',
   'findTokenCollisions',
 ]);
 const accentModule = loadPureModule('src/theme/accents.js', [
@@ -61,13 +63,23 @@ const brand = readConstExport('src/theme/theme.js', 'brand', 'spacing');
 const overlay = themeSource.match(/Object\.assign\(\{ overlay: '([^']+)'/)?.[1];
 const surfaces = surfaceModule.SURFACE_MODES;
 const accents = accentModule.ACCENT_THEMES;
-const expectedIds = ['dark', 'amoled', 'light'];
+const expectedIds = ['light', 'dark', 'mono', 'nex'];
 const historicalAccentIds = ['verde', 'cian', 'azul', 'rojo', 'amarillo', 'purpura'];
 const tokenKeys = Object.keys(surfaces[0].tokens).sort();
 
-assert(JSON.stringify(surfaces.map((mode) => mode.id)) === JSON.stringify(expectedIds), 'Las superficies deben ser dark, amoled y light.');
-assert(surfaceModule.DEFAULT_SURFACE_ID === 'dark', 'Modern Dark debe ser la superficie por defecto.');
-assert(surfaceModule.getSurfaceMode('desconocido').id === 'dark', 'Una superficie desconocida debe caer en Modern Dark.');
+assert(JSON.stringify(surfaces.map((mode) => mode.id)) === JSON.stringify(expectedIds), 'Deben existir exactamente Claro, Oscuro, Blanco y negro y Nex.');
+assert(surfaceModule.DEFAULT_SURFACE_ID === 'nex', 'Nex debe ser la identidad visual por defecto.');
+assert(surfaceModule.getSurfaceMode('desconocido').id === 'nex', 'Una superficie desconocida debe caer en Nex.');
+assert(surfaceModule.normalizeSurfaceId('amoled') === 'mono', 'El identificador histórico amoled debe resolver a Blanco y negro.');
+assert(surfaceModule.isSurfaceId('amoled'), 'El identificador histórico amoled debe seguir siendo aceptado.');
+assert(
+  JSON.stringify(surfaceModule.resolveSurfacePreference('amoled')) === JSON.stringify({ surfaceId: 'mono', shouldPersist: true }),
+  'La preferencia amoled debe solicitar persistencia explícita de su migración.',
+);
+assert(
+  JSON.stringify(surfaceModule.resolveSurfacePreference('dark')) === JSON.stringify({ surfaceId: 'dark', shouldPersist: false }),
+  'Una preferencia vigente no debe reescribirse.',
+);
 assert(JSON.stringify(accents.map((accent) => accent.id)) === JSON.stringify(historicalAccentIds), 'Deben conservarse exactamente los seis acentos históricos.');
 assert(overlay, 'No se pudo leer el overlay real del runtime.');
 
@@ -89,6 +101,11 @@ for (const surface of surfaces) {
 
   for (const accent of accents) {
     const resolved = accentModule.resolveAccent(accent, surface.id);
+    if (surface.id === 'mono') {
+      const values = [resolved.accent, resolved.accentInk];
+      assert(values.every((value) => /^#([0-9a-f]{2})\1\1$/i.test(value)), 'Blanco y negro no puede mostrar cromas del acento.');
+      assert(resolved.accentSoft.startsWith('rgba(239, 239, 239,'), 'El relleno de acento monocromático debe usar gris neutro.');
+    }
     const combined = { overlay, ...tokens, accent: resolved.accent, accentSoft: resolved.accentSoft, accentInk: resolved.accentInk, ...brand };
     const seen = new Map();
     for (const [key, value] of Object.entries(combined)) {

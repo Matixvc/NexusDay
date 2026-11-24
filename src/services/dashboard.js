@@ -9,6 +9,7 @@ import {
   todayKey,
   weekdayIndex,
 } from '../utils/dates';
+import { filterDiscoverableRecords } from './privacyPolicy';
 import { sumAmounts } from '../utils/money';
 
 /**
@@ -85,6 +86,8 @@ export function buildDashboard({
   const currentTime = timeOf(now);
   const dayIndex = weekdayIndex(now);
   const monthPrefix = today.slice(0, 7);
+  const publicExpenses = filterDiscoverableRecords(expenses);
+  const publicNotes = filterDiscoverableRecords(notes);
 
   const todayActivities = activities
     .filter((item) => Number(item.day) === dayIndex)
@@ -127,8 +130,8 @@ export function buildDashboard({
     })),
   ].slice(0, 3);
 
-  const todayExpenses = expenses.filter((item) => item.dateKey === today);
-  const monthExpenses = expenses.filter((item) => String(item.dateKey || '').startsWith(monthPrefix));
+  const todayExpenses = publicExpenses.filter((item) => item.dateKey === today);
+  const monthExpenses = publicExpenses.filter((item) => String(item.dateKey || '').startsWith(monthPrefix));
 
   return {
     today,
@@ -149,8 +152,8 @@ export function buildDashboard({
     todayExpenses,
     spentToday: sumAmounts(todayExpenses),
     spentMonth: sumAmounts(monthExpenses),
-    notesCount: notes.length,
-    pinnedNotes: notes.filter((note) => note.pinned).length,
+    notesCount: publicNotes.length,
+    pinnedNotes: publicNotes.filter((note) => note.pinned).length,
     upcomingBirthdays: birthdays
       .map((birthday) => ({ ...birthday, inDays: daysFromToday(nextBirthdayKey(birthday, now)) }))
       .filter((item) => Number.isFinite(item.inDays) && item.inDays <= 30)

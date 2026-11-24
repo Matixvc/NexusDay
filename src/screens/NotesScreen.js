@@ -1,9 +1,10 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
-import { useFocusId } from '../hooks/useFocusId';
+import { useFocusRequest } from '../hooks/useFocusId';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
+import { Icon } from '../components/Icon';
 import {
   Card,
   Chip,
@@ -15,7 +16,6 @@ import {
   PrimaryButton,
   Screen,
   SectionTitle,
-  Stat,
   TextButton,
 } from '../components/ui/primitives';
 import { ColorPicker, TextArea, TextField } from '../components/ui/inputs';
@@ -24,7 +24,13 @@ import SwipeRow from '../components/ui/SwipeRow';
 import { Switch } from '../components/ui/Switch';
 import { AttachmentRow, VoicePlayback, VoiceRecorder } from '../components/ui/media';
 import { deleteRecording, formatSeconds } from '../services/audio';
-import { authenticate, describePrivacyFailure } from '../services/privacy';
+import { authorizePrivateAction, describePrivacyFailure } from '../services/privacy';
+import {
+  PRIVATE_ACTIONS,
+  applyPrivacyFlag,
+  canExposeInList,
+  redactPrivateRecord,
+} from '../services/privacyPolicy';
 import { describePickStatus, isAvailable as filesAvailable, pickAndImport, removeFile, shareFile } from '../services/files';
 import {
   NOTE_KINDS,
@@ -39,25 +45,31 @@ import {
 } from '../services/notes';
 import { select as selectHaptic, success as successHaptic } from '../services/haptics';
 import { timeAgo } from '../utils/dates';
+import { selectNoteGroups } from './notesPresentation';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
 const BLANK = () => ({ ...blankNote(colors.accent) });
+const EMPTY_NOTES_IMAGE = require('../../assets/nexusday-empty-notes.png');
 
-/** Fija las notas con casilla primero; dentro de cada grupo, la más reciente arriba. */
-function sortNotes(notes) {
-  return notes
-    .slice()
-    .sort(
-      (a, b) =>
-        Number(b.pinned === true) - Number(a.pinned === true) || (b.updatedAt || 0) - (a.updatedAt || 0),
-    );
-}
+const PRIVATE_NOTE_PLACEHOLDER = Object.freeze({
+  title: 'Nota privada',
+  body: 'Desbloquea para ver el contenido',
+  kind: NOTE_KINDS.text,
+  items: [],
+  tags: [],
+  color: null,
+  pinned: false,
+  audio: null,
+  attachment: null,
+  updatedAt: null,
+});
 
 export default function NotesScreen({ navigation }) {
   const { notes, addNote, updateNote, removeNote, settings } = useAppData();
   // The global lock can be turned off in Ajustes; secure by default.
   const privacyEnabled = settings?.privacyEnabled;
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [sheet, setSheet] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -66,41 +78,37 @@ export default function NotesScreen({ navigation }) {
   // Vista: lista vertical o cuadrícula de dos columnas; y la etiqueta activa del filtro superior.
   const [grid, setGrid] = useState(false);
   const [activeTag, setActiveTag] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [searchFocused, setSearchFocused] = useState(false);
   // Handle to the recorder living inside the sheet: "Guardar" has to close the microphone
   // *before* the sheet (and with it the recorder) unmounts.
   const recorderRef = useRef(null);
+  const handledFocusRequest = useRef(null);
 
-  const trimmed = query.trim().toLowerCase();
+  const trimmed = deferredQuery.trim().toLowerCase();
   // Set by the global search: the matched note opens straight in its editor.
-  const focusId = useFocusId();
+  const { focusId, request: focusRequest } = useFocusRequest(null);
   const [unlockError, setUnlockError] = useState(null);
 
-  // Etiquetas presentes en todas las notas, para el filtro superior.
-  const allTags = useMemo(() => collectTags(notes), [notes]);
+  const groups = useMemo(
+    () => selectNoteGroups(notes, { filter: activeFilter, tag: activeTag, query: trimmed }),
+    [notes, activeFilter, activeTag, trimmed],
+  );
+  const { publicNotes, filteredPublic, pinnedNotes, restNotes, visiblePrivate } = groups;
+  // Etiquetas presentes solo en notas públicas.
+  const allTags = useMemo(() => collectTags(publicNotes), [publicNotes]);
+  const hasFilters = Boolean(trimmed || activeTag || activeFilter !== 'all');
+  // Los grupos privados solo se incluyen como marcadores redactados; nunca entran en búsqueda,
+  // filtros de etiqueta o contadores públicos.
 
-  const visible = useMemo(() => {
-    const ordered = sortNotes(notes);
-    return ordered.filter((note) => {
-      // Filtro por etiqueta (independiente del buscador).
-      if (activeTag && !(Array.isArray(note.tags) && note.tags.includes(activeTag))) return false;
-      if (!trimmed) return true;
-      const inText =
-        String(note.title || '').toLowerCase().includes(trimmed) ||
-        String(note.body || '').toLowerCase().includes(trimmed) ||
-        (Array.isArray(note.items) &&
-          note.items.some((item) => String(item.text || '').toLowerCase().includes(trimmed))) ||
-        (Array.isArray(note.tags) && note.tags.some((tag) => String(tag).toLowerCase().includes(trimmed)));
-      return inText;
-    });
-  }, [notes, trimmed, activeTag]);
+  const pinnedCount = useMemo(() => publicNotes.filter((note) => note.pinned).length, [publicNotes]);
 
-  // Fijadas en su propia sección destacada; el resto debajo.
-  const pinnedNotes = visible.filter((note) => note.pinned);
-  const restNotes = visible.filter((note) => !note.pinned);
-
-  const pinnedCount = notes.filter((note) => note.pinned).length;
-
-  const openCreate = useCallback(() => setSheet({ mode: 'create', values: { ...BLANK() } }), []);
+  const openCreate = useCallback(() => {
+    setQuery('');
+    setActiveTag(null);
+    setActiveFilter('all');
+    setSheet({ mode: 'create', values: { ...BLANK() } });
+  }, []);
 
   /** Rellena el editor con el modelo completo de la nota (texto o checklist, con sus tags). */
   const toSheetValues = (note) => ({
@@ -157,45 +165,62 @@ export default function NotesScreen({ navigation }) {
     setValue({ tags: toggleTag(sheet.values.tags, label) });
   };
 
+  const runNoteAction = useCallback(async (note, action, promptMessage, onAuthorized) => {
+    const result = await authorizePrivateAction({
+      record: note,
+      action,
+      privacyEnabled,
+      promptMessage,
+      onAuthorized,
+    });
+    setUnlockError(result.ok ? null : describePrivacyFailure(result.reason));
+    return result.ok;
+  }, [privacyEnabled]);
+
   /** A private note only opens after the phone confirms who is holding it. */
-  const openNote = useCallback(async (note) => {
-    if (!note.private || privacyEnabled === false) {
-      setUnlockError(null);
-      openEdit(note);
-      return;
-    }
-    const result = await authenticate({ promptMessage: `Desbloquea “${note.title || 'la nota'}”` });
-    if (result.ok) {
-      setUnlockError(null);
-      openEdit(note);
-      return;
-    }
-    setUnlockError(describePrivacyFailure(result.reason));
-  }, [openEdit, privacyEnabled]);
+  const openNote = useCallback(
+    (note, stillCurrent = () => true) => runNoteAction(
+      note,
+      PRIVATE_ACTIONS.open,
+      'Desbloquea la nota privada',
+      () => {
+        if (stillCurrent()) openEdit(note);
+      },
+    ),
+    [openEdit, runNoteAction],
+  );
 
   // The global search can ask for a specific note: open it in its editor as soon as the
-  // list is hydrated. SetState during render is the pattern React recommends for deriving
-  // state from props, and the guard keeps it to one update.
-  const focusedNote = focusId ? notes.find((note) => note.id === focusId) : null;
-  if (focusedNote && sheet?.id !== focusedNote.id) {
-    setSheet({
-      mode: 'edit',
-      id: focusedNote.id,
-      original: focusedNote,
-      values: toSheetValues(focusedNote),
+  // list is hydrated. Taps and navigation params share the same guarded open path.
+  useEffect(() => {
+    if (!focusId) {
+      return;
+    }
+    if (handledFocusRequest.current === focusRequest) return;
+    const focusedNote = notes.find((note) => note.id === focusId);
+    if (!focusedNote) return;
+    handledFocusRequest.current = focusRequest;
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) {
+        void openNote(focusedNote, () => active && handledFocusRequest.current === focusRequest);
+      }
     });
-  }
+    return () => {
+      active = false;
+    };
+  }, [focusId, focusRequest, notes, openNote]);
 
   /** Marca/desmarca una casilla directamente desde la tarjeta, con háptica de confirmación. */
   const toggleItemFromCard = useCallback(
-    (note, itemId) => {
+    (note, itemId) => runNoteAction(note, PRIVATE_ACTIONS.mutate, 'Desbloquea la nota privada', () => {
       const items = toggleCheckItem(note.items, itemId);
       updateNote(note.id, { items, updatedAt: Date.now() });
       const nowDone = items.find((item) => item.id === itemId)?.done;
       if (nowDone) successHaptic();
       else selectHaptic();
-    },
-    [updateNote],
+    }),
+    [runNoteAction, updateNote],
   );
 
   // Una nota guarda sentido con título, texto, o al menos una casilla por marcar.
@@ -259,7 +284,7 @@ export default function NotesScreen({ navigation }) {
       updateNote(id, { ...payload, pinned: values.pinned, private: Boolean(values.private), updatedAt: Date.now() });
     } else {
       const stamp = Date.now();
-      addNote({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp });
+      addNote(applyPrivacyFlag({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp }, values.private));
     }
 
     setSaving(false);
@@ -291,43 +316,154 @@ export default function NotesScreen({ navigation }) {
     setPickError(null);
   };
 
-  const togglePin = useCallback((note) => updateNote(note.id, { pinned: !note.pinned }), [updateNote]);
-
-  const togglePrivate = useCallback(
-    (note) => updateNote(note.id, { private: !note.private }),
-    [updateNote],
+  const togglePin = useCallback(
+    (note) => runNoteAction(
+      note,
+      PRIVATE_ACTIONS.mutate,
+      'Desbloquea la nota privada',
+      () => updateNote(note.id, { pinned: !note.pinned }),
+    ),
+    [runNoteAction, updateNote],
   );
 
-  const requestDelete = useCallback((id) => setConfirmId(id), []);
+  const togglePrivate = useCallback(
+    (note) => runNoteAction(
+      note,
+      note.private ? PRIVATE_ACTIONS.removePrivacy : PRIVATE_ACTIONS.mutate,
+      'Autoriza quitar la privacidad de la nota',
+      () => updateNote(note.id, { private: !note.private }),
+    ),
+    [runNoteAction, updateNote],
+  );
+
+  const requestDelete = useCallback(
+    (note) => runNoteAction(
+      note,
+      PRIVATE_ACTIONS.delete,
+      'Autoriza eliminar la nota privada',
+      () => setConfirmId(note.id),
+    ),
+    [runNoteAction],
+  );
+
+  const changeSheetPrivacy = useCallback(
+    (value) => {
+      if (!sheet || value === Boolean(sheet.values.private)) return;
+      const original = sheet.original;
+      if (sheet.mode !== 'edit' || !original?.private || value !== false) {
+        setValue({ private: value });
+        return;
+      }
+      void runNoteAction(
+        original,
+        PRIVATE_ACTIONS.removePrivacy,
+        'Autoriza quitar la privacidad de la nota',
+        () => setValue({ private: false }),
+      );
+    },
+    [runNoteAction, sheet],
+  );
+
+  const requestSheetDelete = async () => {
+    if (!sheet?.original) return;
+    await runNoteAction(
+      sheet.original,
+      PRIVATE_ACTIONS.delete,
+      'Autoriza eliminar la nota privada',
+      async () => {
+        await recorderRef.current?.discardTake?.();
+        setConfirmId(sheet.id);
+        setSheet(null);
+      },
+    );
+  };
 
   return (
     <>
       <Screen
         title="Bloc de Notas"
-        subtitle="Rápidas, sin cuenta y sin nube."
+        subtitle="Ideas, listas y apuntes en un solo lugar."
         headerRight={
           <View style={styles.headerActions}>
-            <Pill label={`${notes.length} notas`} />
             <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={() => navigation.navigate('Ajustes')} />
           </View>
         }
       >
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Buscar por título, contenido o etiqueta"
-          placeholderTextColor={colors.textMuted}
-          style={styles.search}
-          selectionColor={colors.accent}
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
+        <View style={[styles.searchWrap, searchFocused ? styles.searchFocused : null]}>
+          <Icon name="search" size={20} color={searchFocused ? colors.accent : colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={(value) => {
+              setQuery(value);
+              if (value.trim() && activeFilter === 'private') setActiveFilter('all');
+            }}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            placeholder="Buscar en tus notas"
+            placeholderTextColor={colors.textMuted}
+            style={styles.search}
+            selectionColor={colors.accent}
+            autoCorrect={false}
+            returnKeyType="search"
+            accessibilityHint="Busca solo en notas públicas por título, texto, listas o etiquetas"
+            accessibilityLabel="Buscar notas por título, contenido o etiqueta"
+          />
+          {query ? (
+            <Pressable onPress={() => setQuery('')} accessibilityRole="button" accessibilityLabel="Limpiar búsqueda" style={styles.clearSearch}>
+              <Icon name="x" size={18} color={colors.textSecondary} />
+            </Pressable>
+          ) : null}
+        </View>
 
         {unlockError ? <Notice text={unlockError} tone="danger" /> : null}
 
-        {/* Filtro por etiquetas + alternador de vista. */}
-        {allTags.length ? (
+        <View accessible accessibilityLabel={`${publicNotes.length} notas públicas, ${pinnedCount} fijadas`} style={styles.summaryBar}>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryValue, typography.tabular]}>{publicNotes.length}</Text>
+            <Text style={styles.summaryLabel}>públicas</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Icon name="star" size={15} color={pinnedCount ? colors.accent : colors.textMuted} />
+            <Text style={styles.summaryLabel}>{pinnedCount} fijadas</Text>
+          </View>
+          <View style={styles.summarySpacer} />
+          <Pressable
+            onPress={() => {
+              selectHaptic();
+              setGrid((prev) => !prev);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={grid ? 'Ver como lista' : 'Ver como cuadrícula'}
+            style={({ pressed }) => [styles.viewToggle, pressed ? styles.pressed : null]}
+          >
+            <Icon name={grid ? 'list' : 'schedule'} size={19} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Text style={styles.filterLabel}>MOSTRAR</Text>
+        <ChipScroller contentContainerStyle={styles.tagScroller}>
+          {[
+            { id: 'all', label: 'Todas' },
+            { id: 'pinned', label: 'Fijadas' },
+            { id: 'private', label: 'Privadas' },
+          ].map((filter) => (
+            <Chip
+              key={filter.id}
+              label={filter.label}
+              selected={activeFilter === filter.id}
+              onPress={() => {
+                selectHaptic();
+                setActiveFilter(filter.id);
+                setActiveTag(null);
+                if (filter.id === 'private') setQuery('');
+              }}
+            />
+          ))}
+        </ChipScroller>
+
+        {activeFilter !== 'private' && allTags.length ? <Text style={styles.filterLabel}>ETIQUETAS</Text> : null}
+        {allTags.length && activeFilter !== 'private' ? (
           <ChipScroller contentContainerStyle={styles.tagScroller}>
             <Chip
               label="Todas"
@@ -353,32 +489,26 @@ export default function NotesScreen({ navigation }) {
           </ChipScroller>
         ) : null}
 
-        <View style={styles.statsRow}>
-          <Stat value={notes.length} label="en total" />
-          <Stat value={pinnedCount} label="fijas" accent={pinnedCount ? colors.accent : undefined} />
-          <Stat value={visible.length} label={trimmed || activeTag ? 'resultados' : 'visibles'} />
-          <Pressable
-            onPress={() => {
-              selectHaptic();
-              setGrid((prev) => !prev);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={grid ? 'Ver como lista' : 'Ver como cuadrícula'}
-            style={({ pressed }) => [styles.viewToggle, pressed ? styles.pressed : null]}
-          >
-            <Text style={styles.viewToggleText}>{grid ? '☰  Lista' : '▦  Cuadrícula'}</Text>
-          </Pressable>
-        </View>
-
-        {visible.length === 0 ? (
+        {filteredPublic.length === 0 && visiblePrivate.length === 0 ? (
           <EmptyState
-            emoji={trimmed || activeTag ? '🔍' : '📝'}
-            title={trimmed || activeTag ? 'Nada coincide' : 'Todavía no hay notas'}
+            image={hasFilters ? undefined : EMPTY_NOTES_IMAGE}
+            icon={hasFilters ? (activeFilter === 'private' ? 'lock' : 'search') : 'note'}
+            title={hasFilters ? 'Nada coincide' : 'Todavía no hay notas'}
             hint={
-              trimmed || activeTag
+              hasFilters
                 ? 'Prueba con otra palabra, etiqueta o quita el filtro.'
                 : 'Anota pendientes, ideas o la lista del súper; se ordenan por última edición.'
             }
+            action={hasFilters ? (
+              <TextButton
+                label="Limpiar filtros"
+                onPress={() => {
+                  setQuery('');
+                  setActiveTag(null);
+                  setActiveFilter('all');
+                }}
+              />
+            ) : null}
           />
         ) : (
           <>
@@ -405,12 +535,32 @@ export default function NotesScreen({ navigation }) {
             {restNotes.length ? (
               <>
                 <SectionTitle
-                  title={trimmed || activeTag ? 'Coincidencias' : 'Recientes'}
+                  title={trimmed || activeTag ? 'Coincidencias' : 'Otras notas'}
                   count={restNotes.length}
-                  right={<TextButton label="+ Nueva" onPress={openCreate} />}
+                  right={!visiblePrivate.length ? <TextButton label="+ Nueva" onPress={openCreate} /> : null}
                 />
                 <View style={grid ? styles.gridWrap : styles.listWrap}>
                   {restNotes.map((note) => (
+                    <NoteRow
+                      key={note.id}
+                      note={note}
+                      grid={grid}
+                      onOpen={openNote}
+                      onTogglePin={togglePin}
+                      onTogglePrivate={togglePrivate}
+                      onDelete={requestDelete}
+                      onToggleItem={toggleItemFromCard}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            {visiblePrivate.length ? (
+              <>
+                <SectionTitle title="Privadas" />
+                <View style={grid ? styles.gridWrap : styles.listWrap}>
+                  {visiblePrivate.map((note) => (
                     <NoteRow
                       key={note.id}
                       note={note}
@@ -442,14 +592,7 @@ export default function NotesScreen({ navigation }) {
               <TextButton
                 label="Eliminar"
                 tone="danger"
-                onPress={async () => {
-                  const { id } = sheet;
-                  // Same reason as `closeSheet`: the recorder must be closed before its host
-                  // disappears, and here the take is thrown away with the edit.
-                  await recorderRef.current?.discardTake?.();
-                  setConfirmId(id);
-                  setSheet(null);
-                }}
+                onPress={requestSheetDelete}
               />
             ) : null}
             <PrimaryButton
@@ -469,22 +612,29 @@ export default function NotesScreen({ navigation }) {
               placeholder="Ej. Pendientes de la semana"
               autoFocus
               maxLength={60}
+              style={styles.editorTitle}
             />
 
-            {/* Alternador Texto / Checklist. */}
-            <View style={styles.kindRow}>
-              <Chip
-                label="📝 Texto"
-                compact
-                selected={sheet.values.kind !== NOTE_KINDS.checklist}
-                onPress={() => setKind(NOTE_KINDS.text)}
-              />
-              <Chip
-                label="☑ Checklist"
-                compact
-                selected={sheet.values.kind === NOTE_KINDS.checklist}
-                onPress={() => setKind(NOTE_KINDS.checklist)}
-              />
+            <View style={styles.kindRow} accessibilityRole="radiogroup" accessibilityLabel="Tipo de nota">
+              {[
+                { kind: NOTE_KINDS.text, label: 'Texto', icon: 'note' },
+                { kind: NOTE_KINDS.checklist, label: 'Checklist', icon: 'checkCircle' },
+              ].map((option) => {
+                const selected = (sheet.values.kind === NOTE_KINDS.checklist) === (option.kind === NOTE_KINDS.checklist);
+                return (
+                  <Pressable
+                    key={option.kind}
+                    onPress={() => setKind(option.kind)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={option.label}
+                    style={({ pressed }) => [styles.kindOption, selected ? styles.kindOptionSelected : null, pressed ? styles.pressed : null]}
+                  >
+                    <Icon name={option.icon} size={18} color={selected ? colors.accent : colors.textSecondary} />
+                    <Text style={[typography.label, selected ? styles.kindOptionLabelSelected : null]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
             {sheet.values.kind === NOTE_KINDS.checklist ? (
@@ -524,7 +674,8 @@ export default function NotesScreen({ navigation }) {
                 value={sheet.values.body}
                 onChangeText={(body) => setValue({ body })}
                 placeholder="Escribe aquí…"
-                minHeight={150}
+                minHeight={220}
+                style={styles.editorBody}
               />
             )}
 
@@ -568,7 +719,7 @@ export default function NotesScreen({ navigation }) {
               ) : null}
               {filesAvailable() ? (
                 <TextButton
-                  label={importing ? 'Importando…' : '📎 Importar documento'}
+                  label={importing ? 'Importando…' : 'Importar documento'}
                   tone="ghost"
                   onPress={importDocument}
                   disabled={importing}
@@ -580,10 +731,16 @@ export default function NotesScreen({ navigation }) {
             <View style={styles.pinRow}>
               <Text style={typography.overline}>Privada</Text>
               <View style={styles.privateRow}>
-                <Text style={styles.privateHint}>Pedir huella, rostro o PIN</Text>
+                <Text style={styles.privateHint}>
+                  {sheet.values.private
+                    ? privacyEnabled === false
+                      ? 'Oculta en listas · bloqueo global desactivado'
+                      : 'Oculta en listas · requiere autorización'
+                    : 'Oculta el contenido de las listas'}
+                </Text>
                 <Switch
                   value={Boolean(sheet.values.private)}
-                  onValueChange={(value) => setValue({ private: value })}
+                  onValueChange={changeSheetPrivacy}
                   label="Nota privada"
                 />
               </View>
@@ -634,47 +791,62 @@ export default function NotesScreen({ navigation }) {
  * editor.
  */
 const NoteRow = memo(function NoteRow({ note, grid, onOpen, onTogglePin, onTogglePrivate, onDelete, onToggleItem }) {
-  const leftAction = useMemo(
-    () => ({
-      label: note.pinned ? '📌 Quitar' : '📌 Fijar',
-      color: note.color || colors.accent,
-      onPress: () => onTogglePin(note),
-    }),
-    [note, onTogglePin],
-  );
-
-  const rightAction = useMemo(
-    () => ({
-      label: note.private ? '🔓 Abrir' : '🔒 Privado',
-      color: colors.accent,
-      onPress: () => onTogglePrivate(note),
-    }),
-    [note, onTogglePrivate],
-  );
-
+  const exposed = canExposeInList(note);
+  const displayNote = redactPrivateRecord(note, PRIVATE_NOTE_PLACEHOLDER);
   const open = useCallback(() => onOpen(note), [note, onOpen]);
   const togglePin = useCallback(() => onTogglePin(note), [note, onTogglePin]);
-  const askDelete = useCallback(() => onDelete(note.id), [note.id, onDelete]);
-  const preview = notePreview(note);
-  const isChecklist = note.kind === NOTE_KINDS.checklist;
-  const summary = isChecklist ? checklistSummary(note.items) : null;
-  const tags = Array.isArray(note.tags) ? note.tags : [];
+  const askDelete = useCallback(() => onDelete(note), [note, onDelete]);
+
+  const leftAction = useMemo(
+    () => ({
+      label: exposed ? (note.pinned ? 'Quitar fijada' : 'Fijar arriba') : 'Abrir nota privada',
+      color: exposed ? note.color || colors.accent : colors.accent,
+      onPress: exposed ? togglePin : open,
+    }),
+    [exposed, note.color, note.pinned, open, togglePin],
+  );
+  const rightAction = useMemo(
+    () => ({
+      label: exposed ? 'Hacer privada' : 'Eliminar nota privada',
+      color: exposed ? colors.accent : colors.danger,
+      onPress: exposed ? () => onTogglePrivate(note) : askDelete,
+    }),
+    [askDelete, exposed, note, onTogglePrivate],
+  );
+
+  const preview = notePreview(displayNote);
+  const isChecklist = displayNote.kind === NOTE_KINDS.checklist;
+  const summary = isChecklist ? checklistSummary(displayNote.items) : null;
+  const tags = Array.isArray(displayNote.tags) ? displayNote.tags : [];
 
   return (
     <SwipeRow style={[styles.swipeRow, grid ? styles.swipeRowGrid : null]} leftAction={leftAction} rightAction={rightAction}>
-      <Card accent={note.color} onPress={open} style={[styles.noteCard, grid ? styles.noteCardGrid : null]}>
+      <Card
+        accent={displayNote.color}
+        onPress={open}
+        accessibilityLabel={exposed ? undefined : 'Nota privada. Desbloquea para ver el contenido'}
+        style={[styles.noteCard, grid ? styles.noteCardGrid : null]}
+      >
         <View style={styles.noteHeader}>
-          <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={1}>
-            {note.pinned ? '📌 ' : ''}
-            {note.title}
+          <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={2}>
+            {displayNote.title}
           </Text>
-          {note.private ? <Pill label="🔒 privada" /> : null}
-          {note.pinned ? <Pill label="fija" tone="accent" /> : null}
+          {note.private ? (
+            <View style={styles.privateBadge}>
+              <Icon name="lock" size={13} color={colors.warning} />
+              <Text style={styles.privateBadgeLabel}>Privada</Text>
+            </View>
+          ) : displayNote.pinned ? (
+            <View style={styles.pinnedBadge}>
+              <Icon name="star" size={13} color={colors.accent} />
+              <Text style={styles.pinnedBadgeLabel}>Fijada</Text>
+            </View>
+          ) : null}
         </View>
 
-        {isChecklist && Array.isArray(note.items) && note.items.length ? (
+        {isChecklist && Array.isArray(displayNote.items) && displayNote.items.length ? (
           <View style={styles.checkList}>
-            {(grid ? note.items.slice(0, 3) : note.items.slice(0, 5)).map((item) => (
+            {(grid ? displayNote.items.slice(0, 3) : displayNote.items.slice(0, 5)).map((item) => (
               <CheckLine key={item.id} item={item} onPress={() => onToggleItem?.(note, item.id)} />
             ))}
             {summary && summary.total > (grid ? 3 : 5) ? (
@@ -691,30 +863,32 @@ const NoteRow = memo(function NoteRow({ note, grid, onOpen, onTogglePin, onToggl
 
         {tags.length ? (
           <View style={styles.tagRow}>
-            {tags.map((tag) => (
-              <Pill key={tag} label={tag} />
-            ))}
+            {tags.map((tag) => <Pill key={tag} label={tag} />)}
           </View>
         ) : null}
 
-        {note.audio?.uri || note.attachment?.uri ? (
+        {displayNote.audio?.uri || displayNote.attachment?.uri ? (
           <View style={styles.pillRow}>
-            {note.audio?.uri ? (
-              <Pill label={`🎙 ${formatSeconds((Number(note.audio.durationMs) || 0) / 1000)}`} tone="accent" />
+            {displayNote.audio?.uri ? (
+              <Pill label={`Audio · ${formatSeconds((Number(displayNote.audio.durationMs) || 0) / 1000)}`} tone="accent" />
             ) : null}
-            {note.attachment?.uri ? (
-              <Pill label={`📎 ${note.attachment.name || 'adjunto'}`} style={styles.longPill} />
+            {displayNote.attachment?.uri ? (
+              <Pill label={`Adjunto · ${displayNote.attachment.name || 'archivo'}`} style={styles.longPill} />
             ) : null}
           </View>
         ) : null}
 
         {grid ? (
-          <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
+          exposed ? <Text style={styles.noteTime}>{timeAgo(displayNote.updatedAt)}</Text> : null
         ) : (
           <View style={styles.noteFooter}>
-            <Text style={styles.noteTime}>{timeAgo(note.updatedAt)}</Text>
+            <Text style={styles.noteTime}>{exposed ? timeAgo(displayNote.updatedAt) : 'Contenido protegido'}</Text>
             <View style={styles.noteActions}>
-              <TextButton label={note.pinned ? 'Quitar fija' : 'Fijar'} tone="ghost" onPress={togglePin} />
+              {exposed ? (
+                <TextButton label={note.pinned ? 'Quitar fija' : 'Fijar'} tone="ghost" onPress={togglePin} />
+              ) : (
+                <TextButton label="Abrir" tone="ghost" onPress={open} />
+              )}
               <TextButton label="Borrar" tone="danger" onPress={askDelete} />
             </View>
           </View>
@@ -750,32 +924,60 @@ function CheckLine({ item, onPress }) {
 
 const styles = themedStyles({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  search: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
+  searchWrap: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 14.5,
-    color: colors.text,
-    minHeight: 46,
+    paddingHorizontal: spacing.lg,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  searchFocused: { borderColor: colors.accent },
+  search: {
+    flex: 1,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: colors.text,
+    minHeight: 58,
+  },
+  clearSearch: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  summaryBar: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  summaryItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  summaryValue: { color: colors.accent },
+  summaryLabel: { ...typography.caption, color: colors.textSecondary },
+  summaryDivider: { width: 1, height: 22, backgroundColor: colors.borderStrong },
+  summarySpacer: { flex: 1 },
+  filterLabel: { ...typography.overline, color: colors.textMuted, marginBottom: -spacing.sm },
 
-  // Filtro por etiquetas y alternador de vista.
+  // Filtros y alternador de vista.
   tagScroller: { gap: spacing.sm, paddingRight: layout.gutter },
   viewToggle: {
-    flex: 1,
-    alignItems: 'flex-end',
+    width: 44,
+    height: 44,
+    alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
   },
-  viewToggleText: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
 
   // Lista vertical vs cuadrícula de dos columnas.
   listWrap: { gap: 0 },
@@ -785,6 +987,10 @@ const styles = themedStyles({
 
   // Etiquetas de la tarjeta.
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: 2 },
+  privateBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.warningSoft },
+  privateBadgeLabel: { ...typography.caption, color: colors.warning, fontWeight: '700' },
+  pinnedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  pinnedBadgeLabel: { ...typography.caption, color: colors.accent, fontWeight: '700' },
 
   // Checklist en la tarjeta.
   checkList: { gap: 2, marginTop: 2 },
@@ -806,6 +1012,11 @@ const styles = themedStyles({
 
   // Editor: alternador de modo, editor de checklist y etiquetas.
   kindRow: { flexDirection: 'row', gap: spacing.sm },
+  kindOption: { minHeight: 52, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
+  kindOptionSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  kindOptionLabelSelected: { color: colors.accent },
+  editorTitle: { fontSize: 19, lineHeight: 26, fontWeight: '700', minHeight: 56 },
+  editorBody: { fontSize: 16, lineHeight: 24, paddingTop: spacing.lg },
   checkEditor: { gap: spacing.sm },
   checkEditRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkEditInput: {
@@ -826,10 +1037,10 @@ const styles = themedStyles({
   pressed: { opacity: 0.68 },
 
   swipeRow: { marginBottom: spacing.md },
-  noteCard: { gap: 6 },
-  noteHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  noteTitle: { flex: 1 },
-  noteBody: { lineHeight: 19 },
+  noteCard: { gap: spacing.md, borderRadius: radius.xl, paddingVertical: spacing.lg },
+  noteHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  noteTitle: { flex: 1, fontSize: 16, lineHeight: 22 },
+  noteBody: { lineHeight: 22, fontSize: 14 },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 2 },
   longPill: { maxWidth: 190 },
   attachBlock: { gap: spacing.sm },

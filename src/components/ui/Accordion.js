@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, LayoutAnimation, Platform, Pressable, Text, UIManager, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { select as selectHaptic } from '../../services/haptics';
+import { Icon } from '../Icon';
 
 /**
  * Sección colapsable usada en Ajustes › Permisos y Seguridad.
@@ -46,7 +47,7 @@ function Accordion({ title, subtitle, icon, children, defaultOpen = false }) {
         accessibilityLabel={title}
         style={({ pressed }) => [styles.header, pressed ? styles.pressed : null]}
       >
-        {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+        {icon ? <Icon name={icon} size={18} color={colors.accent} /> : null}
         <View style={styles.headerText}>
           <Text style={typography.bodyStrong}>{title}</Text>
           {subtitle ? <Text style={typography.caption}>{subtitle}</Text> : null}
@@ -79,7 +80,6 @@ const styles = themedStyles({
     paddingVertical: spacing.lg,
     minHeight: 56,
   },
-  icon: { fontSize: 18 },
   headerText: { flex: 1, gap: 2 },
   chevron: { fontFamily: typography.body.fontFamily, fontSize: 16, color: colors.textMuted },
   body: {

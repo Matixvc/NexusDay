@@ -9,7 +9,7 @@ import { ThemeProvider, useAccentTheme } from './src/context/ThemeContext';
 import { SwipeLockProvider } from './src/context/SwipeLockContext';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import RootNavigator from './src/navigation/RootNavigator';
-import { HOME_TAB } from './src/navigation/tabs';
+import { HOME_TAB, PRIMARY_TAB_NAMES } from './src/navigation/tabs';
 import { tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
@@ -73,9 +73,11 @@ function AppShell() {
   const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig } = useAppData();
   // Remembered so any navigator remount lands on the same registered route.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
+  const [lastPrimaryRoute, setLastPrimaryRoute] = useState(HOME_TAB);
 
   const onRouteChange = useCallback((name) => {
     setLastRoute((previous) => (previous === name ? previous : name));
+    if (PRIMARY_TAB_NAMES.includes(name)) setLastPrimaryRoute((previous) => (previous === name ? previous : name));
   }, []);
 
   if (onboardingCompleted === null) return <BootScreen />;
@@ -89,6 +91,7 @@ function AppShell() {
       // The normalized legacy signature is stable for the fixed three-section layout.
       key={tabOrderSignature(tabConfig)}
       initialRouteName={lastRoute}
+      initialPrimaryRouteName={lastPrimaryRoute}
       onRouteChange={onRouteChange}
     />
   );

@@ -2,11 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
-import { ACCENT_THEMES, getAccentTheme, resolveAccent } from '../theme/accents';
+import { ACCENT_THEMES, getAccentTheme, resolveAccent, resolvePreviewAccent } from '../theme/accents';
 import { SURFACE_MODES, getSurfaceMode } from '../theme/surfaces';
-import { isLockedTab, tabByName } from '../navigation/tabs';
+import { isLockedTab, tabByName } from '../navigation/tabMetadata';
+import { navigateToRoute } from '../navigation/navigateToRoute';
 import { DEFAULT_TAB_CONFIG, moveTab, setTabHidden } from '../services/tabs';
-import { authenticate, describeCapability, describePrivacyFailure } from '../services/privacy';
+import {
+  authorizeGlobalPrivacyChange,
+  authorizePrivateAction,
+  describeCapability,
+  describePrivacyFailure,
+} from '../services/privacy';
+import { PRIVATE_ACTIONS, filterDiscoverableRecords } from '../services/privacyPolicy';
 import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { Card, Notice, Pill, PrimaryButton, Screen, SectionTitle, Stat, TextButton } from '../components/ui/primitives';
@@ -14,7 +21,7 @@ import { DeveloperModeScreen } from './DeveloperModeScreen';
 import { isDevModeEnabled } from '../services/devMode';
 import { TextField } from '../components/ui/inputs';
 import { ConfirmSheet } from '../components/ui/Sheet';
-import { Switch } from '../components/ui/Switch';
+import { Switch, SwitchRow } from '../components/ui/Switch';
 import { Accordion } from '../components/ui/Accordion';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import { initials } from '../utils/initials';
@@ -75,8 +82,8 @@ function permissionPill(permission, labels) {
   return <Pill label={label} tone={tone} />;
 }
 
-/** "Nunca" o una fecha legible del último respaldo de Google (epoch ms �  texto). */
-function formatSyncDate(timestamp) {
+/** Formatea la fecha de la ?ltima copia exportada. */
+function formatBackupDate(timestamp) {
   if (!timestamp) return 'Nunca';
   const d = new Date(Number(timestamp));
   if (Number.isNaN(d.getTime())) return 'Nunca';
@@ -131,14 +138,9 @@ export default function SettingsScreen({ navigation }) {
   const career = careerDraft ?? settings?.career ?? '';
   const setCareer = setCareerDraft;
 
-  // Estado del ecosistema Google (interfaz preparada): conexión, última sincronización y si el
-  // respaldo de notas en Drive/Keep está vinculado. Sin backend real; se persiste en settings
-  // para que la tarjeta muestre un estado coherente entre sesiones.
-  const google = {
-    connected: Boolean(settings?.googleConnected),
-    lastSync: settings?.googleLastSync || null,
-    drive: Boolean(settings?.googleDrive),
-  };
+  const publicNotes = filterDiscoverableRecords(notes);
+  const publicExpenses = filterDiscoverableRecords(expenses);
+  const hasPrivateRecords = publicNotes.length !== notes.length || publicExpenses.length !== expenses.length;
 
   // expo-file-system's folder helpers are synchronous, so they are read once and refreshed
   // explicitly (cleanup button) instead of on every render.
@@ -157,8 +159,24 @@ export default function SettingsScreen({ navigation }) {
 
   /** Fires the native prompt once, so the user can verify the lock before relying on it. */
   const testPrivacy = async () => {
-    const result = await authenticate({ promptMessage: 'Prueba el desbloqueo de NexusDay' });
+    const result = await authorizePrivateAction({
+      record: { private: true },
+      action: PRIVATE_ACTIONS.open,
+      privacyEnabled: true,
+      promptMessage: 'Prueba el desbloqueo de NexusDay',
+      onAuthorized: () => {},
+    });
     setPrivacyNotice(result.ok ? 'Autenticación correcta.' : describePrivacyFailure(result.reason));
+  };
+
+  const changePrivacyEnabled = async (value) => {
+    const result = await authorizeGlobalPrivacyChange({
+      currentValue: settings?.privacyEnabled !== false,
+      nextValue: value,
+      promptMessage: 'Autoriza desactivar la protección de privacidad',
+      onAuthorized: () => updateSettings({ privacyEnabled: value }),
+    });
+    setPrivacyNotice(result.ok ? null : describePrivacyFailure(result.reason));
   };
 
   /** Async on purpose: keeps the size read out of the effect's synchronous body. */
@@ -206,28 +224,7 @@ export default function SettingsScreen({ navigation }) {
     setInfo(career.trim() ? 'Carrera guardada.' : 'Se quitó la carrera.');
   };
 
-  /**
-   * Conecta o desconecta la cuenta de Google (interfaz preparada). No hay backend: el estado
-   * se guarda en `settings` para que la tarjeta refleje la elección entre sesiones. Al conectar
-   * se sella la fecha de esta "sincronización".
-   */
-  const toggleGoogle = useCallback(() => {
-    tapHaptic();
-    if (google.connected) {
-      updateSettings({ googleConnected: false, googleLastSync: null, googleDrive: false });
-      setInfo('Se desconectó la cuenta de Google.');
-    } else {
-      updateSettings({ googleConnected: true, googleLastSync: Date.now(), googleDrive: google.drive });
-      setInfo('Cuenta de Google vinculada (demostración).');
-    }
-  }, [google.connected, google.drive, updateSettings]);
-
-  /**
-   * Exporta una copia .json real de todo: seis colecciones + ajustes + nombre + barra de
-   * solapas. Escribe el archivo en Documents/exports y abre el menú del sistema para
-   * guardarlo o subirlo (Drive, correo, etc.). Al compartirse, sella el "último respaldo"
-   * de la tarjeta de Google.
-   */
+  /** Exporta una copia local y registra la fecha si el usuario la comparte. */
   const exportBackup = useCallback(async () => {
     tapHaptic();
     const payload = {
@@ -251,7 +248,7 @@ export default function SettingsScreen({ navigation }) {
       return;
     }
     if (result.status === 'shared') {
-      updateSettings({ googleLastSync: Date.now() });
+      updateSettings({ lastBackupAt: Date.now() });
       successHaptic();
       setInfo('Copia exportada: el menú de compartir quedó abierto para guardarla donde quieras.');
     }
@@ -308,17 +305,32 @@ export default function SettingsScreen({ navigation }) {
     if (!confirmImport) return;
     const collections = confirmImport.collections || {};
     const total = BACKUP_COLLECTIONS.reduce((sum, name) => sum + (collections[name]?.length || 0), 0);
-    const result = await restoreBackup({
-      activities: collections.activities,
-      events: collections.events,
-      birthdays: collections.birthdays,
-      notes: collections.notes,
-      habits: collections.habits,
-      expenses: collections.expenses,
-      settings: confirmImport.settings,
-      userName: confirmImport.userName,
-      tabConfig: confirmImport.tabConfig,
+    const importedDisablesPrivacy =
+      settings?.privacyEnabled !== false && confirmImport.settings?.privacyEnabled === false;
+    let result = null;
+    const authorization = await authorizePrivateAction({
+      record: { private: hasPrivateRecords || importedDisablesPrivacy },
+      action: PRIVATE_ACTIONS.delete,
+      privacyEnabled: true,
+      promptMessage: 'Autoriza restaurar datos protegidos',
+      onAuthorized: async () => {
+        result = await restoreBackup({
+          activities: collections.activities,
+          events: collections.events,
+          birthdays: collections.birthdays,
+          notes: collections.notes,
+          habits: collections.habits,
+          expenses: collections.expenses,
+          settings: confirmImport.settings,
+          userName: confirmImport.userName,
+          tabConfig: confirmImport.tabConfig,
+        });
+      },
     });
+    if (!authorization.ok) {
+      setNotice(describePrivacyFailure(authorization.reason));
+      return;
+    }
     setConfirmImport(null);
     successHaptic();
     refreshStorage();
@@ -334,9 +346,6 @@ export default function SettingsScreen({ navigation }) {
   };
 
   /** "Sincronizar ahora": exporta la copia .json y sella la fecha del último respaldo. */
-  const syncNow = useCallback(() => {
-    exportBackup();
-  }, [exportBackup]);
 
   const askNotifications = async () => {
     await requestNotifications();
@@ -357,27 +366,36 @@ export default function SettingsScreen({ navigation }) {
     setInfo('Se borraron los archivos exportados (copias .json).');
   };
 
-  const wipe = () => {
-    clearAllData();
-    setInfo('Se borraron todas las colecciones locales.');
+  const wipe = async () => {
+    const result = await authorizePrivateAction({
+      record: { private: hasPrivateRecords },
+      action: PRIVATE_ACTIONS.delete,
+      privacyEnabled: true,
+      promptMessage: 'Autoriza borrar los datos protegidos',
+      onAuthorized: () => {
+        clearAllData();
+        setInfo('Se borraron todas las colecciones locales.');
+      },
+    });
+    if (!result.ok) setNotice(describePrivacyFailure(result.reason));
   };
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
   const storageTotal = storage ? storage.attachments + storage.recordings + storage.exports : 0;
   const showNavigationCustomization = false;
   const totalItems =
-    activities.length + events.length + birthdays.length + notes.length + habits.length + expenses.length;
+    activities.length + events.length + birthdays.length + publicNotes.length + habits.length + publicExpenses.length;
 
   return (
     <>
       <Screen
         title="Ajustes"
-        subtitle={`Permisos, datos y respaldo de ${APP_NAME}.`}
+        subtitle="Tu espacio, a tu manera."
         headerLeft={
           <HeaderIconButton
             icon="chevronLeft"
             label="Volver a la sección anterior"
-            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Inicio'))}
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigateToRoute(navigation, 'Inicio'))}
           />
         }
         headerRight={<Pill label={`v${appVersion}`} />}
@@ -410,7 +428,7 @@ export default function SettingsScreen({ navigation }) {
                 {career.trim() || 'Agrega tu carrera u ocupación'}
               </Text>
               <View style={styles.pillWrap}>
-                <Pill label={`${notes.length} notas`} />
+                <Pill label={`${publicNotes.length} notas`} />
                 <Pill label={`${events.length} eventos`} />
                 <Pill label={`${habits.length} hábitos`} />
               </View>
@@ -437,58 +455,8 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
 
-        <SectionTitle title="Cuenta y Sincronización con Google" />
-        <Card style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Estado de la cuenta</Text>
-              <Text style={typography.caption}>
-                {google.connected
-                  ? 'Vinculada · sincroniza Google Calendar y respalda notas en Drive/Keep.'
-                  : 'Sin vincular. Conecta para sincronizar tu agenda y respaldar tus notas.'}
-              </Text>
-            </View>
-            <Pill label={google.connected ? 'Conectada' : 'Desconectada'} tone={google.connected ? 'accent' : 'neutral'} />
-          </View>
+        <SectionTitle title="Apariencia y personalización" />
 
-          <View style={styles.rowBetween}>
-            <Text style={typography.small}>Último respaldo</Text>
-            <Text style={[typography.small, styles.strong]}>{formatSyncDate(google.lastSync)}</Text>
-          </View>
-
-          <View style={styles.actions}>
-            <PrimaryButton
-              label={google.connected ? 'Desvincular cuenta' : 'Vincular con Google'}
-              onPress={toggleGoogle}
-              style={styles.actionButton}
-            />
-            {google.connected ? (
-              <TextButton label="Sincronizar ahora" tone="ghost" onPress={syncNow} />
-            ) : null}
-          </View>
-
-          {google.connected ? (
-            <View style={styles.privateRow}>
-              <View style={styles.privateBody}>
-                <Text style={typography.bodyStrong}>Respaldar notas en Drive / Keep</Text>
-                <Text style={styles.privateHint}>Guarda una copia de tus notas en la nube.</Text>
-              </View>
-              <Switch
-                value={google.drive}
-                onValueChange={(value) => updateSettings({ googleDrive: value })}
-                label="Respaldar notas"
-                hideLabel
-              />
-            </View>
-          ) : null}
-
-          <Text style={typography.caption}>
-            Módulo en preparación: la vinculación real llegará en una próxima versión. Por ahora tus
-            datos se guardan solo en este dispositivo.
-          </Text>
-        </Card>
-
-        <SectionTitle title="Tema" count={ACCENT_THEMES.length + SURFACE_MODES.length} />
         <Card style={styles.card}>
           <Text style={styles.fieldLabel}>Acento</Text>
           <Text style={typography.caption}>
@@ -520,7 +488,7 @@ export default function SettingsScreen({ navigation }) {
                 >
                   <View style={styles.themeSwatches}>
                     <View style={[styles.themeSwatch, { backgroundColor: preview.accent }]} />
-                    <View style={[styles.themeSwatch, styles.themeSwatchAlt, { backgroundColor: option.alt }]} />
+                    <View style={[styles.themeSwatch, styles.themeSwatchAlt, { backgroundColor: preview.alt }]} />
                   </View>
                   <Text style={styles.themeLabel} numberOfLines={1}>
                     {option.label}
@@ -537,8 +505,8 @@ export default function SettingsScreen({ navigation }) {
         <Card style={styles.card}>
           <Text style={styles.fieldLabel}>Modo de pantalla</Text>
           <Text style={typography.caption}>
-            El fondo sobre el que se pinta todo lo demás. Negro puro deja los píxeles apagados en
-            las pantallas AMOLED; claro es blanco real, con textos oscuros de verdad.
+            Cuatro identidades compartidas para toda la app. Blanco y negro conserva el acento
+            elegido para cuando vuelvas a Claro, Oscuro o Nex.
           </Text>
           <View style={styles.surfaceRow}>
             {SURFACE_MODES.map((mode) => {
@@ -574,7 +542,7 @@ export default function SettingsScreen({ navigation }) {
                       style={[
                         styles.surfaceBar,
                         styles.surfaceBarShort,
-                        { backgroundColor: resolveAccent(getAccentTheme(accentId), mode.id).accent },
+                        { backgroundColor: resolvePreviewAccent(getAccentTheme(accentId), mode.id, surfaceId).accent },
                       ]}
                     />
                   </View>
@@ -589,21 +557,17 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
 
-        <SectionTitle title="Permisos y Seguridad" />
-        <Accordion title="Permisos del sistema" subtitle="Micrófono, notificaciones, calendario y ubicación." icon="🔐" defaultOpen>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Micrófono</Text>
-              <Text style={typography.caption}>Necesario para las notas de voz.</Text>
-            </View>
-            <View style={styles.permissionRight}>
-              {permissionPill(micPermission, { granted: 'Activo', missing: 'Inactivo', blocked: 'Bloqueado' })}
-              {!micPermission?.granted ? (
-                <TextButton label="Permitir" tone="ghost" onPress={askMicrophone} />
-              ) : null}
-            </View>
-          </View>
+        <Card style={styles.card}>
+          <SwitchRow
+            title="Reducir animaciones"
+            hint="Desactiva la transición al abrir y cerrar secciones."
+            value={settings?.reduceMotion === true}
+            onValueChange={(value) => updateSettings({ reduceMotion: value })}
+          />
+        </Card>
 
+        <SectionTitle title="Notificaciones" />
+        <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Notificaciones</Text>
@@ -621,27 +585,25 @@ export default function SettingsScreen({ navigation }) {
               ) : null}
             </View>
           </View>
+        </Card>
 
-          {/* Calendario y ubicación no se usan aún: se muestran como "no gestionadas" con la UI
-              lista, sin dependencias nativas nuevas. */}
+        <SectionTitle title="Privacidad y seguridad" />
+        <Accordion title="Permisos del sistema" subtitle="Acceso al micrófono para grabar notas de voz." icon="mic" defaultOpen>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Calendario</Text>
-              <Text style={typography.caption}>Aún no lo usa NexusDay.</Text>
+              <Text style={typography.bodyStrong}>Micrófono</Text>
+              <Text style={typography.caption}>Necesario para las notas de voz.</Text>
             </View>
-            <Pill label="Inactivo" tone="neutral" />
-          </View>
-
-          <View style={styles.rowBetween}>
-            <View style={styles.rowBody}>
-              <Text style={typography.bodyStrong}>Ubicación</Text>
-              <Text style={typography.caption}>Aún no la usa NexusDay.</Text>
+            <View style={styles.permissionRight}>
+              {permissionPill(micPermission, { granted: 'Activo', missing: 'Inactivo', blocked: 'Bloqueado' })}
+              {!micPermission?.granted ? (
+                <TextButton label="Permitir" tone="ghost" onPress={askMicrophone} />
+              ) : null}
             </View>
-            <Pill label="Inactivo" tone="neutral" />
           </View>
         </Accordion>
 
-        <Accordion title="Desbloqueo biométrico" subtitle={privacyLabel} icon="🔐">
+        <Accordion title="Desbloqueo biométrico" subtitle={privacyLabel} icon="shieldCheck">
           {privacyNotice ? <Notice text={privacyNotice} /> : null}
           <View style={styles.privateRow}>
             <View style={styles.privateBody}>
@@ -649,8 +611,8 @@ export default function SettingsScreen({ navigation }) {
               <Text style={styles.privateHint}>Al abrir notas y gastos marcados como privados.</Text>
             </View>
             <Switch
-              value={Boolean(settings.privacyEnabled)}
-              onValueChange={(value) => updateSettings({ privacyEnabled: value })}
+              value={settings?.privacyEnabled !== false}
+              onValueChange={changePrivacyEnabled}
               label="Desbloqueo biométrico"
               hideLabel
             />
@@ -661,8 +623,12 @@ export default function SettingsScreen({ navigation }) {
         </Accordion>
 
 
-        <SectionTitle title="Gestión de Datos y Almacenamiento" count={totalItems} />
+        <SectionTitle title="Datos y respaldos" count={totalItems} />
         <Card style={styles.card}>
+          <View style={styles.rowBetween}>
+            <Text style={typography.small}>Última copia exportada</Text>
+            <Text style={[typography.small, styles.strong]}>{formatBackupDate(settings?.lastBackupAt)}</Text>
+          </View>
           <View style={styles.statsRow}>
             <Stat value={formatBytes(storage?.attachments || 0)} label="Adjuntos" />
             <Stat value={formatBytes(storage?.recordings || 0)} label="Notas de voz" />
@@ -672,9 +638,9 @@ export default function SettingsScreen({ navigation }) {
             <Pill label={`${activities.length} actividades`} />
             <Pill label={`${events.length} eventos`} />
             <Pill label={`${birthdays.length} cumpleaños`} />
-            <Pill label={`${notes.length} notas`} />
+            <Pill label={`${publicNotes.length} notas`} />
             <Pill label={`${habits.length} hábitos`} />
-            <Pill label={`${expenses.length} gastos`} />
+            <Pill label={`${publicExpenses.length} gastos`} />
           </View>
           <Text style={typography.caption}>
             Todo se guarda en el teléfono con AsyncStorage: no hay cuentas ni servidores. Los adjuntos
@@ -757,14 +723,14 @@ export default function SettingsScreen({ navigation }) {
           </>
         ) : null}
 
-        <SectionTitle title="Ayuda" />
+        <SectionTitle title="Tutorial y ayuda" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Tutorial de {APP_NAME}</Text>
-              <Text style={typography.caption}>Las seis pantallas del primer arranque, otra vez.</Text>
+              <Text style={typography.caption}>Cuatro pasos breves para volver a conocer NexusDay.</Text>
             </View>
-            <Pill label="6 pasos" tone="accent" />
+            <Pill label="4 pasos" tone="accent" />
           </View>
           <TextButton label="Ver el tutorial otra vez" onPress={replayTutorial} />
           <Text style={typography.caption}>
@@ -772,7 +738,7 @@ export default function SettingsScreen({ navigation }) {
           </Text>
         </Card>
 
-        <SectionTitle title="Acerca de" />
+        <SectionTitle title="Acerca de NexusDay" />
         <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
@@ -879,12 +845,11 @@ const styles = themedStyles({
   themeSwatch: { width: 18, height: 18, borderRadius: radius.pill },
   themeSwatchAlt: { width: 10, height: 10 },
   themeLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.text },
-  // Surface picker: three miniature screens side by side, wide enough to read the label under
-  // them and narrow enough to stay on one line on a 320 dp phone.
-  surfaceRow: { flexDirection: 'row', gap: spacing.sm },
+  // Dos columnas mantienen legibles las cuatro identidades incluso en un teléfono de 320 dp.
+  surfaceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   surfaceCard: {
-    flex: 1,
-    minWidth: 92,
+    flexGrow: 1,
+    flexBasis: '46%',
     gap: spacing.sm,
     padding: spacing.sm,
     borderWidth: 1,

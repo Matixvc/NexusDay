@@ -1,14 +1,18 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { Calendar } from 'react-native-calendars';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { themedStyles, calendarTheme, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import { useFocusId } from '../hooks/useFocusId';
+import { useSwipeLockActions } from '../context/SwipeLockContext';
+import { useAccentTheme } from '../context/ThemeContext';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
+import { Icon } from '../components/Icon';
 import { BirthdayEditor } from '../components/BirthdayEditor';
 import {
   Card,
   Chip,
+  ChipScroller,
   EmptyState,
   Fab,
   Notice,
@@ -30,15 +34,18 @@ import {
   deleteBirthdayRecord,
   saveBirthdayRecord,
 } from '../services/birthdays';
-import { buildCalendarMarks, buildDayAgenda, CALENDAR_FILTERS } from '../services/calendar';
-import { plural } from '../utils/text';
+import { buildCalendarMarks, buildDayAgenda, calendarEmptyState, CALENDAR_FILTERS, dateKeyInMonth, shiftCalendarMonth } from '../services/calendar';
 import {
   formatDateLong,
+  formatDateShort,
   formatDuration,
+  formatMonthYear,
   formatTime,
   isPastDateTime,
   minutesBetween,
   todayKey,
+  MONTHS,
+  MONTHS_SHORT,
 } from '../utils/dates';
 
 const BLANK = () => ({
@@ -52,6 +59,15 @@ const BLANK = () => ({
   color: colors.accent,
   notificationId: null,
 });
+const EMPTY_CALENDAR_IMAGE = require('../../assets/nexusday-empty-calendar.png');
+
+LocaleConfig.locales.nexusEs = {
+  monthNames: MONTHS.map((name) => `${name[0].toUpperCase()}${name.slice(1)}`),
+  monthNamesShort: MONTHS_SHORT.map((name) => `${name[0].toUpperCase()}${name.slice(1)}`),
+  dayNames: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
+  dayNamesShort: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
+};
+LocaleConfig.defaultLocale = 'nexusEs';
 
 const CREATE_OPTIONS = [
   { value: 'event', label: 'Evento personal' },
@@ -81,7 +97,7 @@ export default function CalendarScreen({ navigation }) {
 
   const today = todayKey();
   const [selected, setSelected] = useState(today);
-  const [visibleYear, setVisibleYear] = useState(Number(today.slice(0, 4)));
+  const [visibleMonth, setVisibleMonth] = useState(`${today.slice(0, 7)}-01`);
   const [calendarRevision, setCalendarRevision] = useState(0);
   const [filter, setFilter] = useState('all');
   const [sheet, setSheet] = useState(null);
@@ -93,6 +109,10 @@ export default function CalendarScreen({ navigation }) {
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [birthdaySaving, setBirthdaySaving] = useState(false);
+  const { acquireSwipe } = useSwipeLockActions();
+  const { revision: themeRevision, theme: activeAccent, surface: surfaceMode } = useAccentTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const calendarSwipeRelease = useRef(null);
   const focusId = useFocusId();
   const [handledFocusId, setHandledFocusId] = useState(null);
 
@@ -101,13 +121,46 @@ export default function CalendarScreen({ navigation }) {
       buildCalendarMarks({
         events,
         birthdays,
-        year: visibleYear,
+        year: Number(visibleMonth.slice(0, 4)),
         selectedKey: selected,
         filter,
         colors: { event: colors.accent, birthday: colors.warning },
       }),
-    [birthdays, events, filter, selected, visibleYear],
+    [birthdays, events, filter, selected, visibleMonth],
   );
+
+  const calendarDisplayTheme = useMemo(() => {
+    const scale = Math.max(1, Math.min(fontScale, 1.5));
+    const dayStyles = calendarTheme['stylesheet.day.basic'];
+    const surface = surfaceMode.tokens;
+    return {
+      ...calendarTheme,
+      backgroundColor: surface.background,
+      calendarBackground: surface.surface,
+      textSectionTitleColor: surface.textMuted,
+      textSectionTitleDisabledColor: surface.textMuted,
+      dayTextColor: surface.text,
+      textDisabledColor: surface.borderStrong,
+      selectedDayTextColor: surface.text,
+      todayTextColor: activeAccent.accent,
+      arrowColor: activeAccent.accent,
+      disabledArrowColor: surface.borderStrong,
+      monthTextColor: surface.text,
+      indicatorColor: activeAccent.accent,
+      dotColor: activeAccent.accent,
+      selectedDotColor: activeAccent.accent,
+      textDayFontSize: Math.round(16 * scale),
+      textDayHeaderFontSize: Math.round(11 * scale),
+      'stylesheet.day.basic': {
+        ...dayStyles,
+        base: { ...dayStyles.base, minHeight: Math.round(44 * scale), aspectRatio: undefined },
+        today: { ...dayStyles.today, borderWidth: 1, borderColor: activeAccent.accent },
+        todayText: { color: activeAccent.accent, fontWeight: '700' },
+        selected: { ...dayStyles.selected, backgroundColor: activeAccent.accentSoft, borderRadius: radius.md, borderColor: activeAccent.accent },
+        selectedText: { ...dayStyles.selectedText, color: activeAccent.accent },
+      },
+    };
+  }, [activeAccent, fontScale, surfaceMode]);
 
   /**
    * Agenda del día seleccionado: eventos, clases semanales y cumpleaños anuales ordenados
@@ -117,6 +170,7 @@ export default function CalendarScreen({ navigation }) {
     () => buildDayAgenda({ dateKey: selected, events, activities, birthdays, filter }),
     [activities, birthdays, events, filter, selected],
   );
+  const emptyAgenda = useMemo(() => calendarEmptyState(filter), [filter]);
 
   /**
    * Opens the editor for a new event with the day currently shown in the grid already picked:
@@ -174,9 +228,16 @@ export default function CalendarScreen({ navigation }) {
   const goToday = useCallback(() => {
     const nextToday = todayKey();
     setSelected(nextToday);
-    setVisibleYear(Number(nextToday.slice(0, 4)));
+    setVisibleMonth(`${nextToday.slice(0, 7)}-01`);
     setCalendarRevision((value) => value + 1);
   }, []);
+
+  const changeMonth = useCallback((amount) => {
+    const nextMonth = shiftCalendarMonth(visibleMonth, amount);
+    setVisibleMonth(nextMonth);
+    setSelected((dateKey) => dateKeyInMonth(dateKey, nextMonth));
+    setCalendarRevision((value) => value + 1);
+  }, [visibleMonth]);
 
   const focusedEvent = focusId ? events.find((item) => item.id === focusId) : null;
   if (!focusId && handledFocusId) setHandledFocusId(null);
@@ -286,18 +347,31 @@ export default function CalendarScreen({ navigation }) {
   };
 
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
+  const beginCalendarTouch = useCallback(() => {
+    calendarSwipeRelease.current?.();
+    calendarSwipeRelease.current = acquireSwipe();
+  }, [acquireSwipe]);
+  const endCalendarTouch = useCallback((event) => {
+    if (event?.nativeEvent?.touches?.length > 0) return;
+    calendarSwipeRelease.current?.();
+    calendarSwipeRelease.current = null;
+  }, []);
+  const cancelCalendarTouch = useCallback(() => {
+    calendarSwipeRelease.current?.();
+    calendarSwipeRelease.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    calendarSwipeRelease.current?.();
+    calendarSwipeRelease.current = null;
+  }, []);
 
   return (
     <>
       <Screen
         title="Calendario"
         subtitle={formatDateLong(selected)}
-        headerRight={
-          <View style={styles.headerActions}>
-            <Pill label={plural(events.length + birthdays.length, 'fecha')} />
-            <HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={() => navigation.navigate('Ajustes')} />
-          </View>
-        }
+        headerRight={<HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={() => navigation.navigate('Ajustes')} />}
       >
         {showPermissionCard ? (
           <Card accent={colors.warning}>
@@ -328,8 +402,62 @@ export default function CalendarScreen({ navigation }) {
           </View>
         ) : null}
 
+        <Card style={[styles.calendarCard, width <= 374 ? styles.calendarCardCompact : null]}>
+          <View
+            style={styles.calendarTouchArea}
+            onTouchStart={beginCalendarTouch}
+            onTouchEnd={endCalendarTouch}
+            onTouchCancel={cancelCalendarTouch}
+          >
+            <View style={styles.monthToolbar}>
+              <Pressable
+                onPress={() => changeMonth(-1)}
+                accessibilityRole="button"
+                accessibilityLabel="Mes anterior"
+                hitSlop={4}
+                style={({ pressed }) => [styles.monthButton, pressed ? styles.pressed : null]}
+              >
+                <Icon name="chevronLeft" size={21} color={colors.text} />
+              </Pressable>
+              <Text style={styles.monthTitle} accessibilityRole="header" accessibilityLabel={formatMonthYear(visibleMonth)}>
+                {formatMonthYear(visibleMonth)}
+              </Text>
+              <Pressable
+                onPress={() => changeMonth(1)}
+                accessibilityRole="button"
+                accessibilityLabel="Mes siguiente"
+                hitSlop={4}
+                style={({ pressed }) => [styles.monthButton, pressed ? styles.pressed : null]}
+              >
+                <Icon name="chevronRight" size={21} color={colors.text} />
+              </Pressable>
+            </View>
+            <Calendar
+              key={`${calendarRevision}-${themeRevision}-${fontScale}`}
+              initialDate={visibleMonth}
+              theme={calendarDisplayTheme}
+              markingType="multi-dot"
+              markedDates={marks}
+              onDayPress={(day) => setSelected(day.dateString)}
+              firstDay={1}
+              hideExtraDays
+              hideArrows
+              renderHeader={() => null}
+              enableSwipeMonths={false}
+              style={styles.calendar}
+            />
+            <View style={styles.legend}>
+              {filter === 'all' || filter === 'events' ? <LegendItem color={colors.accent} label="Eventos" /> : null}
+              {filter === 'all' || filter === 'birthdays' ? (
+                <LegendItem color={colors.warning} label="Cumpleaños" />
+              ) : null}
+              {filter === 'classes' ? <Text style={typography.caption}>Las clases aparecen en la agenda diaria.</Text> : null}
+            </View>
+          </View>
+        </Card>
+
         <View style={styles.filterBar}>
-          <View style={styles.filters}>
+          <ChipScroller style={styles.filters} contentContainerStyle={styles.filterContent}>
             {CALENDAR_FILTERS.map((option) => (
               <Chip
                 key={option.id}
@@ -339,51 +467,29 @@ export default function CalendarScreen({ navigation }) {
                 onPress={() => setFilter(option.id)}
               />
             ))}
-          </View>
+          </ChipScroller>
           <TextButton label="Hoy" tone="ghost" onPress={goToday} />
         </View>
 
-        <Card style={styles.calendarCard}>
-          <Calendar
-            key={calendarRevision}
-            current={selected}
-            theme={calendarTheme}
-            markingType="multi-dot"
-            markedDates={marks}
-            onDayPress={(day) => setSelected(day.dateString)}
-            onMonthChange={(month) => setVisibleYear(month.year)}
-            firstDay={1}
-            hideExtraDays
-            enableSwipeMonths
-            style={styles.calendar}
-          />
-          <View style={styles.legend}>
-            {filter === 'all' || filter === 'events' ? <LegendItem color={colors.accent} label="Eventos" /> : null}
-            {filter === 'all' || filter === 'birthdays' ? (
-              <LegendItem color={colors.warning} label="Cumpleaños" />
-            ) : null}
-            {filter === 'classes' ? <Text style={typography.caption}>Las clases aparecen en la agenda diaria.</Text> : null}
-          </View>
-        </Card>
-
         <SectionTitle
-          title="Agenda del día"
+          title={`Agenda · ${formatDateShort(selected)}`}
           count={dayTimeline.length}
-          right={<TextButton label="+ Crear" onPress={() => setCreateSheetOpen(true)} />}
         />
 
         {dayTimeline.length === 0 ? (
           <EmptyState
-            emoji="🌙"
-            title="Día libre"
-            hint="No hay elementos de este tipo para la fecha seleccionada."
+            image={EMPTY_CALENDAR_IMAGE}
+            icon="calendar"
+            title={emptyAgenda.title}
+            hint={emptyAgenda.hint}
           />
         ) : (
           <View style={styles.timeline}>
-            {dayTimeline.map((item) => (
+            {dayTimeline.map((item, index) => (
               <TimelineRow
                 key={item.id}
                 item={item}
+                isLast={index === dayTimeline.length - 1}
                 onPress={
                   item.kind === 'event'
                     ? () => openEdit(item.source)
@@ -563,7 +669,7 @@ export default function CalendarScreen({ navigation }) {
  * con su hora a la izquierda y un punto de color que la conecta a la línea vertical. Las
  * clases no son pulsables (su edición vive en el Horario); los eventos abren su editor.
  */
-function TimelineRow({ item, onPress }) {
+function TimelineRow({ item, onPress, isLast }) {
   const isClass = item.kind === 'class';
   const isBirthday = item.kind === 'birthday';
   const category = item.kind === 'event' && item.category ? categoryOf(item.category) : null;
@@ -571,9 +677,7 @@ function TimelineRow({ item, onPress }) {
   const detail = isClass
     ? item.detail || 'Clase'
     : isBirthday
-      ? item.detail
-    : category
-      ? `${category.emoji} ${category.label}`
+      ? ''
       : item.detail || '';
   const timeRange = item.endTime && item.endTime !== item.time ? `${formatTime(item.time)}–${formatTime(item.endTime)}` : formatTime(item.time);
 
@@ -587,32 +691,33 @@ function TimelineRow({ item, onPress }) {
       </View>
       <View style={styles.timelineTrack}>
         <View style={[styles.timelineDot, { backgroundColor: tint }]} />
-        <View style={[styles.timelineLine, { borderColor: colors.border }]} />
+        {!isLast ? <View style={[styles.timelineLine, { borderColor: colors.border }]} /> : null}
       </View>
       <View style={styles.timelineBody}>
         <View style={styles.timelineTitleRow}>
-          <Text style={typography.bodyStrong} numberOfLines={1}>
-            {isClass ? '📚 ' : isBirthday ? `${item.emoji} ` : ''}
-            {item.title}
-          </Text>
-          {isClass ? <Pill label="clase" /> : null}
-          {isBirthday ? <Pill label="cumpleaños" tone="warning" /> : null}
+          {isBirthday && item.emoji ? <Text style={styles.birthdayEmoji} accessible={false}>{item.emoji}</Text> : null}
+          <Text style={typography.bodyStrong} numberOfLines={2}>{item.title}</Text>
+          {isClass ? <Pill label="Clase" /> : null}
+          {isBirthday ? <Pill label="Anual" tone="warning" /> : null}
+          {category ? <Pill label={category.label} tone="accent" /> : null}
         </View>
         {detail ? (
           <Text style={[typography.small, styles.timelineDetail]} numberOfLines={1}>
-            {timeRange} · {detail}
+            {detail}
           </Text>
-        ) : (
-          <Text style={[typography.small, styles.timelineDetail]} numberOfLines={1}>
-            {timeRange}
-          </Text>
-        )}
+        ) : isBirthday ? <Text style={[typography.caption, styles.timelineDetail]}>Cumpleaños · {timeRange}</Text> : null}
       </View>
     </View>
   );
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => (pressed ? styles.pressed : null)}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title}, ${isBirthday ? 'cumpleaños anual' : isClass ? 'clase' : category?.label || 'evento'}, ${timeRange}`}
+      accessibilityHint={isClass ? 'Abrir esta clase en el horario' : isBirthday ? 'Editar cumpleaños' : 'Editar evento'}
+      style={({ pressed }) => [styles.timelinePressable, pressed ? styles.pressed : null]}
+    >
       {body}
     </Pressable>
   );
@@ -628,16 +733,21 @@ function LegendItem({ color, label }) {
 }
 
 const styles = themedStyles({
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { marginTop: spacing.md, flexDirection: 'row' },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  filters: { flex: 1, minWidth: 230, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  calendarCard: { paddingVertical: spacing.sm, marginBottom: spacing.sm },
-  calendar: { backgroundColor: 'transparent' },
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, paddingTop: spacing.xs },
+  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  filters: { flex: 1, minWidth: 0 },
+  filterContent: { gap: spacing.xs, paddingRight: spacing.sm },
+  calendarCard: { paddingVertical: spacing.md, marginBottom: 0 },
+  calendarCardCompact: { marginHorizontal: -spacing.md, paddingHorizontal: 0, borderRadius: radius.lg },
+  calendarTouchArea: { gap: spacing.sm },
+  monthToolbar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
+  monthButton: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
+  monthTitle: { flex: 1, textAlign: 'center', ...typography.h2, textTransform: 'capitalize' },
+  calendar: { width: '100%', backgroundColor: 'transparent' },
+  legend: { minHeight: 32, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.lg, paddingTop: spacing.xs },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   legendDot: { width: 8, height: 8, borderRadius: radius.pill },
   leadWrap: { gap: spacing.xs },
@@ -649,19 +759,22 @@ const styles = themedStyles({
 
   // Línea de tiempo del día.
   timeline: { gap: 0 },
-  timelineRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },
-  timelineTimeCol: { width: 46, alignItems: 'flex-end', paddingTop: 2, gap: 1 },
-  timelineTime: { fontSize: 13.5, fontWeight: '700', color: colors.text },
-  timelineEnd: { fontSize: 11.5, fontWeight: '500', color: colors.textMuted },
+  timelinePressable: { minHeight: 68, justifyContent: 'center' },
+  timelineRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch', paddingTop: spacing.sm },
+  timelineTimeCol: { width: 50, alignItems: 'flex-end', paddingTop: 2, gap: 2 },
+  timelineTime: { fontSize: 14, fontWeight: '700', color: colors.text },
+  timelineEnd: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
   timelineTrack: { width: 12, alignItems: 'center', paddingTop: 6 },
   timelineDot: { width: 10, height: 10, borderRadius: radius.pill },
-  timelineLine: { flex: 1, width: 2, borderLeftWidth: 1, borderStyle: 'dashed', marginTop: 2 },
+  timelineLine: { flex: 1, minHeight: 44, width: 2, borderLeftWidth: 1, borderStyle: 'dashed', marginTop: 2 },
   timelineBody: {
     flex: 1,
-    gap: 2,
-    paddingBottom: spacing.lg,
+    minWidth: 0,
+    gap: spacing.xs,
+    paddingBottom: spacing.md,
   },
-  timelineTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  timelineTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs },
+  birthdayEmoji: { fontSize: 18 },
   timelineDetail: { color: colors.textMuted },
   pressed: { opacity: 0.7 },
 });
