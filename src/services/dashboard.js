@@ -7,6 +7,7 @@ import {
   formatDateShort,
   formatTime,
   relativeDayLabel,
+  toDateKey,
   todayKey,
   weekdayIndex,
 } from '../utils/dates';
@@ -73,6 +74,12 @@ export function formatTimeUntil(minutes) {
   return remaining ? `En ${hours} h ${remaining}m` : `En ${hours} h`;
 }
 
+export function dailyCommitmentSummary(weekdayLabel, count) {
+  const safeCount = Number.isFinite(count) ? count : 0;
+  if (safeCount === 0) return `${weekdayLabel} · Sin compromisos para hoy`;
+  return `${weekdayLabel} · ${safeCount} ${safeCount === 1 ? 'compromiso' : 'compromisos'} para hoy`;
+}
+
 /** `{id,name}` of the habits still missing today's tick. */
 export function pendingHabits(habits = [], today = todayKey()) {
   return habits.filter((habit) => !Array.isArray(habit.marks) || !habit.marks.includes(today));
@@ -123,7 +130,7 @@ export function buildDashboard({
   routines = [],
   now = new Date(),
 } = {}) {
-  const today = todayKey();
+  const today = toDateKey(now);
   const currentTime = timeOf(now);
   const dayIndex = weekdayIndex(now);
   const monthPrefix = today.slice(0, 7);
@@ -144,6 +151,80 @@ export function buildDashboard({
   // "¿cuánto tengo hoy?", and counting only the weekly schedule ignored every dated event.
   const todayEvents = events.filter((event) => event.dateKey === today);
   const todayRoutines = routines.filter((routine) => isRoutineScheduledForDate(routine, today));
+
+  const activityItem = (item, status) => ({
+    id: `act-${item.id}`,
+    sourceId: item.id,
+    kind: 'activity',
+    typeLabel: 'Clase',
+    title: item.title,
+    startTime: String(item.start || '').trim() || null,
+    endTime: String(item.end || '').trim() || null,
+    dateKey: today,
+    detail: item.location || 'Horario universitario',
+    color: item.color,
+    status,
+    minutesRemaining: status === 'in-progress' ? minutesUntilActivity(today, item.end, now) : null,
+    minutesUntil: status === 'upcoming' ? minutesUntilActivity(today, item.start, now) : null,
+  });
+  const eventItem = (item) => ({
+    id: `event-${item.id}`,
+    sourceId: item.id,
+    kind: 'event',
+    typeLabel: 'Evento',
+    title: item.title,
+    startTime: item.time,
+    endTime: item.endTime || null,
+    dateKey: item.dateKey,
+    detail: item.category || 'Evento',
+    color: item.color,
+    status: 'upcoming',
+    minutesUntil: minutesUntilActivity(item.dateKey, item.time, now),
+  });
+  const routineItem = (item) => ({
+    id: `routine-${item.id}`,
+    sourceId: item.id,
+    routineId: item.id,
+    kind: 'routine',
+    typeLabel: 'Rutina',
+    title: item.name,
+    startTime: item.startTime || null,
+    endTime: item.endTime || null,
+    dateKey: today,
+    detail: item.description || 'Rutina personal',
+    color: item.color,
+    completed: item.completedDates?.includes(today) === true,
+    status: item.completedDates?.includes(today) ? 'completed' : 'pending',
+  });
+
+  const inProgressActivities = activeActivities
+    .filter((item) => item.start && item.start <= currentTime && String(item.end || item.start) > currentTime)
+    .slice()
+    .sort((a, b) => String(b.start).localeCompare(String(a.start)));
+  const currentActivity = inProgressActivities.length ? activityItem(inProgressActivities[0], 'in-progress') : null;
+  const concurrentActivities = inProgressActivities.slice(1).map((item) => activityItem(item, 'in-progress'));
+  const nextTimedItems = [
+    ...activeActivities
+      .filter((item) => item.start && item.start > currentTime)
+      .map((item) => activityItem(item, 'upcoming')),
+    ...events
+      .filter((item) => item.time && compareDateTime(item, { dateKey: today, time: currentTime }) >= 0)
+      .map(eventItem),
+  ].sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)) || String(a.startTime).localeCompare(String(b.startTime)) || a.title.localeCompare(b.title));
+  const anytimeItems = [
+    ...activeActivities.filter((item) => !String(item.start || '').trim()).map((item) => activityItem(item, 'anytime')),
+    ...todayRoutines.map(routineItem),
+  ];
+  const hasConfiguredData = activities.length > 0 || routines.length > 0 || events.length > 0;
+  const hasTodayData = activeActivities.length > 0 || todayEvents.length > 0 || todayRoutines.length > 0;
+  const hasActiveToday = Boolean(currentActivity || concurrentActivities.length || nextTimedItems.some((item) => item.dateKey === today) || anytimeItems.length);
+  const dayState = !hasConfiguredData
+    ? 'unconfigured'
+    : !hasTodayData
+      ? suspendedActivities.length ? 'suspended' : 'free'
+      : hasActiveToday
+        ? 'active'
+        : 'finished';
 
   const upcomingEvents = events
     .filter((event) => compareDateTime(event, { dateKey: today, time: currentTime }) >= 0)
@@ -204,6 +285,11 @@ export function buildDashboard({
     suspendedToday: suspendedActivities,
     todayEvents,
     todayRoutines,
+    currentActivity,
+    concurrentActivities,
+    nextTimedItems,
+    anytimeItems,
+    dayState,
     todayAgenda,
     // What the greeting answers with: everything scheduled for today, weekly blocks and dated
     // events together, whether or not the clock already went past them. Suspended sessions

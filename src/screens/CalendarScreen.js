@@ -3,7 +3,7 @@ import { Image, Pressable, Text, View, useWindowDimensions } from 'react-native'
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { themedStyles, calendarTheme, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
-import { useFocusId } from '../hooks/useFocusId';
+import { useFocusRequest } from '../hooks/useFocusId';
 import { useSwipeLockActions } from '../context/SwipeLockContext';
 import { useAccentTheme } from '../context/ThemeContext';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
@@ -116,8 +116,8 @@ export default function CalendarScreen({ navigation }) {
   const { revision: themeRevision, theme: activeAccent, surface: surfaceMode } = useAccentTheme();
   const { width, fontScale } = useWindowDimensions();
   const calendarSwipeRelease = useRef(null);
-  const focusId = useFocusId();
-  const [handledFocusId, setHandledFocusId] = useState(null);
+  const { focusId, request: focusRequest } = useFocusRequest();
+  const handledFocusRequest = useRef(null);
 
   const marks = useMemo(
     () =>
@@ -243,12 +243,17 @@ export default function CalendarScreen({ navigation }) {
   }, [visibleMonth]);
 
   const focusedEvent = focusId ? events.find((item) => item.id === focusId) : null;
-  if (!focusId && handledFocusId) setHandledFocusId(null);
-  if (focusedEvent && handledFocusId !== focusId) {
-    setHandledFocusId(focusId);
-    setSelected(focusedEvent.dateKey || today);
+  useEffect(() => {
+    if (!focusedEvent || handledFocusRequest.current === focusRequest) return;
+    const requestedDateKey = /^\d{4}-\d{2}-\d{2}$/.test(String(focusRequest?.dateKey || ''))
+      ? focusRequest.dateKey
+      : focusedEvent.dateKey || today;
+    handledFocusRequest.current = focusRequest;
+    setSelected(requestedDateKey);
+    setVisibleMonth(`${requestedDateKey.slice(0, 7)}-01`);
+    setCalendarRevision((value) => value + 1);
     openEdit(focusedEvent);
-  }
+  }, [focusRequest, focusedEvent, openEdit, today]);
 
   const setValue = useCallback(
     (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } })),

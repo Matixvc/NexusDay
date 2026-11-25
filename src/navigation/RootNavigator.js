@@ -79,6 +79,7 @@ function PrimaryTabNavigator({ route }) {
   return (
     <Tab.Navigator
       initialRouteName={initialRouteName}
+      backBehavior="history"
       tabBarPosition="bottom"
       tabBar={(props) => <BottomTabBar {...props} />}
       screenOptions={{
