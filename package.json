@@ -38,7 +38,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "npm run test:theme && npm run test:calendar && npm run test:privacy && npm run test:premium && npm run test:notes-gestures && npm run test:backup && npm run test:reminders && npm run test:widget && npm run test:routines && npm run test:u11",
+    "test": "npm run test:theme && npm run test:calendar && npm run test:privacy && npm run test:premium && npm run test:notes-gestures && npm run test:backup && npm run test:reminders && npm run test:widget && npm run test:routines && npm run test:u11 && npm run test:tutorial",
     "test:theme": "node scripts/theme-smoke-test.cjs && node scripts/theme-hydration-smoke-test.cjs",
     "test:calendar": "node scripts/calendar-smoke-test.cjs",
     "test:privacy": "node scripts/privacy-smoke-test.cjs",
@@ -48,7 +48,8 @@
     "test:reminders": "node scripts/reminder-restore-smoke-test.cjs",
     "test:widget": "node scripts/schedule-widget-smoke-test.cjs",
     "test:routines": "node scripts/routines-smoke-test.cjs",
-    "test:u11": "node scripts/u11-experience-smoke-test.cjs"
+    "test:u11": "node scripts/u11-experience-smoke-test.cjs",
+    "test:tutorial": "node scripts/tutorial-interactions-smoke-test.cjs"
   },
   "private": true,
   "devDependencies": {

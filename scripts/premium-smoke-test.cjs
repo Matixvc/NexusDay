@@ -12,6 +12,7 @@ const media = fs.readFileSync(path.join(root, 'src/components/ui/media.js'), 'ut
 const calendar = fs.readFileSync(path.join(root, 'src/screens/CalendarScreen.js'), 'utf8');
 const theme = fs.readFileSync(path.join(root, 'src/theme/theme.js'), 'utf8');
 const onboarding = fs.readFileSync(path.join(root, 'src/screens/OnboardingScreen.js'), 'utf8');
+const tutorialGuide = fs.readFileSync(path.join(root, 'src/services/tutorialGuide.js'), 'utf8');
 const settings = fs.readFileSync(path.join(root, 'src/screens/SettingsScreen.js'), 'utf8');
 const appData = fs.readFileSync(path.join(root, 'src/context/AppDataContext.js'), 'utf8');
 const icon = fs.readFileSync(path.join(root, 'src/components/Icon.tsx'), 'utf8');
@@ -28,7 +29,7 @@ assert.ok(!/route:\s*'Notas'/.test(home), 'Inicio no debe duplicar la navegació
 assert.ok(!/route:\s*'Agenda'/.test(home), 'Inicio no debe duplicar la navegación principal del Calendario.');
 assert.match(home, /useFocusEffect\([\s\S]*?millisecondsToNextMinute\(now\)[\s\S]*?AppState\.addEventListener/, 'Día a Día debe actualizar su reloj solo mientras está enfocado y al volver a primer plano.');
 assert.equal(appConfig.version, '1.2.0', 'La próxima APK debe identificar la fase U10.2 como versión 1.2.0.');
-assert.deepEqual(appConfig.runtimeVersion, { policy: 'appVersion' }, 'Runtime debe seguir el app version para que 1.1.0 no consuma bundles 1.2.0.');
+assert.equal(appConfig.runtimeVersion, '1.1.0', 'La OTA debe conservar compatibilidad con la APK base 1.1.0.');
 assert.equal(appConfig.android.package, 'com.matix03.nexusday', 'La actualización debe conservar el application ID instalado.');
 assert.match(home, /buildDashboard\(\{[\s\S]*?now: new Date\(clockTimestamp\)/, 'El resumen de hoy debe recalcularse con el reloj actualizado.');
 assert.match(home, /data\.todayCommitments === 0[\s\S]*?sin actividades programadas[\s\S]*?todayCommitments === 1[\s\S]*?en agenda/, 'Inicio debe resumir el compromiso diario sin añadir datos ajenos.');
@@ -92,7 +93,7 @@ assert.ok(!/^\s*text\s*:/m.test(dayStyles), 'El tamaño de día debe heredarse d
 assert.ok(!/^\s*month\s*:/m.test(headerStyles), 'El espaciado del encabezado no debe usar una clave ignorada por react-native-calendars.');
 assert.match(onboarding, /nexusday-onboarding\.(?:png|webp|jpg)/, 'El onboarding debe cargar la ilustración original local.');
 for (const key of ['welcome', 'day', 'notes', 'calendar', 'themes', 'privacy']) {
-  assert.match(onboarding, new RegExp(`key: '${key}'`), `El tutorial debe incluir el paso de ${key}.`);
+  assert.match(tutorialGuide, new RegExp(`key: '${key}'`), `El tutorial debe incluir el paso de ${key}.`);
 }
 for (const asset of ['tutorial-day.jpg', 'tutorial-notes.jpg', 'tutorial-calendar.jpg', 'tutorial-themes.jpg', 'tutorial-privacy.jpg']) {
   assert.ok(onboarding.includes(asset), `El tutorial debe integrar el recurso local ${asset}.`);

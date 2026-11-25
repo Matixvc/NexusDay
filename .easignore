@@ -41,6 +41,17 @@ yarn-error.*
 .env.*
 .env*.local
 
+# Local exports and app data; never include user backups in a build archive
+/backups/
+/respaldos/
+*.backup.json
+*.respaldo.json
+nexusday-backup*.json
+nexusday-respaldo*.json
+*.sqlite
+*.sqlite3
+*.db
+
 # typescript
 *.tsbuildinfo
 

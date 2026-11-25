@@ -7,6 +7,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const primary = read('src/navigation/primaryTabs.js');
 const tabCatalog = read('src/navigation/tabs.js');
 const onboarding = read('src/screens/OnboardingScreen.js');
+const tutorialGuide = read('src/services/tutorialGuide.js');
 const appData = read('src/context/AppDataContext.js');
 const settings = read('src/screens/SettingsScreen.js');
 const nexAi = read('src/screens/NexAiPreviewScreen.js');
@@ -16,7 +17,7 @@ assert.match(tabCatalog, /export const HOME_TAB = 'Inicio'/);
 assert.match(tabCatalog, /name: 'Nexus AI'[\s\S]*?component: AssistantScreen/, 'La ruta histórica del asistente local debe mantenerse registrada.');
 assert.match(tabCatalog, /'Nex AI': NexAiPreviewScreen/);
 
-const slideKeys = [...onboarding.matchAll(/key: '([^']+)'/g)].map((match) => match[1]);
+const slideKeys = [...tutorialGuide.matchAll(/key: '([^']+)'/g)].slice(0, 6).map((match) => match[1]);
 assert.deepEqual(slideKeys, ['welcome', 'day', 'notes', 'calendar', 'themes', 'privacy']);
 assert.match(onboarding, /animated: !reduceMotion/);
 assert.match(appData, /if \(!tutorial\.replay\) await clearAllData\(\)/, 'La repetición debe conservar el flujo que no elimina datos.');

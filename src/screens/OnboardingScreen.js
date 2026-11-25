@@ -16,7 +16,9 @@ import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
 import { Icon } from '../components/Icon';
+import { TutorialDemos } from '../components/onboarding/TutorialDemos';
 import { useAppData } from '../context/AppDataContext';
+import { TUTORIAL_STEPS } from '../services/tutorialGuide';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
@@ -37,62 +39,10 @@ const TUTORIAL_ART = {
  * Artwork is illustrative and contains no user data. The welcome page carries the optional
  * name field (`field: true`), the only profile detail this guide asks for.
  */
-const SLIDES = [
-  {
-    key: 'welcome',
-    icon: 'home',
-    title: 'Tu día, con más claridad',
-    body: 'NexusDay reúne tu tiempo, tus ideas y tus rutinas en un espacio local.',
-    points: ['Empieza en Día a Día para ver lo que viene.', 'Tus datos permanecen en este dispositivo.', 'Configura solo lo que quieras usar.'],
-    tip: 'Puedes volver a esta guía desde Ajustes cuando lo necesites.',
-    field: true,
-  },
-  {
-    key: 'day',
-    icon: 'home',
-    title: 'Organiza tu jornada',
-    body: 'Día a Día integra clases, eventos cercanos y tus rutinas personales.',
-    points: ['Consulta las clases y su cuenta regresiva.', 'Las rutinas aparecen junto a tus compromisos sin mezclarse con el horario.', 'Abre Horario para revisar o ajustar la semana.'],
-    tip: 'El resumen no incluye contenido de notas privadas.',
-    image: TUTORIAL_ART.day,
-  },
-  {
-    key: 'notes',
-    icon: 'note',
-    title: 'Guarda lo que importa',
-    body: 'Crea notas para tus ideas y encuentra la información cuando la necesites.',
-    points: ['Crea una nota con título y contenido.', 'Busca y organiza con etiquetas.', 'Marca una nota como privada para proteger su acceso.'],
-    tip: 'Las notas privadas requieren autorización al abrirse y no se muestran en resúmenes.',
-    image: TUTORIAL_ART.notes,
-  },
-  {
-    key: 'calendar',
-    icon: 'calendar',
-    title: 'Mira el mes, planea el día',
-    body: 'Calendario conecta tus fechas importantes con la agenda de cada día.',
-    points: ['Toca un día para consultar su agenda.', 'Crea eventos y revisa los que ya tienes.', 'Los cumpleaños se repiten cada año y permanecen en Calendario.'],
-    tip: 'Selecciona una fecha del mes para ver sus eventos y cumpleaños.',
-    image: TUTORIAL_ART.calendar,
-  },
-  {
-    key: 'themes',
-    icon: 'palette',
-    title: 'Adáptalo a tu ambiente',
-    body: 'Apariencia reúne los temas Blanco, Oscuro y Nex, además de los acentos disponibles.',
-    points: ['Elige un tema con su vista previa.', 'Selecciona uno de los acentos existentes.', 'Las preferencias se guardan en este dispositivo.'],
-    tip: 'Cambiar de tema no modifica tus notas, rutinas ni eventos.',
-    image: TUTORIAL_ART.themes,
-  },
-  {
-    key: 'privacy',
-    icon: 'shieldCheck',
-    title: 'Protege y conserva tus datos',
-    body: 'NexusDay incluye controles de privacidad y copias que puedes administrar desde Ajustes.',
-    points: ['Las notas privadas requieren autorización según tu configuración.', 'Exporta una copia antes de cambiar de dispositivo.', 'Repite este tutorial desde Ajustes sin restablecer tus datos.'],
-    tip: 'Los adjuntos locales pueden depender de los archivos disponibles en el dispositivo.',
-    image: TUTORIAL_ART.privacy,
-  },
-];
+const SLIDES = TUTORIAL_STEPS.map((step) => ({
+  ...step,
+  image: step.imageKey ? TUTORIAL_ART[step.imageKey] : null,
+}));
 
 /**
  * First-run tutorial (also the replay Ajustes can trigger).
@@ -296,9 +246,14 @@ function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onS
           <Icon name={slide.icon} size={unit(28)} color={colors.accent} />
         </View>
         <View style={styles.headline}>
-          <Text style={[typography.display, { fontSize: unit(25), lineHeight: unit(30) }]}>{slide.title}</Text>
+          <Text style={[typography.display, { fontSize: unit(25), lineHeight: unit(30) }]} accessibilityRole="header">{slide.title}</Text>
           <Text style={[typography.subtitle, { lineHeight: unit(19) }]}>{slide.body}</Text>
         </View>
+      </View>
+
+      <View style={styles.objective}>
+        <Text style={[typography.overline, styles.objectiveLabel]}>EN ESTE PASO</Text>
+        <Text style={[typography.small, styles.objectiveText]}>{slide.objective}</Text>
       </View>
 
       {slide.field ? <NameField unit={unit} value={nameDraft} onChange={onChangeName} onSave={onSaveName} /> : null}
@@ -312,6 +267,8 @@ function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onS
           importantForAccessibility="no"
         />
       ) : null}
+
+      <TutorialDemos demoId={slide.demoId} />
 
       <View style={styles.points}>
         {slide.points.map((point, pointIndex) => {
@@ -473,6 +430,9 @@ const styles = themedStyles({
   pointBody: { flex: 1, gap: spacing.xs },
   pointText: { ...typography.small, color: colors.text, lineHeight: 18 },
   pointTip: { ...typography.caption, color: colors.textSecondary, lineHeight: 17 },
+  objective: { gap: 2, borderLeftWidth: 3, borderLeftColor: colors.accent, paddingLeft: spacing.md, paddingVertical: spacing.xs },
+  objectiveLabel: { color: colors.accent },
+  objectiveText: { color: colors.text, lineHeight: 19 },
 
   // The pager grows, so the controls already sit at the bottom of the screen; the padding here is
   // the gutter the body deliberately does not carry.
