@@ -376,8 +376,9 @@ function cannot(what) {
  * bubble. Los nombres se resuelven con tolerancia a tipeos (`fuzzyFind`), así que un
  * "marca el habito calclo" sigue tachando "Cálculo".
  */
-export function applyCommand(command, writers = {}) {
+export async function applyCommand(command, writers = {}) {
   const payload = command?.payload ?? {};
+  const failed = { title: 'No se pudo guardar el cambio', body: 'Inténtalo de nuevo.' };
 
   if (command?.type === 'capabilities') {
     return {
@@ -409,7 +410,7 @@ export function applyCommand(command, writers = {}) {
     }
     const marks = [...(Array.isArray(habit.marks) ? habit.marks : []), todayKey()];
     writers.dropReminder?.(habit);
-    writers.updateHabit(habit.id, { marks, notificationId: null });
+    if (!await writers.updateHabit(habit.id, { marks, notificationId: null })) return failed;
     const streak = habitStreak({ ...habit, marks });
     return {
       title: 'Hábito tachado ✅',
@@ -432,7 +433,7 @@ export function applyCommand(command, writers = {}) {
         routeLabel: 'Abrir hábitos',
       };
     }
-    writers.addHabit({ name: payload.name, emoji: '✅', color: colors.accent, marks: [] });
+    if (!await writers.addHabit({ name: payload.name, emoji: '✅', color: colors.accent, marks: [] })) return failed;
     return {
       title: 'Hábito creado ✅',
       body: `“${payload.name}” ya está en Hábitos, listo para marcar. Su racha empieza desde hoy.`,
@@ -460,9 +461,9 @@ export function applyCommand(command, writers = {}) {
         routeLabel: 'Abrir horario',
       };
     }
-    writers.updateActivity(activity.id, {
+    if (!await writers.updateActivity(activity.id, {
       suspended: { ...(activity.suspended || {}), [todayKey()]: true },
-    });
+    })) return failed;
     return {
       title: 'Clase suspendida ⏸️',
       body: `“${activity.title}” no cuenta hoy: el Horario y el tablero la marcan como suspendida. Mañana vuelve a la normalidad.`,
@@ -473,7 +474,7 @@ export function applyCommand(command, writers = {}) {
 
   if (command?.type === 'create_activity') {
     if (!writers.addActivity) return cannot('crear asignaturas');
-    writers.addActivity({
+    if (!await writers.addActivity({
       day: payload.day,
       title: payload.title,
       start: payload.start,
@@ -483,7 +484,7 @@ export function applyCommand(command, writers = {}) {
       leadMinutes: -1,
       suspended: {},
       notificationId: null,
-    });
+    })) return failed;
     const guessed = [
       payload.guessedDay && `lo puse el ${WEEKDAYS[payload.day].long.toLowerCase()}`,
       payload.guessedTime && 'a las 09:00 porque no indicaste el horario',
@@ -500,7 +501,7 @@ export function applyCommand(command, writers = {}) {
     if (!writers.addNote) return cannot('crear listas');
     const items = (payload.items || []).map((text) => makeCheckItem(text));
     const stamp = Date.now();
-    writers.addNote({
+    if (!await writers.addNote({
       kind: NOTE_KINDS.checklist,
       title: payload.title,
       body: '',
@@ -514,7 +515,7 @@ export function applyCommand(command, writers = {}) {
       createdAt: stamp,
       updatedAt: stamp,
       idPrefix: 'nota',
-    });
+    })) return failed;
     return {
       title: 'Lista creada ✅',
       body: items.length
@@ -527,7 +528,7 @@ export function applyCommand(command, writers = {}) {
 
   if (command?.type === 'create_note') {
     if (!writers.addNote) return cannot('crear notas');
-    writers.addNote({
+    if (!await writers.addNote({
       title: payload.title,
       kind: NOTE_KINDS.text,
       body: '',
@@ -541,7 +542,7 @@ export function applyCommand(command, writers = {}) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       idPrefix: 'nota',
-    });
+    })) return failed;
     return {
       title: 'Anotado ✅',
       body: `Guardé “${payload.title}” en Notas. Añade texto, audio o un documento desde ahí.`,
@@ -552,7 +553,7 @@ export function applyCommand(command, writers = {}) {
 
   if (command?.type === 'create_event') {
     if (!writers.addEvent) return cannot('agendar eventos');
-    writers.addEvent({
+    if (!await writers.addEvent({
       title: payload.title,
       dateKey: payload.dateKey,
       time: payload.time,
@@ -563,7 +564,7 @@ export function applyCommand(command, writers = {}) {
       color: colors.accent,
       createdAt: Date.now(),
       idPrefix: 'ev',
-    });
+    })) return failed;
     const guessed = [
       payload.guessedDate && 'lo puse para hoy porque no indicaste el día',
       payload.guessedTime && 'a las 09:00 porque no indicaste el horario',
@@ -578,14 +579,14 @@ export function applyCommand(command, writers = {}) {
 
   if (command?.type === 'create_expense') {
     if (!writers.addExpense) return cannot('registrar gastos');
-    writers.addExpense({
+    if (!await writers.addExpense({
       dateKey: payload.dateKey,
       amount: payload.amount,
       category: payload.category,
       note: payload.note,
       createdAt: Date.now(),
       idPrefix: 'gasto',
-    });
+    })) return failed;
     return {
       title: 'Gasto registrado 💸',
       body: `${formatMoney(payload.amount)} en ${payload.category}, ${formatDateShort(payload.dateKey)}. Lo ves en Gastos junto al resto del mes.`,

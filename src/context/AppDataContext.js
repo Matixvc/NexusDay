@@ -1,22 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { KEYS, loadValue, persistRestoreSnapshot, saveValue } from '../services/storage';
+import { KEYS, loadJSON, mutateLockedCollection, withCollectionLock, loadValue, persistRestoreSnapshot, saveValue } from '../services/storage';
 import { completeBackupCollections, validateBackup } from '../services/backupRestore';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
 import { useRoutineCollection } from '../hooks/useRoutineCollection';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
-import { subscribeToNotificationActions } from '../services/notifications';
 import { resyncReminders } from '../services/reminders';
-import { todayKey } from '../utils/dates';
-import {
-  seedActivities,
-  seedBirthdays,
-  seedEvents,
-  seedExpenses,
-  seedHabits,
-  seedNotes,
-} from '../data/seeds';
 
 const AppDataContext = createContext(null);
 
@@ -39,12 +29,12 @@ const UNSEEN_TUTORIAL = { completed: null, replay: false };
  * Screens consume it through `useAppData()`.
  */
 export function AppDataProvider({ children }) {
-  const activities = usePersistentCollection(KEYS.activities, seedActivities());
-  const events = usePersistentCollection(KEYS.events, seedEvents());
-  const birthdays = usePersistentCollection(KEYS.birthdays, seedBirthdays());
-  const notes = usePersistentCollection(KEYS.notes, seedNotes());
-  const habits = usePersistentCollection(KEYS.habits, seedHabits());
-  const expenses = usePersistentCollection(KEYS.expenses, seedExpenses());
+  const activities = usePersistentCollection(KEYS.activities);
+  const events = usePersistentCollection(KEYS.events);
+  const birthdays = usePersistentCollection(KEYS.birthdays);
+  const notes = usePersistentCollection(KEYS.notes);
+  const habits = usePersistentCollection(KEYS.habits);
+  const expenses = usePersistentCollection(KEYS.expenses);
   const routines = useRoutineCollection();
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -137,24 +127,6 @@ export function AppDataProvider({ children }) {
       if (active) setPermission({ ...status, checked: true });
     });
 
-    // A "✓ Completar" from the notification shade is applied to the live collection, so
-    // the tick shows up in the UI without waiting for the next app start.
-    const unsubscribe = Notif.subscribeToNotificationActions((action) => {
-      if (action.type === 'habit-complete') {
-        habits.update(action.itemId, { marks: action.marks });
-        return;
-      }
-      if (action.type === 'reminder-id') {
-        if (events.items.some((item) => item.id === action.itemId)) {
-          events.update(action.itemId, { notificationId: action.notificationId });
-        } else if (habits.items.some((item) => item.id === action.itemId)) {
-          habits.update(action.itemId, { notificationId: action.notificationId });
-        } else {
-          birthdays.update(action.itemId, { notificationId: action.notificationId });
-        }
-      }
-    });
-
     // Permission is often flipped from the OS settings screen (the "Activa los
     // avisos" card sends people there), so re-read it whenever the app returns.
     const subscription = AppState.addEventListener('change', (state) => {
@@ -163,10 +135,9 @@ export function AppDataProvider({ children }) {
 
     return () => {
       active = false;
-      unsubscribe();
       subscription.remove();
     };
-  }, [refreshPermission, habits, events, birthdays]);
+  }, [refreshPermission]);
 
   // Re-arm reminders that Android may have dropped (reboot, app update) or that
   // were saved before permission was granted. Runs once per session, after
@@ -188,25 +159,25 @@ export function AppDataProvider({ children }) {
   const allCollectionsHydrated = allHydrated && routines.hydrated;
   const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError) || routines.restoreRecoveryError;
 
-  /** Wipes every local collection (used by Ajustes › Borrar datos and the first-run wipe). */
-  const clearAllData = useCallback(async () => routines.runExclusive(async ({ setSnapshot }) => {
+  /** Wipes every local collection (used by Ajustes › Borrar datos). */
+  const clearAllData = useCallback(async () => routines.runExclusive(async ({ setSnapshot }) => withCollectionLock(async () => {
     const empty = [];
     const entries = [KEYS.activities, KEYS.events, KEYS.birthdays, KEYS.notes, KEYS.habits, KEYS.expenses, KEYS.routines]
       .map((key) => ({ key, value: JSON.stringify(empty) }));
     await persistRestoreSnapshot(entries);
-    activities.replaceAll(empty, { persist: false });
-    events.replaceAll(empty, { persist: false });
-    birthdays.replaceAll(empty, { persist: false });
-    notes.replaceAll(empty, { persist: false });
-    habits.replaceAll(empty, { persist: false });
-    expenses.replaceAll(empty, { persist: false });
+    activities.replaceAll(empty);
+    events.replaceAll(empty);
+    birthdays.replaceAll(empty);
+    notes.replaceAll(empty);
+    habits.replaceAll(empty);
+    expenses.replaceAll(empty);
     setSnapshot(empty);
     return { dataCleared: true };
-  }), [activities, events, birthdays, notes, habits, expenses, routines]);
+  })), [activities, events, birthdays, notes, habits, expenses, routines]);
 
   /** Persists a validated restore snapshot and updates memory only after verification. */
   const restoreBackup = useCallback(
-    async (backup = {}) => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => {
+    async (backup = {}) => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => withCollectionLock(async () => {
       if (routines.recoveryError && !Array.isArray(backup.routines)) {
         throw new Error('RESTORE_ROUTINES_UNAVAILABLE');
       }
@@ -214,12 +185,12 @@ export function AppDataProvider({ children }) {
         throw new Error('RESTORE_INVALID_SNAPSHOT');
       }
       const sourceCollections = completeBackupCollections(backup, {
-        activities: activities.items,
-        events: events.items,
-        birthdays: birthdays.items,
-        notes: notes.items,
-        habits: habits.items,
-        expenses: expenses.items,
+        activities: backup.activities ?? await loadJSON(KEYS.activities),
+        events: backup.events ?? await loadJSON(KEYS.events),
+        birthdays: backup.birthdays ?? await loadJSON(KEYS.birthdays),
+        notes: backup.notes ?? await loadJSON(KEYS.notes),
+        habits: backup.habits ?? await loadJSON(KEYS.habits),
+        expenses: backup.expenses ?? await loadJSON(KEYS.expenses),
         routines: currentRoutines,
       });
       // Los arrays locales son la fuente de verdad: `events.items` (por ejemplo) sigue
@@ -254,12 +225,12 @@ export function AppDataProvider({ children }) {
 
       await persistRestoreSnapshot(entries);
 
-      activities.replaceAll(restoredActivities, { persist: false });
-      events.replaceAll(restoredEvents, { persist: false });
-      birthdays.replaceAll(restoredBirthdays, { persist: false });
-      notes.replaceAll(restoredNotes, { persist: false });
-      habits.replaceAll(restoredHabits, { persist: false });
-      expenses.replaceAll(restoredExpenses, { persist: false });
+      activities.replaceAll(restoredActivities);
+      events.replaceAll(restoredEvents);
+      birthdays.replaceAll(restoredBirthdays);
+      notes.replaceAll(restoredNotes);
+      habits.replaceAll(restoredHabits);
+      expenses.replaceAll(restoredExpenses);
       setSnapshot(restoredRoutines);
       if (nextSettings) setSettings(nextSettings);
       if (nextUserName !== null) setUserNameState(nextUserName);
@@ -274,32 +245,33 @@ export function AppDataProvider({ children }) {
           habits: restoredHabits,
           activities: restoredActivities,
         });
-        patches.eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
-        patches.birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
-        patches.habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
-        patches.activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
+        for (const [key, updates] of [
+          [KEYS.events, patches.eventPatches], [KEYS.birthdays, patches.birthdayPatches],
+          [KEYS.habits, patches.habitPatches], [KEYS.activities, patches.activityPatches],
+        ]) {
+          if (!updates.length) continue;
+          const ids = new Map(updates.map(patch => [patch.id, patch.notificationId]));
+          await mutateLockedCollection(key, items => items.map(item =>
+            ids.has(item.id) ? { ...item, notificationId: ids.get(item.id) } : item
+          ));
+        }
         return { dataRestored: true, notificationsRecreated: patches.failures.length === 0 };
       } catch (error) {
         void error;
         return { dataRestored: true, notificationsRecreated: false };
       }
-    }),
+    })),
     [activities, events, birthdays, notes, habits, expenses, settings, routines],
   );
 
-  /**
-   * Tutorial finished. On the first run this also wipes the sample data, so the user
-   * starts from a completely blank app instead of inheriting somebody else's schedule.
-   */
+  // The guide only changes its own completion flag.
   const finishTutorial = useCallback(async () => {
-    if (!tutorial.replay) await clearAllData();
     await saveValue(KEYS.onboarding, true);
     setTutorial({ completed: true, replay: false });
-  }, [tutorial.replay, clearAllData]);
+  }, []);
 
   /** Ajustes › "Ver el tutorial otra vez": show the slides again, keeping the data. */
   const replayTutorial = useCallback(() => {
-    saveValue(KEYS.onboarding, false);
     setTutorial({ completed: false, replay: true });
   }, []);
 
@@ -335,40 +307,6 @@ export function AppDataProvider({ children }) {
       clearTimeout(timer);
     };
   }, [allCollectionsHydrated, permission.granted, events, birthdays, habits, activities]);
-
-  /** Mantiene el estado en memoria sincronizado cuando el usuario actúa desde una notificación
-   * (✓ Completar / ⏱ Posponer). `notifications.js` ya escribe a AsyncStorage; este effect se
-   * encarga de que lo que se ve en pantalla se actualice al instante sin reiniciar la app.
-   * No procesa acciones hasta que todas las colecciones estén hidratadas, para no escribir
-   * sobre datos de semilla en lugar de los datos reales del usuario. */
-  useEffect(() => {
-    if (!allCollectionsHydrated) return;
-    const unsubscribe = subscribeToNotificationActions((action) => {
-      if (action.type === 'habit-complete') {
-        const today = todayKey();
-        habits.update(action.itemId, {
-          marks: (() => {
-            const current = habits.items.find((h) => h.id === action.itemId);
-            const marks = Array.isArray(current?.marks) ? current.marks : [];
-            if (marks.includes(today)) return marks;
-            return [...marks, today].sort();
-          })(),
-          notificationId: null,
-        });
-      } else if (action.type === 'reminder-id') {
-        // Actualizar el notificationId en la colección correspondiente
-        const collections = [events, birthdays, habits];
-        for (const collection of collections) {
-          const item = collection.items.find((i) => i.id === action.itemId);
-          if (item) {
-            collection.update(action.itemId, { notificationId: action.notificationId });
-            break;
-          }
-        }
-      }
-    });
-    return unsubscribe;
-  }, [allCollectionsHydrated, events, birthdays, habits]);
 
   const value = useMemo(
     () => ({

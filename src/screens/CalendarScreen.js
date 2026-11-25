@@ -310,12 +310,15 @@ export default function CalendarScreen({ navigation }) {
     setSaving(true);
     const result = await syncEventReminder(payload, values.notificationId);
 
-    if (mode === 'edit') {
-      updateEvent(id, { ...payload, notificationId: result.notificationId });
-    } else {
-      addEvent({ ...payload, notificationId: result.notificationId });
-      setSelected(values.dateKey);
+    const record = { ...payload, notificationId: result.notificationId };
+    const committed = mode === 'edit' ? await updateEvent(id, record) : await addEvent(record);
+    if (!committed) {
+      if (result.notificationId) await dropReminder(record);
+      setSaving(false);
+      setNotice('No se pudo guardar el evento.');
+      return;
     }
+    if (mode !== 'edit') setSelected(values.dateKey);
 
     setSaving(false);
     setNotice(result.notice);
@@ -334,7 +337,7 @@ export default function CalendarScreen({ navigation }) {
     });
     setBirthdaySaving(false);
     setNotice(result.notice);
-    setBirthdaySheet(null);
+    if (result.status !== 'write-failed') setBirthdaySheet(null);
   };
 
   const confirmDelete = async () => {

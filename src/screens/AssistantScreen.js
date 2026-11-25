@@ -64,12 +64,12 @@ export default function AssistantScreen({ navigation }) {
    * Una orden ("crea una nota de la reunión") se ejecuta sobre las colecciones; lo demás es
    * una pregunta y se responde leyendo los datos. Los dos terminan en la misma burbuja.
    */
-  const ask = (suggestion) => {
+  const ask = async (suggestion) => {
     const value = String(suggestion ?? question).trim();
     if (!value) return;
     const command = detectCommand(value);
     const answer = command
-      ? applyCommand(command, {
+      ? await applyCommand(command, {
           addNote,
           addEvent,
           addExpense,
@@ -98,22 +98,23 @@ export default function AssistantScreen({ navigation }) {
         if (!habit) return;
         const marks = Array.isArray(habit.marks) ? habit.marks : [];
         if (marks.includes(todayKey())) return;
+        if (!await updateHabit(habit.id, { marks: [...marks, todayKey()], notificationId: null })) return;
         successHaptic();
         dropReminder(habit);
-        updateHabit(habit.id, { marks: [...marks, todayKey()], notificationId: null });
       } else if (action.kind === 'checkitem') {
         const note = notes.find((item) => item.id === action.noteId);
         if (!note) return;
+        let committed = false;
         const result = await authorizePrivateAction({
           record: note,
           action: PRIVATE_ACTIONS.mutate,
           promptMessage: 'Autoriza modificar la nota privada',
-          onAuthorized: () => {
-            successHaptic();
-            updateNote(note.id, { items: toggleCheckItem(note.items, action.itemId), updatedAt: Date.now() });
+          onAuthorized: async () => {
+            committed = await updateNote(note.id, current => ({ items: toggleCheckItem(current.items, action.itemId), updatedAt: Date.now() }));
+            if (committed) successHaptic();
           },
         });
-        if (!result.ok) return;
+        if (!result.ok || !committed) return;
       } else {
         return;
       }

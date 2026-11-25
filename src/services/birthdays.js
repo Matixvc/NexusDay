@@ -32,11 +32,14 @@ export async function saveBirthdayRecord({ mode, id, values, addBirthday, update
 
   if (mode === 'edit') {
     const result = await syncBirthdayReminder({ id, ...payload }, values.notificationId);
-    updateBirthday(id, { ...payload, notificationId: result.notificationId });
+    if (!await updateBirthday(id, { ...payload, notificationId: result.notificationId })) {
+      return { status: 'write-failed', notice: 'No se pudo guardar el cumpleaños.' };
+    }
     return result;
   }
 
-  const created = addBirthday({ ...payload, notificationId: null });
+  const created = await addBirthday({ ...payload, notificationId: null });
+  if (!created) return { status: 'write-failed', notice: 'No se pudo guardar el cumpleaños.' };
   const result = await syncBirthdayReminder({ id: created.id, ...payload }, null);
   updateBirthday(created.id, { notificationId: result.notificationId });
   return result;

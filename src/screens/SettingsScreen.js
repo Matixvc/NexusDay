@@ -45,7 +45,7 @@ import {
   getMicrophonePermission,
   requestMicrophonePermission,
 } from '../services/audio';
-import { BACKUP_COLLECTIONS, backupRequiresPrivateAuthorization, isPartialHistoricalBackup, prepareBackupImport } from '../services/backupRestore';
+import { BACKUP_COLLECTIONS, backupRequiresPrivateAuthorization, isPartialHistoricalBackup, prepareBackupImport, runBackupExport } from '../services/backupRestore';
 
 const PERMISSION_TONE = { granted: 'accent', unknown: 'neutral', denied: 'warning' };
 
@@ -166,6 +166,7 @@ export default function SettingsScreen({ navigation }) {
   const [careerDraft, setCareerDraft] = useState(null);
   const [micPermission, setMicPermission] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
+  const [confirmPrivateExport, setConfirmPrivateExport] = useState(null);
   const [wipeBusy, setWipeBusy] = useState(false);
   // JSON ya parseado y validado, esperando la confirmación explícita antes de restaurar.
   const [confirmImport, setConfirmImport] = useState(null);
@@ -264,28 +265,26 @@ export default function SettingsScreen({ navigation }) {
     setInfo(career.trim() ? 'Carrera guardada.' : 'Se quitó la carrera.');
   };
 
-  /** Exporta una copia local y registra la fecha si el usuario la comparte. */
-  const exportBackup = useCallback(async () => {
-    if (routinesRecoveryError) {
-      setNotice('No se puede exportar una copia completa mientras las rutinas guardadas no se puedan leer.');
+  const performBackupExport = useCallback(async (payload, privateExportConfirmed = false) => {
+    const result = await runBackupExport({
+      payload,
+      privateExportConfirmed,
+      authorize: authorizePrivateAction,
+      writeBackup: (authorizedPayload) => shareText({
+        folder: FOLDERS.exports,
+        name: `nexusday-copia-${new Date().toISOString().slice(0, 10)}.json`,
+        text: JSON.stringify(authorizedPayload, null, 2),
+        dialogTitle: 'Exportar copia de seguridad',
+      }),
+    });
+    if (result.status === 'confirmation-required') {
+      setConfirmPrivateExport(payload);
       return;
     }
-    tapHaptic();
-    const payload = {
-      app: 'NexusDay',
-      schema: 2,
-      exportedAt: Date.now(),
-      collections: { activities, events, birthdays, notes, habits, expenses, routines },
-      settings: settings || {},
-      userName,
-      tabConfig,
-    };
-    const result = await shareText({
-      folder: FOLDERS.exports,
-      name: `nexusday-copia-${new Date().toISOString().slice(0, 10)}.json`,
-      text: JSON.stringify(payload, null, 2),
-      dialogTitle: 'Exportar copia de seguridad',
-    });
+    if (result.status === 'authorization-denied') {
+      setNotice(describePrivacyFailure(result.reason));
+      return;
+    }
     const problem = describeShareStatus(result.status);
     if (problem) {
       setNotice(problem);
@@ -297,6 +296,24 @@ export default function SettingsScreen({ navigation }) {
       setInfo('Copia exportada: el menú de compartir quedó abierto para guardarla donde quieras.');
     }
     refreshStorage();
+  }, [refreshStorage, updateSettings]);
+
+  /** Prepara schema 2; el servicio no escribe hasta resolver confirmacion y autenticacion. */
+  const exportBackup = useCallback(async () => {
+    if (routinesRecoveryError) {
+      setNotice('No se puede exportar una copia completa mientras las rutinas guardadas no se puedan leer.');
+      return;
+    }
+    tapHaptic();
+    await performBackupExport({
+      app: 'NexusDay',
+      schema: 2,
+      exportedAt: Date.now(),
+      collections: { activities, events, birthdays, notes, habits, expenses, routines },
+      settings: settings || {},
+      userName,
+      tabConfig,
+    });
   }, [
     activities,
     events,
@@ -309,9 +326,15 @@ export default function SettingsScreen({ navigation }) {
     settings,
     userName,
     tabConfig,
-    updateSettings,
-    refreshStorage,
+    performBackupExport,
   ]);
+
+  const confirmExportWithPrivateData = useCallback(async () => {
+    const payload = confirmPrivateExport;
+    if (!payload) return;
+    setConfirmPrivateExport(null);
+    await performBackupExport(payload, true);
+  }, [confirmPrivateExport, performBackupExport]);
 
   /**
    * Elige un .json, valida su integridad y solo entonces pide confirmación. Restaurar
@@ -444,7 +467,7 @@ export default function SettingsScreen({ navigation }) {
       if (!result.ok) setNotice(describePrivacyFailure(result.reason));
       else {
         setConfirmWipe(false);
-        setInfo('Se borraron todas las colecciones locales.');
+        setInfo('Se borraron las colecciones y rutinas persistidas. Los archivos locales y respaldos exportados se conservaron.');
       }
     } catch {
       setInfo('No se pudieron borrar los datos. No se confirmó el borrado; vuelve a intentarlo.');
@@ -849,9 +872,14 @@ export default function SettingsScreen({ navigation }) {
           </View>
           <Text style={typography.caption}>
             La copia .json junta las siete colecciones, tu perfil y la barra de solapas: guárdala en Drive,
-            en tu computadora o donde quieras. Importarla reemplaza los datos actuales y pide confirmación.
+            en tu computadora o donde quieras. Es un archivo legible y puede contener información sensible.
+            Importarla reemplaza los datos actuales y pide confirmación.
           </Text>
-          <TextButton label="Borrar todos los datos" tone="danger" onPress={() => setConfirmWipe(true)} />
+          <Text style={typography.caption}>
+            Borrar colecciones vacía actividades, eventos, cumpleaños, notas, hábitos, gastos y rutinas persistidas.
+            Conserva perfil y ajustes, adjuntos, notas de voz y respaldos .json exportados.
+          </Text>
+          <TextButton label="Borrar colecciones y rutinas" tone="danger" onPress={() => setConfirmWipe(true)} />
         </Card>
 
 
@@ -903,9 +931,18 @@ export default function SettingsScreen({ navigation }) {
         visible={confirmWipe}
         onClose={() => setConfirmWipe(false)}
         onConfirm={wipe}
-        title="¿Borrar todos los datos?"
-        message="¿Estás seguro de que quieres eliminar estos datos? Esta acción no se puede deshacer."
-        confirmLabel="Sí, eliminar"
+        title="¿Borrar colecciones y rutinas?"
+        message="Se vaciarán actividades, eventos, cumpleaños, notas, hábitos, gastos y rutinas persistidas. No se borrarán tu perfil y ajustes, adjuntos, notas de voz ni respaldos .json exportados. Esta acción no se puede deshacer."
+        confirmLabel="Sí, borrar colecciones"
+      />
+
+      <ConfirmSheet
+        visible={Boolean(confirmPrivateExport)}
+        onClose={() => setConfirmPrivateExport(null)}
+        onConfirm={confirmExportWithPrivateData}
+        title="¿Exportar datos privados?"
+        message="Esta copia JSON contiene notas o gastos privados en texto legible. Si continúas, NexusDay solicitará autenticación antes de crear el archivo. Guárdalo en un lugar seguro."
+        confirmLabel="Continuar y autenticar"
       />
 
       <ConfirmSheet

@@ -132,7 +132,7 @@ export default function ScheduleScreen({ navigation }) {
   const invalidRange = sheet ? minutesBetween(sheet.values.start, sheet.values.end) <= 0 : false;
   const canSave = Boolean(sheet) && !invalidTitle && !invalidRange;
 
-  const save = () => {
+  const save = async () => {
     const { mode, id, values } = sheet;
     const payload = {
       title: values.title.trim(),
@@ -146,11 +146,12 @@ export default function ScheduleScreen({ navigation }) {
     // El recordatorio de clase se reprograma junto con el dato (one-shot a la próxima
     // ocurrencia no suspendida); la actividad previa se cancela para no dejar huérfanas.
     if (mode === 'edit') {
-      updateActivity(id, payload);
+      if (!await updateActivity(id, payload)) { setNotice('No se pudo guardar la actividad.'); return; }
       syncClassReminder({ id, ...payload, suspended: activities.find((a) => a.id === id)?.suspended }, activities.find((a) => a.id === id)?.notificationId);
     } else {
-      const created = addActivity({ day, ...payload, suspended: {}, notificationId: null });
-      if (created?.leadMinutes && created.leadMinutes !== -1) {
+      const created = await addActivity({ day, ...payload, suspended: {}, notificationId: null });
+      if (!created) { setNotice('No se pudo guardar la actividad.'); return; }
+      if (created.leadMinutes && created.leadMinutes !== -1) {
         syncClassReminder(created, null).then(({ notificationId }) => {
           if (notificationId) updateActivity(created.id, { notificationId });
         });
@@ -195,20 +196,21 @@ export default function ScheduleScreen({ navigation }) {
   };
 
   /** a) Crear Nota de Clase: nota nueva etiquetada con el nombre de la asignatura. */
-  const createClassNote = (item) => {
-    const note = addNote({
+  const createClassNote = async (item) => {
+    const note = await addNote({
       ...blankNote(item.color || colors.accent),
       title: `Nota de clase · ${item.title}`,
       tags: [item.title],
     });
+    if (!note) { setNotice('No se pudo guardar. Inténtalo de nuevo.'); return; }
     setHubId(null);
     successHaptic();
     navigateToRoute(navigation, 'Notas', { focusId: note.id });
   };
 
   /** b) Agendar Evaluación: evento en la Agenda vinculado al ramo. */
-  const scheduleEvaluation = (item) => {
-    const event = addEvent({
+  const scheduleEvaluation = async (item) => {
+    const event = await addEvent({
       title: `Evaluación: ${item.title}`,
       dateKey: sessionDateKey(item.day),
       time: item.start,
@@ -218,6 +220,7 @@ export default function ScheduleScreen({ navigation }) {
       category: 'Examen',
       notificationId: null,
     });
+    if (!event) { setNotice('No se pudo guardar. Inténtalo de nuevo.'); return; }
     setHubId(null);
     successHaptic();
     navigateToRoute(navigation, 'Agenda', { focusId: event.id });

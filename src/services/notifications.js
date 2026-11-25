@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance, AndroidNotificationVisibility, AndroidAudioUsage, AndroidAudioContentType } from 'expo-notifications';
-import { KEYS, loadJSON, saveJSON } from './storage';
+import { KEYS, mutateCollection } from './storage';
 import { todayKey } from '../utils/dates';
 import { colors } from '../theme/theme';
 
@@ -47,24 +47,6 @@ let responseListenerAttached = false;
 
 /** Response ids already handled, so a cold start never runs an action twice. */
 const handledResponses = new Set();
-
-/** Subscribers that mirror an action onto the live UI (see AppDataContext). */
-const actionListeners = new Set();
-
-export function subscribeToNotificationActions(listener) {
-  actionListeners.add(listener);
-  return () => actionListeners.delete(listener);
-}
-
-function emitAction(action) {
-  actionListeners.forEach((listener) => {
-    try {
-      listener(action);
-    } catch (error) {
-      console.warn('[notifications] an action listener failed', error);
-    }
-  });
-}
 
 const unsupported = () => ({ status: 'unsupported', granted: false, canAskAgain: false });
 
@@ -276,31 +258,25 @@ const REMINDER_COLLECTIONS = [KEYS.events, KEYS.habits, KEYS.birthdays];
 
 /** Ticks today's habit without opening the app, then tells the UI about it. */
 async function completeHabit(itemId) {
-  const habits = await loadJSON(KEYS.habits, []);
   const today = todayKey();
-  const index = habits.findIndex((habit) => habit.id === itemId);
-  if (index < 0) return;
-
-  const marks = Array.isArray(habits[index].marks) ? habits[index].marks : [];
-  if (marks.includes(today)) return;
-
-  const next = [...marks, today].sort();
-  habits[index] = { ...habits[index], marks: next };
-  await saveJSON(KEYS.habits, habits);
-  emitAction({ type: 'habit-complete', itemId, marks: next });
+  await mutateCollection(KEYS.habits, habits => {
+    const habit = habits.find(item => item.id === itemId);
+    if (!habit) return null;
+    const marks = Array.isArray(habit.marks) ? habit.marks : [];
+    if (marks.includes(today) && !habit.notificationId) return null;
+    return habits.map(item => item !== habit ? item : {
+      ...item, marks: marks.includes(today) ? marks : [...marks, today].sort(), notificationId: null,
+    });
+  });
 }
 
-/** Points an item at its new notification so the resync does not spawn a duplicate. */
 async function patchNotificationId(itemId, notificationId) {
   for (const key of REMINDER_COLLECTIONS) {
-    const items = await loadJSON(key, []);
-    const index = items.findIndex((item) => item.id === itemId);
-    if (index < 0) continue;
-    const next = [...items];
-    next[index] = { ...next[index], notificationId };
-    await saveJSON(key, next);
-    emitAction({ type: 'reminder-id', itemId, notificationId });
-    return;
+    const changed = await mutateCollection(key, items => {
+      if (!items.some(item => item.id === itemId)) return null;
+      return items.map(item => item.id === itemId ? { ...item, notificationId } : item);
+    });
+    if (changed) return;
   }
 }
 

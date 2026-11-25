@@ -17,7 +17,7 @@ require.extensions['.js'] = (module, filename) => {
   module._compile(result.code, filename);
 };
 
-const { validateBackup, prepareBackupImport, backupContainsPrivateRecords, backupRequiresPrivateAuthorization, isPartialHistoricalBackup, completeBackupCollections, runRestoreTransaction, recoverRestoreTransaction, RESTORE_JOURNAL_KEY } = require('../src/services/backupRestore');
+const { validateBackup, prepareBackupImport, backupContainsPrivateRecords, backupRequiresPrivateAuthorization, runBackupExport, isPartialHistoricalBackup, completeBackupCollections, runRestoreTransaction, recoverRestoreTransaction, RESTORE_JOURNAL_KEY } = require('../src/services/backupRestore');
 const { PRIVATE_ACTIONS, createPrivacyAuthorizer } = require('../src/services/privacyPolicy');
 
 const collections = {
@@ -97,6 +97,70 @@ async function verifyDeniedRestore() {
   assert.equal(restoreMutations, 0, 'Authentication cancellation never reaches storage mutation.');
 }
 
+async function verifySecureBackupExport() {
+  const publicPayload = {
+    ...schema2,
+    collections: {
+      ...schema2.collections,
+      notes: [{ id: 'public-note', title: 'Visible' }],
+      expenses: [],
+    },
+  };
+  let authorizationCalls = 0;
+  let writeCalls = 0;
+  const writeBackup = async (payload) => {
+    writeCalls += 1;
+    assert.equal(payload.schema, 2, 'La exportacion conserva schema 2.');
+    return { status: 'shared' };
+  };
+  const authorize = async ({ onAuthorized }) => {
+    authorizationCalls += 1;
+    await onAuthorized();
+    return { ok: true, authenticated: true, reason: null };
+  };
+
+  assert.deepEqual(
+    await runBackupExport({ payload: publicPayload, authorize, writeBackup }),
+    { status: 'shared' },
+    'Una copia sin privados se escribe sin autenticacion.',
+  );
+  assert.equal(authorizationCalls, 0);
+  assert.equal(writeCalls, 1);
+
+  assert.deepEqual(
+    await runBackupExport({ payload: schema2, authorize, writeBackup }),
+    { status: 'confirmation-required' },
+    'Una copia privada primero exige advertencia y confirmacion.',
+  );
+  assert.equal(authorizationCalls, 0, 'Cancelar la advertencia no abre autenticacion.');
+  assert.equal(writeCalls, 1, 'Cancelar la advertencia no crea ni comparte archivos.');
+
+  assert.deepEqual(
+    await runBackupExport({ payload: schema2, privateExportConfirmed: true, authorize, writeBackup }),
+    { status: 'shared' },
+    'La autenticacion correcta permite escribir y compartir.',
+  );
+  assert.equal(authorizationCalls, 1);
+  assert.equal(writeCalls, 2, 'La escritura ocurre solo despues de autenticar.');
+
+  for (const reason of ['cancelled', 'error']) {
+    const denied = await runBackupExport({
+      payload: schema2,
+      privateExportConfirmed: true,
+      authorize: async () => ({ ok: false, authenticated: false, reason }),
+      writeBackup: async () => { throw new Error('No debe escribir tras un rechazo.'); },
+    });
+    assert.deepEqual(denied, { status: 'authorization-denied', reason });
+  }
+
+  const writeFailure = await runBackupExport({
+    payload: publicPayload,
+    authorize,
+    writeBackup: async () => ({ status: 'error' }),
+  });
+  assert.deepEqual(writeFailure, { status: 'error' }, 'Propaga el fallo de escritura sin informar exito.');
+}
+
 function memoryStore(initial = {}) {
   const values = new Map(Object.entries(initial));
   let failKey = null;
@@ -120,6 +184,7 @@ function memoryStore(initial = {}) {
 
 (async () => {
   await verifyDeniedRestore();
+  await verifySecureBackupExport();
   const keyA = '@nexusday/v1/activities';
   const keyB = '@nexusday/v1/events';
   const routineKey = '@nexusday/v1/routines';

@@ -90,13 +90,14 @@ export default function ExpensesScreen() {
   const topTotal = byCategory[0]?.total || 1;
   const visible = showAll ? sorted : sorted.slice(0, MAX_ROWS);
 
-  const submit = () => {
+  const submit = async () => {
     const value = parseAmount(amount);
     if (value <= 0) {
       setError('Escribe un monto mayor a 0.');
       return;
     }
-    addExpense({ dateKey: today, amount: value, category, note: note.trim(), createdAt: Date.now() });
+    const saved = await addExpense({ dateKey: today, amount: value, category, note: note.trim(), createdAt: Date.now() });
+    if (!saved) { setError('No se pudo guardar el gasto.'); return; }
     setAmount('');
     setNote('');
     setError(null);
@@ -182,17 +183,18 @@ export default function ExpensesScreen() {
     );
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!sheet) return;
     const value = parseAmount(sheet.values.amount);
     if (value <= 0) return;
-    updateExpense(sheet.id, {
+    const saved = await updateExpense(sheet.id, {
       amount: value,
       category: sheet.values.category,
       note: sheet.values.note.trim(),
       dateKey: sheet.values.dateKey,
       private: Boolean(sheet.values.private),
     });
+    if (!saved) { setError('No se pudo guardar el gasto.'); return; }
     setSheet(null);
   };
 

@@ -23,7 +23,7 @@ assert.match(row, /accessibilityActions=/, 'Las acciones de gesto deben estar di
 assert.match(row, /onAccessibilityAction=/, 'Las acciones accesibles deben ejecutar los mismos handlers protegidos.');
 assert.match(swipeRow, /FAIL_OFFSET_Y[\s\S]*?Math\.abs\(move\.dy\)[\s\S]*?acquireSwipe\(\)/, 'El gesto debe ceder al scroll vertical y bloquear el pager solo tras reconocer el arrastre.');
 
-assert.match(notes, /PRIVATE_ACTIONS\.mutate[\s\S]*?updateNote\(note\.id, \{ pinned: !note\.pinned \}\)/, 'Fijar una nota privada debe seguir protegido por la autorización existente.');
+assert.match(notes, /PRIVATE_ACTIONS\.mutate[\s\S]*?updateNote\(note\.id, current => \(\{ pinned: !current\.pinned \}\)\)/, 'Fijar una nota privada debe seguir protegido por la autorización existente.');
 assert.match(notes, /PRIVATE_ACTIONS\.delete[\s\S]*?setConfirmId\(note\.id\)/, 'Pedir borrar debe pasar por autorización privada antes de mostrar la confirmación.');
 assert.match(notes, /onConfirm=\{confirmDelete\}/, 'El registro debe eliminarse solo al confirmar.');
 

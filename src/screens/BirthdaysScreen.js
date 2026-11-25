@@ -107,7 +107,7 @@ export default function BirthdaysScreen({ navigation }) {
     });
     setSaving(false);
     setNotice(result.notice);
-    setSheet(null);
+    if (result.status !== 'write-failed') setSheet(null);
   };
 
   const confirmDelete = async () => {

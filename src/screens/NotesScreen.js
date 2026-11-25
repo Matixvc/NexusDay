@@ -87,6 +87,7 @@ export default function NotesScreen({ navigation }) {
   const [searchFocused, setSearchFocused] = useState(false);
   // Handle to the recorder living inside the sheet: "Guardar" has to close the microphone
   // *before* the sheet (and with it the recorder) unmounts.
+  const savingRef = useRef(false);
   const recorderRef = useRef(null);
   const handledFocusRequest = useRef(null);
 
@@ -109,6 +110,7 @@ export default function NotesScreen({ navigation }) {
   const pinnedCount = useMemo(() => publicNotes.filter((note) => note.pinned).length, [publicNotes]);
 
   const openCreate = useCallback(() => {
+    setPickError(null);
     setQuery('');
     setActiveTag(null);
     setActiveFilter('all');
@@ -131,18 +133,23 @@ export default function NotesScreen({ navigation }) {
   });
 
   const openEdit = useCallback(
-    (note) =>
+    (note) => {
+      setPickError(null);
       setSheet({
         mode: 'edit',
         dirty: false,
         id: note.id,
         original: note,
         values: toSheetValues(note),
-      }),
+      });
+    },
     [],
   );
 
-  const setValue = (patch) => setSheet((prev) => (prev ? { ...prev, dirty: true, values: { ...prev.values, ...patch } } : prev));
+  const setValue = (patch, fromSave = false) => {
+    if (savingRef.current && !fromSave) return;
+    setSheet((prev) => (prev ? { ...prev, dirty: true, values: { ...prev.values, ...patch } } : prev));
+  };
   const markDraftDirty = useCallback(() => {
     setSheet((prev) => (prev ? { ...prev, dirty: true } : prev));
   }, []);
@@ -176,6 +183,7 @@ export default function NotesScreen({ navigation }) {
   };
 
   const runNoteAction = useCallback(async (note, action, promptMessage, onAuthorized) => {
+    setUnlockError(null);
     const result = await authorizePrivateAction({
       record: note,
       action,
@@ -183,7 +191,7 @@ export default function NotesScreen({ navigation }) {
       promptMessage,
       onAuthorized,
     });
-    setUnlockError(result.ok ? null : describePrivacyFailure(result.reason));
+    if (!result.ok) setUnlockError(describePrivacyFailure(result.reason));
     return result.ok;
   }, [privacyEnabled]);
 
@@ -223,9 +231,13 @@ export default function NotesScreen({ navigation }) {
 
   /** Marca/desmarca una casilla directamente desde la tarjeta, con háptica de confirmación. */
   const toggleItemFromCard = useCallback(
-    (note, itemId) => runNoteAction(note, PRIVATE_ACTIONS.mutate, 'Desbloquea la nota privada', () => {
-      const items = toggleCheckItem(note.items, itemId);
-      updateNote(note.id, { items, updatedAt: Date.now() });
+    (note, itemId) => runNoteAction(note, PRIVATE_ACTIONS.mutate, 'Desbloquea la nota privada', async () => {
+      let items;
+      const committed = await updateNote(note.id, current => {
+        items = toggleCheckItem(current.items, itemId);
+        return { items, updatedAt: Date.now() };
+      });
+      if (!committed) { setUnlockError('No se pudo guardar el cambio.'); return; }
       const nowDone = items.find((item) => item.id === itemId)?.done;
       if (nowDone) successHaptic();
       else selectHaptic();
@@ -235,7 +247,7 @@ export default function NotesScreen({ navigation }) {
 
   // Una nota guarda sentido con título, texto, o al menos una casilla por marcar.
   const hasContent = Boolean(sheet && hasNoteContent(sheet.values));
-  const canSave = hasContent && !saving;
+  const canSave = hasContent && !saving && !importing;
 
   /** Voice notes and imported documents are sandbox copies: they die with the note. */
   const destroyFiles = (note) => {
@@ -253,52 +265,62 @@ export default function NotesScreen({ navigation }) {
    * the payload below, so the audio is never left behind by the note that references it.
    */
   const save = async () => {
-    if (!hasContent || saving) return;
+    if (!hasContent || savingRef.current || importing) return;
+    savingRef.current = true;
     setSaving(true);
+    setPickError(null);
+    try {
+      const take = (await recorderRef.current?.finishTake?.()) || null;
+      if (take) setValue({ audio: take }, true);
+      const { mode, id, values, original } = sheet;
+      const audio = take || values.audio || null;
+      const isChecklist = values.kind === NOTE_KINDS.checklist;
+      // Las casillas vacías se descartan al guardar: una línea en blanco no es una tarea.
+      const items = isChecklist
+        ? values.items
+            .map((item) => ({ ...item, text: String(item.text || '').trim() }))
+            .filter((item) => item.text)
+        : [];
+      const payload = {
+        kind: isChecklist ? NOTE_KINDS.checklist : NOTE_KINDS.text,
+        title: values.title.trim() || (isChecklist ? 'Lista de tareas' : 'Sin título'),
+        body: isChecklist ? '' : values.body.trim(),
+        items,
+        tags: Array.isArray(values.tags) ? [...values.tags] : [],
+        color: values.color,
+        audio,
+        attachment: values.attachment || null,
+      };
 
-    const take = (await recorderRef.current?.finishTake?.()) || null;
-    const { mode, id, values, original } = sheet;
-    const audio = take || values.audio || null;
-    const isChecklist = values.kind === NOTE_KINDS.checklist;
-    // Las casillas vacías se descartan al guardar: una línea en blanco no es una tarea.
-    const items = isChecklist
-      ? values.items
-          .map((item) => ({ ...item, text: String(item.text || '').trim() }))
-          .filter((item) => item.text)
-      : [];
-    const payload = {
-      kind: isChecklist ? NOTE_KINDS.checklist : NOTE_KINDS.text,
-      title: values.title.trim() || (isChecklist ? 'Lista de tareas' : 'Sin título'),
-      body: isChecklist ? '' : values.body.trim(),
-      items,
-      tags: Array.isArray(values.tags) ? [...values.tags] : [],
-      color: values.color,
-      audio,
-      attachment: values.attachment || null,
-    };
-
-    if (mode === 'edit') {
-      // Sandboxed files are only deleted once the change is accepted, so cancelling
-      // the sheet can never destroy a take that is still referenced by the note.
-      if (original?.audio?.uri && original.audio.uri !== payload.audio?.uri) deleteRecording(original.audio);
-      if (original?.attachment?.uri && original.attachment.uri !== payload.attachment?.uri) {
-        removeFile(original.attachment);
+      const stamp = new Date().getTime();
+      const committed = mode === 'edit'
+        ? await updateNote(id, { ...payload, pinned: values.pinned, private: Boolean(values.private), updatedAt: stamp })
+        : await addNote(applyPrivacyFlag({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp }, values.private));
+      if (!committed) {
+        setPickError('No se pudo guardar la nota. Tu borrador sigue abierto para reintentar.');
+        return;
       }
-      updateNote(id, { ...payload, pinned: values.pinned, private: Boolean(values.private), updatedAt: Date.now() });
-    } else {
-      const stamp = Date.now();
-      addNote(applyPrivacyFlag({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp }, values.private));
-    }
 
-    successHaptic();
-    setSaving(false);
-    setConfirmDiscard(false);
-    setSheet(null);
+      if (original?.audio?.uri && original.audio.uri !== payload.audio?.uri) deleteRecording(original.audio);
+      if (original?.attachment?.uri && original.attachment.uri !== payload.attachment?.uri) removeFile(original.attachment);
+      successHaptic();
+      setConfirmDiscard(false);
+      setSheet(null);
+    } catch {
+      setPickError('No se pudo completar el guardado. Revisa la nota y vuelve a intentarlo.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
+    if (!await removeNote(confirmId)) {
+      setUnlockError('No se pudo eliminar la nota.');
+      setConfirmId(null);
+      return;
+    }
     destroyFiles(notes.find((note) => note.id === confirmId));
-    removeNote(confirmId);
     setConfirmId(null);
   };
 
@@ -316,6 +338,7 @@ export default function NotesScreen({ navigation }) {
    * left running while the recorder unmounts — and the note itself is untouched.
    */
   const closeSheet = async () => {
+    if (savingRef.current) return;
     if (sheet?.dirty) {
       setConfirmDiscard(true);
       return;
@@ -346,7 +369,9 @@ export default function NotesScreen({ navigation }) {
       note,
       PRIVATE_ACTIONS.mutate,
       'Desbloquea la nota privada',
-      () => updateNote(note.id, { pinned: !note.pinned }),
+      async () => {
+        if (!await updateNote(note.id, current => ({ pinned: !current.pinned }))) setUnlockError('No se pudo guardar el cambio.');
+      },
     ),
     [runNoteAction, updateNote],
   );
@@ -380,7 +405,7 @@ export default function NotesScreen({ navigation }) {
   );
 
   const requestSheetDelete = async () => {
-    if (!sheet?.original) return;
+    if (savingRef.current || !sheet?.original) return;
     await runNoteAction(
       sheet.original,
       PRIVATE_ACTIONS.delete,
@@ -628,9 +653,11 @@ export default function NotesScreen({ navigation }) {
                 <Text style={typography.small}>Tienes cambios sin guardar. Puedes seguir editando o descartarlos.</Text>
               </View>
             ) : null}
+            {pickError ? <Notice text={pickError} tone="danger" /> : null}
             <TextField
               label="Título"
               value={sheet.values.title}
+              disabled={saving}
               onChangeText={(title) => setValue({ title })}
               placeholder="Ej. Pendientes de la semana"
               autoFocus
@@ -697,6 +724,7 @@ export default function NotesScreen({ navigation }) {
               <TextArea
                 label="Contenido"
                 value={sheet.values.body}
+                disabled={saving}
                 onChangeText={(body) => setValue({ body })}
                 placeholder="Escribe aquí…"
                 minHeight={220}
@@ -752,7 +780,6 @@ export default function NotesScreen({ navigation }) {
                   style={styles.attachButton}
                 />
               ) : null}
-              {pickError ? <Notice text={pickError} tone="danger" /> : null}
             </View>
             <View style={[styles.pinRow, styles.privatePinRow]}>
               <View style={styles.privateCopy}>

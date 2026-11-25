@@ -82,7 +82,7 @@ function AppStatusBar() {
  * the navigator (fresh styles) while `lastRoute` puts the user back on the tab they left.
  */
 function AppShell() {
-  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, storageRecoveryError } = useAppData();
+  const { hydrated, onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, storageRecoveryError } = useAppData();
   // Remembered so any navigator remount lands on the same registered route.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
   const [lastPrimaryRoute, setLastPrimaryRoute] = useState(HOME_TAB);
@@ -93,7 +93,7 @@ function AppShell() {
   }, []);
 
   if (storageRecoveryError) return <BootScreen message="No pudimos recuperar el almacenamiento anterior. Cierra y vuelve a abrir NexusDay para reintentar." />;
-  if (onboardingCompleted === null) return <BootScreen />;
+  if (!hydrated || onboardingCompleted === null) return <BootScreen />;
 
   if (!onboardingCompleted) {
     return <OnboardingScreen firstRun={!tutorialReplay} onFinish={finishTutorial} />;

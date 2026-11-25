@@ -27,7 +27,12 @@ async function ensureRestoreRecovered() {
 /** Persists a prepared restore before the context exposes it in memory. */
 export async function persistRestoreSnapshot(entries) {
   await ensureRestoreRecovered();
-  return runRestoreTransaction({ store: restoreStore, entries });
+  try {
+    return await runRestoreTransaction({ store: restoreStore, entries });
+  } catch (error) {
+    if (error.code === 'RESTORE_RECOVERY_REQUIRED') recoveryPromise = null;
+    throw error;
+  }
 }
 
 /** `'@nexusday/v1/events'` -> `'@appmobile/v1/events'`. */
@@ -71,36 +76,69 @@ export async function loadJSONStrict(key, fallback = []) {
 
 /** Resolves only after AsyncStorage confirms the collection write; callers keep old memory on rejection. */
 export async function saveJSONStrict(key, value) {
+  await ensureRestoreRecovered();
   await AsyncStorage.setItem(key, JSON.stringify(value));
 }
 
-/**
- * Reads a JSON array from AsyncStorage.
- * Resolves to `fallback` when the key is missing or the payload is corrupt,
- * so a bad write can never soft-lock the app on next launch.
- */
-export async function loadJSON(key, fallback = []) {
+/** Only an absent key may use the initial value. Preserve historical fields. */
+export async function loadJSON(key, missing = []) {
   await ensureRestoreRecovered();
-  try {
-    const raw = await readItem(key);
-    if (raw == null) return fallback;
-    const parsed = JSON.parse(raw);
-    if (parsed == null) return fallback;
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch (error) {
-    console.warn(`[storage] could not read ${key}`, error);
-    return fallback;
+  let raw;
+  try { raw = await readItem(key); }
+  catch { throw collectionError('COLLECTION_READ_FAILED'); }
+  if (raw == null) return missing;
+  let items;
+  try { items = JSON.parse(raw); }
+  catch { throw collectionError('INVALID_JSON'); }
+  validateCollectionItems(items);
+  return items;
+}
+
+function validateCollectionItems(items) {
+  if (!Array.isArray(items)) throw collectionError('INCOMPATIBLE_COLLECTION');
+  const ids = new Set();
+  for (const item of items) {
+    const id = item?.id;
+    if (!(typeof id === 'string' && id.trim() || Number.isFinite(id)) || ids.has(id)) {
+      throw collectionError('INCOMPATIBLE_COLLECTION');
+    }
+    ids.add(id);
   }
 }
 
-export async function saveJSON(key, value) {
-  try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (error) {
-    console.warn(`[storage] could not write ${key}`, error);
-    return false;
-  }
+function collectionError(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+// ND-02 replaces several keys together, so notification and UI writers share one queue.
+let collectionQueue = Promise.resolve();
+export function withCollectionLock(operation) {
+  const result = collectionQueue.then(operation);
+  collectionQueue = result.catch(() => undefined);
+  return result;
+}
+
+const collectionListeners = new Map();
+export function subscribeCollection(key, listener) {
+  if (!collectionListeners.has(key)) collectionListeners.set(key, new Set());
+  const listeners = collectionListeners.get(key);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function mutateCollection(key, transform) {
+  return withCollectionLock(() => mutateLockedCollection(key, transform));
+}
+
+// For reminder IDs generated while restore already owns the collection lock.
+export async function mutateLockedCollection(key, transform) {
+  const current = await loadJSON(key);
+  const next = transform(current);
+  if (!next) return false;
+  validateCollectionItems(next);
+  await saveJSONStrict(key, next);
+  collectionListeners.get(key)?.forEach(listener => listener(next));
+  return true;
 }
 
 export async function removeKey(key) {

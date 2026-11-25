@@ -38,7 +38,7 @@ assert.match(home, /useWindowDimensions\(\)/, 'Inicio debe observar la escala de
 assert.match(home, /timeColumnWidth = Math\.ceil\(48 \* Math\.max\(1, fontScale\)\)/, 'La columna de horario debe ganar espacio con texto ampliado.');
 assert.match(home, /classRow: \{[^}]*flexWrap: 'wrap'/, 'Las filas de clase deben crecer o envolver la cuenta regresiva en pantallas estrechas.');
 assert.match(home, /accessible accessibilityLabel=\{start \? `De \$\{start\}/, 'TalkBack debe poder leer el rango horario completo como una unidad.');
-assert.match(notes, /successHaptic\(\);[\s\S]*?setSaving\(false\);[\s\S]*?setSheet\(null\)/, 'Guardar una nota debe dar feedback de éxito antes de cerrar el editor.');
+assert.match(notes, /successHaptic\(\);[\s\S]*?setSheet\(null\)/, 'Guardar una nota debe dar feedback de éxito antes de cerrar el editor.');
 assert.match(notes, /<Fab onPress=\{openCreate\} label="Crear nota" \/>/, 'El acceso de creación de notas debe tener un nombre accesible específico.');
 const fabSource = primitives.slice(primitives.indexOf('function Fab('), primitives.indexOf('function Stat('));
 assert.match(fabSource, /<Icon name="plus"/, 'El FAB debe mostrar el icono Plus, no imprimir su etiqueta accesible.');
@@ -108,7 +108,6 @@ assert.match(onboarding, /scrollToOffset\(\{ offset: target, animated: !reduceMo
 assert.match(settings, /Seis pasos breves/, 'Ajustes debe describir la duración real del tutorial.');
 assert.match(settings, /label="6 pasos"/, 'El contador del tutorial en Ajustes debe reflejar sus seis pasos.');
 assert.match(settings, /label="Ver el tutorial otra vez" onPress=\{replayTutorial\}/, 'El usuario debe poder repetir el tutorial desde Ajustes.');
-assert.match(appData, /if \(!tutorial\.replay\) await clearAllData\(\)/, 'Finalizar una repetición debe conservar las colecciones guardadas.');
 assert.match(appData, /saveValue\(KEYS\.onboarding, true\)/, 'Finalizar el tutorial debe persistir su estado completado.');
 assert.match(icon, /import Svg, \{ Circle, SvgProps \} from 'react-native-svg'/, 'El fallback del icono debe usar los componentes SVG nativos.');
 assert.match(icon, /<Circle\s/, 'El fallback no debe renderizar etiquetas SVG web en minúscula.');
@@ -146,7 +145,7 @@ assert.match(settings, /title="Permiso del mic[\s\S]*?title="Privacidad y seguri
 assert.match(settings, /permission\.status === 'unknown'[\s\S]*?Sin consultar/, 'Los permisos sin consulta deben mostrarse como pendientes, no como bloqueados.');
 assert.match(settings, /permission\.status === 'unsupported'[\s\S]*?No disponible/, 'Los permisos no compatibles deben distinguirse de los permisos denegados.');
 assert.match(settings, /nombre y ocupación se guardan solo en este dispositivo/, 'El perfil debe explicar su uso local y no simular una cuenta en la nube.');
-assert.match(settings, /title="Datos y respaldos"[\s\S]*?Borrar todos los datos[\s\S]*?title="Acerca de NexusDay"/, 'La acción destructiva debe quedar al cierre de datos, después de exportar e importar.');
+assert.match(settings, /title="Datos y respaldos"[\s\S]*?Borrar colecciones y rutinas[\s\S]*?title="Acerca de NexusDay"/, 'La acción destructiva debe quedar al cierre de datos, después de exportar e importar.');
 for (const asset of ['nex-decor-halo.png', 'nex-decor-arc.png', 'nex-decor-ring.png']) {
   assert.ok(fs.existsSync(path.join(root, 'assets/nex/decor', asset)), `Ajustes debe integrar el recurso Nex ${asset}.`);
   assert.ok(settings.includes(asset), `Ajustes debe usar el recurso Nex ${asset}.`);

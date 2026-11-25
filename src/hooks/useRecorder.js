@@ -180,8 +180,11 @@ export function useRecorder({ prefix = 'voz' } = {}) {
    * the microphone still open is what crashed the app, and this makes that path impossible.
    */
   const finishTake = useCallback(async () => {
+    if (starting.current || saving.current) throw new Error('RECORDING_BUSY');
     if (!recorderSnapshot(recorderRef.current).isRecording) return null;
-    return stopAndSave();
+    const take = await stopAndSave();
+    if (!take) throw new Error('RECORDING_NOT_SAVED');
+    return take;
   }, [stopAndSave]);
 
   /** The same guarantee for the cancel path: the mic is closed before the sheet disappears. */

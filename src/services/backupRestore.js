@@ -118,6 +118,28 @@ export function backupContainsPrivateRecords(collections = {}) {
   ));
 }
 
+/**
+ * Gates backup creation before the callback that writes and shares the JSON.
+ * Private exports require both an explicit readability warning confirmation and
+ * device authentication; neither cancellation path can create a file.
+ */
+export async function runBackupExport({ payload, privateExportConfirmed = false, authorize, writeBackup }) {
+  const containsPrivateRecords = backupContainsPrivateRecords(payload?.collections);
+  if (containsPrivateRecords && !privateExportConfirmed) return { status: 'confirmation-required' };
+  if (!containsPrivateRecords) return writeBackup(payload);
+
+  let writeResult;
+  const authorization = await authorize({
+    record: { private: true },
+    action: 'mutate',
+    privacyEnabled: true,
+    promptMessage: 'Autoriza exportar datos privados',
+    onAuthorized: async () => { writeResult = await writeBackup(payload); },
+  });
+  if (!authorization.ok) return { status: 'authorization-denied', reason: authorization.reason };
+  return writeResult;
+}
+
 export function backupRequiresPrivateAuthorization({ collections, currentPrivacyEnabled, settings, currentHasPrivateRecords }) {
   const disablesProtection = currentPrivacyEnabled !== false && settings?.privacyEnabled === false;
   return Boolean(currentHasPrivateRecords || disablesProtection || backupContainsPrivateRecords(collections));

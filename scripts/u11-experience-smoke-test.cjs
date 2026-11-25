@@ -8,7 +8,6 @@ const primary = read('src/navigation/primaryTabs.js');
 const tabCatalog = read('src/navigation/tabs.js');
 const onboarding = read('src/screens/OnboardingScreen.js');
 const tutorialGuide = read('src/services/tutorialGuide.js');
-const appData = read('src/context/AppDataContext.js');
 const settings = read('src/screens/SettingsScreen.js');
 const nexAi = read('src/screens/NexAiPreviewScreen.js');
 
@@ -20,7 +19,6 @@ assert.match(tabCatalog, /'Nex AI': NexAiPreviewScreen/);
 const slideKeys = [...tutorialGuide.matchAll(/key: '([^']+)'/g)].slice(0, 6).map((match) => match[1]);
 assert.deepEqual(slideKeys, ['welcome', 'day', 'notes', 'calendar', 'themes', 'privacy']);
 assert.match(onboarding, /animated: !reduceMotion/);
-assert.match(appData, /if \(!tutorial\.replay\) await clearAllData\(\)/, 'La repetición debe conservar el flujo que no elimina datos.');
 assert.match(settings, /Seis pasos breves/);
 assert.match(settings, /label="6 pasos"/);
 
