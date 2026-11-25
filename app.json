@@ -3,7 +3,7 @@
     "name": "NexusDay",
     "slug": "nexusday",
     "scheme": "nexusday",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -74,6 +74,12 @@
       "eas": {
         "projectId": "087f40a1-254c-4153-b120-9e77392b5cd0"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/087f40a1-254c-4153-b120-9e77392b5cd0"
     }
   }
 }

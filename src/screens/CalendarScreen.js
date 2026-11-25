@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { themedStyles, calendarTheme, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
@@ -60,6 +60,9 @@ const BLANK = () => ({
   notificationId: null,
 });
 const EMPTY_CALENDAR_IMAGE = require('../../assets/nexusday-empty-calendar.png');
+const NEX_BIRTHDAY_IMAGE = require('../../assets/nex/calendar/nex-birthday.jpg');
+const NEX_U11_CALENDAR_IMAGE = require('../../assets/nex/u11/tutorial/tutorial-calendar.jpg');
+const NEX_MONTH_ART = require('../../assets/nex/u11/backgrounds/nex-eclipse.jpg');
 
 LocaleConfig.locales.nexusEs = {
   monthNames: MONTHS.map((name) => `${name[0].toUpperCase()}${name.slice(1)}`),
@@ -409,6 +412,16 @@ export default function CalendarScreen({ navigation }) {
             onTouchEnd={endCalendarTouch}
             onTouchCancel={cancelCalendarTouch}
           >
+            <View style={styles.monthFocus}>
+              <View style={styles.monthFocusCopy}>
+                <Text style={styles.monthFocusKicker}>FECHA EN FOCO</Text>
+                <Text style={styles.monthFocusDate} accessibilityLabel={formatDateLong(selected)}>{formatDateShort(selected)}</Text>
+                <Text style={typography.caption}>{dayTimeline.length} {dayTimeline.length === 1 ? 'elemento' : 'elementos'} en agenda</Text>
+              </View>
+              {surfaceMode.id === 'nex' ? (
+                <Image source={NEX_MONTH_ART} style={styles.monthArtwork} resizeMode="cover" accessible={false} importantForAccessibility="no" />
+              ) : null}
+            </View>
             <View style={styles.monthToolbar}>
               <Pressable
                 onPress={() => changeMonth(-1)}
@@ -474,11 +487,14 @@ export default function CalendarScreen({ navigation }) {
         <SectionTitle
           title={`Agenda · ${formatDateShort(selected)}`}
           count={dayTimeline.length}
+          variant="editorial"
         />
 
         {dayTimeline.length === 0 ? (
           <EmptyState
-            image={EMPTY_CALENDAR_IMAGE}
+            image={surfaceMode.id === 'nex'
+              ? filter === 'birthdays' ? NEX_BIRTHDAY_IMAGE : NEX_U11_CALENDAR_IMAGE
+              : EMPTY_CALENDAR_IMAGE}
             icon="calendar"
             title={emptyAgenda.title}
             hint={emptyAgenda.hint}
@@ -504,7 +520,7 @@ export default function CalendarScreen({ navigation }) {
 
       </Screen>
 
-      <Fab onPress={() => setCreateSheetOpen(true)} />
+      <Fab onPress={() => setCreateSheetOpen(true)} label="Crear en Calendario" />
 
       <Sheet
         visible={Boolean(sheet)}
@@ -743,6 +759,11 @@ const styles = themedStyles({
   calendarCard: { paddingVertical: spacing.md, marginBottom: 0 },
   calendarCardCompact: { marginHorizontal: -spacing.md, paddingHorizontal: 0, borderRadius: radius.lg },
   calendarTouchArea: { gap: spacing.sm },
+  monthFocus: { minHeight: 88, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  monthFocusCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
+  monthFocusKicker: { ...typography.overline, color: colors.accent, letterSpacing: 1 },
+  monthFocusDate: { ...typography.h2, color: colors.text, textTransform: 'capitalize' },
+  monthArtwork: { width: 92, height: 72, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   monthToolbar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
   monthButton: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
   monthTitle: { flex: 1, textAlign: 'center', ...typography.h2, textTransform: 'capitalize' },

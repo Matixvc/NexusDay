@@ -49,6 +49,7 @@ export const KEYS = {
   notes: `${NAMESPACE}/notes`,
   habits: `${NAMESPACE}/habits`,
   expenses: `${NAMESPACE}/expenses`,
+  routines: `${NAMESPACE}/routines`,
   settings: `${NAMESPACE}/settings`,
   onboarding: `${NAMESPACE}/onboarding`,
   accent: `${NAMESPACE}/accent`,
@@ -56,6 +57,22 @@ export const KEYS = {
   userName: `${NAMESPACE}/user_name`,
   tabConfig: `${NAMESPACE}/tab_config`,
 };
+
+/** Strict collection reader for domains whose writes must not overwrite malformed data. */
+export async function loadJSONStrict(key, fallback = []) {
+  await ensureRestoreRecovered();
+  const raw = await readItem(key);
+  if (raw == null) return fallback;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('STORAGE_READ_FAILED'); }
+  if (!Array.isArray(parsed)) throw new Error('STORAGE_READ_FAILED');
+  return parsed;
+}
+
+/** Resolves only after AsyncStorage confirms the collection write; callers keep old memory on rejection. */
+export async function saveJSONStrict(key, value) {
+  await AsyncStorage.setItem(key, JSON.stringify(value));
+}
 
 /**
  * Reads a JSON array from AsyncStorage.

@@ -2,14 +2,14 @@ import { PRIMARY_TAB_NAMES } from '../navigation/primaryTabs';
 
 /**
  * Legacy tab preferences stored under `@nexusday/v1/tab_config` are still accepted by
- * hydration and backup restore, then normalized to the fixed three-destination layout.
+ * hydration and backup restore, then normalized to the fixed four-destination layout.
  */
 
 export const DEFAULT_TAB_CONFIG = { order: [...PRIMARY_TAB_NAMES], hidden: [] };
 
 /** Repairs whatever came out of storage: unknown names, duplicates, missing tabs, Inicio. */
 export function normalizeTabConfig(stored) {
-  // Accept every historical shape, but always resolve it to the fixed 2.0 navigation.
+  // Accept every historical shape, but always resolve it to the fixed U11 navigation.
   // The stored key remains valid for old backups without being able to restore nine tabs.
   void stored;
   return { order: [...PRIMARY_TAB_NAMES], hidden: [] };

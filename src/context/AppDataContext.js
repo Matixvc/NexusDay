@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { KEYS, loadValue, persistRestoreSnapshot, saveValue } from '../services/storage';
 import { completeBackupCollections, validateBackup } from '../services/backupRestore';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
+import { useRoutineCollection } from '../hooks/useRoutineCollection';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
 import { subscribeToNotificationActions } from '../services/notifications';
@@ -33,7 +34,7 @@ const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true, re
 const UNSEEN_TUTORIAL = { completed: null, replay: false };
 
 /**
- * Single source of truth for the six persisted collections, the user preferences
+ * Single source of truth for the seven persisted collections, the user preferences
  * (greeting name, preferred calendar) and the notification permission state.
  * Screens consume it through `useAppData()`.
  */
@@ -44,6 +45,7 @@ export function AppDataProvider({ children }) {
   const notes = usePersistentCollection(KEYS.notes, seedNotes());
   const habits = usePersistentCollection(KEYS.habits, seedHabits());
   const expenses = usePersistentCollection(KEYS.expenses, seedExpenses());
+  const routines = useRoutineCollection();
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -183,21 +185,31 @@ export function AppDataProvider({ children }) {
     notes.hydrated &&
     habits.hydrated &&
     expenses.hydrated;
-  const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError);
+  const allCollectionsHydrated = allHydrated && routines.hydrated;
+  const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError) || routines.restoreRecoveryError;
 
   /** Wipes every local collection (used by Ajustes › Borrar datos and the first-run wipe). */
-  const clearAllData = useCallback(() => {
-    activities.replaceAll([]);
-    events.replaceAll([]);
-    birthdays.replaceAll([]);
-    notes.replaceAll([]);
-    habits.replaceAll([]);
-    expenses.replaceAll([]);
-  }, [activities, events, birthdays, notes, habits, expenses]);
+  const clearAllData = useCallback(async () => routines.runExclusive(async ({ setSnapshot }) => {
+    const empty = [];
+    const entries = [KEYS.activities, KEYS.events, KEYS.birthdays, KEYS.notes, KEYS.habits, KEYS.expenses, KEYS.routines]
+      .map((key) => ({ key, value: JSON.stringify(empty) }));
+    await persistRestoreSnapshot(entries);
+    activities.replaceAll(empty, { persist: false });
+    events.replaceAll(empty, { persist: false });
+    birthdays.replaceAll(empty, { persist: false });
+    notes.replaceAll(empty, { persist: false });
+    habits.replaceAll(empty, { persist: false });
+    expenses.replaceAll(empty, { persist: false });
+    setSnapshot(empty);
+    return { dataCleared: true };
+  }), [activities, events, birthdays, notes, habits, expenses, routines]);
 
   /** Persists a validated restore snapshot and updates memory only after verification. */
   const restoreBackup = useCallback(
-    async (backup = {}) => {
+    async (backup = {}) => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => {
+      if (routines.recoveryError && !Array.isArray(backup.routines)) {
+        throw new Error('RESTORE_ROUTINES_UNAVAILABLE');
+      }
       if (validateBackup({ app: 'NexusDay', collections: backup }) !== null) {
         throw new Error('RESTORE_INVALID_SNAPSHOT');
       }
@@ -208,6 +220,7 @@ export function AppDataProvider({ children }) {
         notes: notes.items,
         habits: habits.items,
         expenses: expenses.items,
+        routines: currentRoutines,
       });
       // Los arrays locales son la fuente de verdad: `events.items` (por ejemplo) sigue
       // apuntando al render anterior hasta que React procesa el `setItems` nuevo. Se
@@ -219,6 +232,7 @@ export function AppDataProvider({ children }) {
       const restoredNotes = sourceCollections.notes.map((item) => ({ ...item, notificationId: null }));
       const restoredHabits = sourceCollections.habits.map((item) => ({ ...item, notificationId: null }));
       const restoredExpenses = sourceCollections.expenses.map((item) => ({ ...item, notificationId: null }));
+      const restoredRoutines = sourceCollections.routines;
 
       // Un array puede estar vacío y el `Array.isArray` distingue un resultado válido de
       // una colección ausente: `replaceAll([])` limpia los registros anteriores.
@@ -232,6 +246,7 @@ export function AppDataProvider({ children }) {
         [KEYS.notes, restoredNotes],
         [KEYS.habits, restoredHabits],
         [KEYS.expenses, restoredExpenses],
+        [KEYS.routines, restoredRoutines],
       ].map(([key, value]) => ({ key, value: JSON.stringify(value) }));
       if (nextSettings) entries.push({ key: KEYS.settings, value: JSON.stringify(nextSettings) });
       if (nextUserName !== null) entries.push({ key: KEYS.userName, value: JSON.stringify(nextUserName) });
@@ -245,6 +260,7 @@ export function AppDataProvider({ children }) {
       notes.replaceAll(restoredNotes, { persist: false });
       habits.replaceAll(restoredHabits, { persist: false });
       expenses.replaceAll(restoredExpenses, { persist: false });
+      setSnapshot(restoredRoutines);
       if (nextSettings) setSettings(nextSettings);
       if (nextUserName !== null) setUserNameState(nextUserName);
       if (nextTabConfig) setTabConfigState(nextTabConfig);
@@ -267,17 +283,17 @@ export function AppDataProvider({ children }) {
         void error;
         return { dataRestored: true, notificationsRecreated: false };
       }
-    },
-    [activities, events, birthdays, notes, habits, expenses, settings],
+    }),
+    [activities, events, birthdays, notes, habits, expenses, settings, routines],
   );
 
   /**
    * Tutorial finished. On the first run this also wipes the sample data, so the user
    * starts from a completely blank app instead of inheriting somebody else's schedule.
    */
-  const finishTutorial = useCallback(() => {
-    if (!tutorial.replay) clearAllData();
-    saveValue(KEYS.onboarding, true);
+  const finishTutorial = useCallback(async () => {
+    if (!tutorial.replay) await clearAllData();
+    await saveValue(KEYS.onboarding, true);
     setTutorial({ completed: true, replay: false });
   }, [tutorial.replay, clearAllData]);
 
@@ -288,7 +304,7 @@ export function AppDataProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (!allHydrated) return;
+    if (!allCollectionsHydrated) return;
     if (!permission.granted) {
       // Permission revoked mid-session cancels everything, so allow one more
       // pass if it is granted again before the app closes.
@@ -318,7 +334,7 @@ export function AppDataProvider({ children }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [allHydrated, permission.granted, events, birthdays, habits, activities]);
+  }, [allCollectionsHydrated, permission.granted, events, birthdays, habits, activities]);
 
   /** Mantiene el estado en memoria sincronizado cuando el usuario actúa desde una notificación
    * (✓ Completar / ⏱ Posponer). `notifications.js` ya escribe a AsyncStorage; este effect se
@@ -326,7 +342,7 @@ export function AppDataProvider({ children }) {
    * No procesa acciones hasta que todas las colecciones estén hidratadas, para no escribir
    * sobre datos de semilla en lugar de los datos reales del usuario. */
   useEffect(() => {
-    if (!allHydrated) return;
+    if (!allCollectionsHydrated) return;
     const unsubscribe = subscribeToNotificationActions((action) => {
       if (action.type === 'habit-complete') {
         const today = todayKey();
@@ -352,11 +368,11 @@ export function AppDataProvider({ children }) {
       }
     });
     return unsubscribe;
-  }, [allHydrated, events, birthdays, habits]);
+  }, [allCollectionsHydrated, events, birthdays, habits]);
 
   const value = useMemo(
     () => ({
-      hydrated: allHydrated && settingsLoaded,
+      hydrated: allCollectionsHydrated && settingsLoaded,
       storageRecoveryError,
 
       onboardingCompleted: tutorial.completed,
@@ -399,6 +415,15 @@ export function AppDataProvider({ children }) {
       updateExpense: expenses.update,
       removeExpense: expenses.remove,
 
+      routines: routines.items,
+      routinesHydrated: routines.hydrated,
+      routinesRecoveryError: routines.recoveryError,
+      routinesBusy: routines.busy,
+      createRoutine: routines.create,
+      updateRoutine: routines.update,
+      removeRoutine: routines.remove,
+      toggleRoutineCompletion: routines.toggleCompletion,
+
       settings,
       settingsLoaded,
       updateSettings,
@@ -411,7 +436,7 @@ export function AppDataProvider({ children }) {
       notificationsSupported: Notif.isSupported(),
     }),
     [
-      allHydrated,
+      allCollectionsHydrated,
       storageRecoveryError,
       activities,
       events,
@@ -419,6 +444,7 @@ export function AppDataProvider({ children }) {
       notes,
       habits,
       expenses,
+      routines,
       settings,
       settingsLoaded,
       updateSettings,

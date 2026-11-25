@@ -28,6 +28,7 @@ const collections = {
   habits: [],
   expenses: [],
 };
+const routine = { id: 'r1', name: 'Leer', description: '', icon: 'checkCircle', color: '#8b7cff', weekdays: [0, 2], startTime: null, endTime: null, enabled: true, completedDates: ['2026-01-02'] };
 const backup = { app: 'NexusDay', schema: 1, exportedAt: 123, collections, settings: { privacyEnabled: true, reduceMotion: false, lastBackupAt: null }, userName: '', tabConfig: {} };
 
 assert.equal(validateBackup(backup), null, 'Acepta el formato actual de exportación.');
@@ -63,6 +64,20 @@ assert.deepEqual(completedLegacy.activities, collections.activities, 'Keeps curr
 assert.equal(validateBackup({ app: 'NexusDay', collections: {} }), 'missing-collection');
 assert.equal(isPartialHistoricalBackup(historical), false);
 assert.notEqual(validateBackup({ ...historical, collections: { ...collections, notes: [{ id: 'x', private: 'yes' }] } }), null);
+assert.equal(validateBackup({ ...backup, collections: { ...collections, routines: [routine] } }), 'invalid-document', 'Schema 1 rejects an unknown seventh collection.');
+const schema2 = { ...backup, schema: 2, collections: { ...collections, routines: [routine] } };
+assert.equal(validateBackup(schema2), null, 'Schema 2 requires and accepts seven validated collections.');
+assert.equal(validateBackup({ ...schema2, collections: { ...collections, routines: undefined } }), 'invalid-collection');
+const missingRoutine = { ...schema2.collections };
+delete missingRoutine.routines;
+assert.equal(validateBackup({ ...schema2, collections: missingRoutine }), 'missing-collection');
+assert.equal(validateBackup({ ...schema2, collections: { ...schema2.collections, routines: [{ ...routine, completedDates: ['2026-02-30'] }] } }), 'invalid-record');
+assert.equal(validateBackup({ ...schema2, collections: { ...schema2.collections, routines: [{ ...routine, icon: 'webview' }] } }), 'invalid-record');
+assert.equal(validateBackup({ ...schema2, collections: { ...schema2.collections, routines: [routine, routine] } }), 'duplicate-id');
+assert.equal(validateBackup({ ...schema2, collections: { ...schema2.collections, routines: undefined } }), 'invalid-collection');
+const currentWithRoutine = { ...collections, routines: [routine] };
+assert.deepEqual(completeBackupCollections(collections, currentWithRoutine).routines, [routine], 'Schema 1 imports retain 1.2.0 routines.');
+assert.deepEqual(completeBackupCollections({ routines: [] }, currentWithRoutine).routines, [], 'An explicit schema 2 empty routine collection can clear routines.');
 assert.equal(backupContainsPrivateRecords(collections), true, 'Detecta registros privados sin inspeccionar ni devolver su contenido.');
 assert.equal(backupContainsPrivateRecords({ notes: [{ id: 'public' }], expenses: [] }), false);
 assert.equal(backupRequiresPrivateAuthorization({ collections, currentPrivacyEnabled: true, settings: { privacyEnabled: true }, currentHasPrivateRecords: false }), true);
@@ -107,10 +122,25 @@ function memoryStore(initial = {}) {
   await verifyDeniedRestore();
   const keyA = '@nexusday/v1/activities';
   const keyB = '@nexusday/v1/events';
+  const routineKey = '@nexusday/v1/routines';
   const successfulStore = memoryStore({ [keyA]: '["old-a"]' });
   await runRestoreTransaction({ store: successfulStore, entries: [{ key: keyA, value: '["new-a"]' }] });
   assert.equal(await successfulStore.get(keyA), '["new-a"]', 'Persists and verifies all values before reporting success.');
   assert.equal(await successfulStore.get(RESTORE_JOURNAL_KEY), null, 'Removes the journal after a completed restore.');
+
+  const routineStore = memoryStore({ [routineKey]: '[{"id":"old-routine"}]' });
+  await runRestoreTransaction({ store: routineStore, entries: [{ key: routineKey, value: '[]' }] });
+  assert.equal(await routineStore.get(routineKey), '[]', 'The journal transaction accepts the routines key.');
+
+  const wipeStore = memoryStore(Object.fromEntries([
+    '@nexusday/v1/activities', '@nexusday/v1/events', '@nexusday/v1/birthdays', '@nexusday/v1/notes',
+    '@nexusday/v1/habits', '@nexusday/v1/expenses', routineKey,
+  ].map((key) => [key, '[{"id":"fixture"}]'])));
+  await runRestoreTransaction({ store: wipeStore, entries: [
+    '@nexusday/v1/activities', '@nexusday/v1/events', '@nexusday/v1/birthdays', '@nexusday/v1/notes',
+    '@nexusday/v1/habits', '@nexusday/v1/expenses', routineKey,
+  ].map((key) => ({ key, value: '[]' })) });
+  assert.equal(await wipeStore.get(routineKey), '[]', 'A full seven-domain wipe includes routines.');
 
   const readFailureStore = memoryStore({ [keyA]: '["old-a"]' });
   readFailureStore.failReadOnce(keyA);
@@ -126,7 +156,8 @@ function memoryStore(initial = {}) {
 
   const interruptedStore = memoryStore({
     [keyA]: '["new-a"]',
-    [RESTORE_JOURNAL_KEY]: JSON.stringify({ version: 1, status: 'prepared', originals: [{ key: keyA, value: '["old-a"]' }, { key: keyB, value: null }] }),
+    [routineKey]: '[]',
+    [RESTORE_JOURNAL_KEY]: JSON.stringify({ version: 1, status: 'prepared', originals: [{ key: keyA, value: '["old-a"]' }, { key: keyB, value: null }, { key: routineKey, value: '[{"id":"old-routine"}]' }] }),
   });
   interruptedStore.failOnce(keyA);
   await assert.rejects(recoverRestoreTransaction(interruptedStore), (error) => error.code === 'RESTORE_RECOVERY_REQUIRED');
@@ -134,6 +165,7 @@ function memoryStore(initial = {}) {
   await recoverRestoreTransaction(interruptedStore);
   assert.equal(await interruptedStore.get(keyA), '["old-a"]', 'Recovers the previous snapshot after an interrupted restore.');
   assert.equal(await interruptedStore.get(keyB), null, 'Removes keys that did not exist before an interrupted restore.');
+  assert.equal(await interruptedStore.get(routineKey), '[{"id":"old-routine"}]', 'Recovers the routines before-image after an interrupted restore.');
   assert.equal(await interruptedStore.get(RESTORE_JOURNAL_KEY), null);
   console.log('backup-restore-smoke-test: validation and transaction cases passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

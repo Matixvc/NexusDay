@@ -20,6 +20,7 @@
     "expo-notifications": "~58.1.9",
     "expo-sharing": "~58.0.23",
     "expo-status-bar": "~58.0.5",
+    "expo-updates": "~58.0.22",
     "expo-widgets": "~58.0.29",
     "lucide-react-native": "^1.73.0",
     "react": "19.3.0",
@@ -37,14 +38,17 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "npm run test:theme && npm run test:calendar && npm run test:privacy && npm run test:premium && npm run test:backup && npm run test:reminders && npm run test:widget",
+    "test": "npm run test:theme && npm run test:calendar && npm run test:privacy && npm run test:premium && npm run test:notes-gestures && npm run test:backup && npm run test:reminders && npm run test:widget && npm run test:routines && npm run test:u11",
     "test:theme": "node scripts/theme-smoke-test.cjs && node scripts/theme-hydration-smoke-test.cjs",
     "test:calendar": "node scripts/calendar-smoke-test.cjs",
     "test:privacy": "node scripts/privacy-smoke-test.cjs",
     "test:premium": "node scripts/premium-smoke-test.cjs",
+    "test:notes-gestures": "node scripts/notes-gesture-smoke-test.cjs",
     "test:backup": "node scripts/backup-restore-smoke-test.cjs",
     "test:reminders": "node scripts/reminder-restore-smoke-test.cjs",
-    "test:widget": "node scripts/schedule-widget-smoke-test.cjs"
+    "test:widget": "node scripts/schedule-widget-smoke-test.cjs",
+    "test:routines": "node scripts/routines-smoke-test.cjs",
+    "test:u11": "node scripts/u11-experience-smoke-test.cjs"
   },
   "private": true,
   "devDependencies": {

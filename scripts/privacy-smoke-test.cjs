@@ -33,7 +33,7 @@ const {
   runAuthorizedAction,
 } = require('../src/services/privacyPolicy');
 const { answerQuestion } = require('../src/services/assistant');
-const { buildDashboard } = require('../src/services/dashboard');
+const { buildDashboard, millisecondsToNextMinute } = require('../src/services/dashboard');
 const { focusIdForParams } = require('../src/services/focusRequest');
 const { todayKey } = require('../src/utils/dates');
 const notesScreen = fs.readFileSync(path.resolve(__dirname, '../src/screens/NotesScreen.js'), 'utf8');
@@ -129,6 +129,10 @@ const privateOnlyValues = {
   ],
 };
 const dashboard = buildDashboard(privateOnlyValues);
+assert.equal(millisecondsToNextMinute(0), 60000, 'El reloj debe programar el siguiente minuto cuando ya está en el límite.');
+assert.equal(millisecondsToNextMinute(1), 59999, 'El reloj debe sincronizar el refresco con el límite del minuto.');
+assert.equal(millisecondsToNextMinute(59999), 1, 'El reloj debe refrescar justo después del próximo cambio de minuto.');
+assert.equal(millisecondsToNextMinute(Number.NaN), 60000, 'Un timestamp inválido debe usar un intervalo seguro.');
 assert.equal(dashboard.spentToday, 10);
 assert.equal(dashboard.spentMonth, 10);
 assert.equal(dashboard.notesCount, 1);

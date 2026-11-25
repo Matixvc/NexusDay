@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { AppState, Image, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
@@ -12,20 +13,25 @@ import {
   TextButton,
 } from '../components/ui/primitives';
 import { SearchField, SearchResults } from '../components/ui/SearchField';
-import { buildDashboard } from '../services/dashboard';
+import { buildDashboard, formatTimeUntil, millisecondsToNextMinute, minutesUntilActivity } from '../services/dashboard';
 import { searchEverything } from '../services/search';
 import { formatDateShort, formatTime, relativeDayLabel } from '../utils/dates';
 import { Icon } from '../components/Icon';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 import { AppHeader } from '../components/ui/AppHeader';
+import { useAccentTheme } from '../context/ThemeContext';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
+const SCHEDULE_ART = require('../../assets/nex/schedule/nex-schedule-compact.jpg');
+const FREE_DAY_ART = require('../../assets/nex/schedule/nex-schedule-free-day.jpg');
+const NEX_HOME_ART = require('../../assets/nex/u11/backgrounds/nex-flow.jpg');
 
 export default function HomeScreen({ navigation }) {
   const {
     activities,
     events,
+    routines,
     birthdays,
     notes,
     settings,
@@ -36,11 +42,42 @@ export default function HomeScreen({ navigation }) {
   } = useAppData();
 
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const { surfaceId } = useAccentTheme();
+  const timeColumnWidth = Math.ceil(48 * Math.max(1, fontScale));
+  const eventTimeWidth = Math.ceil(54 * Math.max(1, fontScale));
   const [query, setQuery] = useState('');
+  const [clockTimestamp, setClockTimestamp] = useState(() => Date.now());
+
+  useFocusEffect(
+    useCallback(() => {
+      let timer;
+      let disposed = false;
+      const refreshClock = () => {
+        if (disposed) return;
+        const now = Date.now();
+        setClockTimestamp(now);
+        timer = setTimeout(refreshClock, millisecondsToNextMinute(now) + 20);
+      };
+
+      refreshClock();
+      const subscription = AppState.addEventListener('change', (state) => {
+        if (state !== 'active' || disposed) return;
+        clearTimeout(timer);
+        refreshClock();
+      });
+
+      return () => {
+        disposed = true;
+        clearTimeout(timer);
+        subscription.remove();
+      };
+    }, []),
+  );
 
   const data = useMemo(
-    () => buildDashboard({ activities, events, birthdays, notes }),
-    [activities, events, birthdays, notes],
+    () => buildDashboard({ activities, events, birthdays, notes, routines, now: new Date(clockTimestamp) }),
+    [activities, events, birthdays, notes, routines, clockTimestamp],
   );
 
   // Real-time: the three primary domains reachable from the dashboard, ranked by relevance.
@@ -54,10 +91,12 @@ export default function HomeScreen({ navigation }) {
   // v1.1 name (written by the tutorial) wins; the v1.0 profile field stays as a fallback.
   const name = (userName || settings?.displayName || '').trim();
   const greeting = name ? `¡Hola, ${name}!` : data.greeting;
-  const currentTime = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+  const current = new Date(clockTimestamp);
+  const currentTime = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
   const remainingClasses = data.todayActivities.filter((item) => String(item.end || item.start) > currentTime);
-  const scheduleItems = (remainingClasses.length ? remainingClasses : data.todayActivities).slice(0, 3);
-  const upcomingEvents = data.upcomingEvents.slice(0, 3);
+  const nextClass = remainingClasses.find((item) => item.start > currentTime);
+  const scheduleItems = data.todayAgenda.slice(0, 5);
+  const upcomingEvents = data.upcomingEvents.filter((event) => event.dateKey !== data.today).slice(0, 3);
 
   /** One tap: jump to the section and let it highlight the exact item. */
   const openResult = useCallback(
@@ -112,14 +151,37 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.scheduleHeading}>
               <View style={styles.scheduleTitleWrap}>
                 <Text style={[typography.overline, styles.scheduleKicker]}>TU SEMANA, EN CONTEXTO</Text>
-                <Text style={[typography.h2, styles.scheduleTitle]} accessibilityRole="header">Horario · {data.weekdayLabel}</Text>
+                <Text style={[typography.h2, styles.scheduleTitle]} accessibilityRole="header">Mi día</Text>
+                <Text style={typography.caption}>
+                  {data.todayCommitments === 0
+                    ? `${data.weekdayLabel} · sin actividades programadas`
+                    : `${data.weekdayLabel} · ${data.todayCommitments} ${data.todayCommitments === 1 ? 'elemento' : 'elementos'} en agenda`}
+                </Text>
               </View>
-              <Pressable onPress={() => navigation.navigate('Horario')} accessibilityRole="button" accessibilityLabel="Abrir horario semanal" style={styles.scheduleLink}>
+              <Pressable
+                onPress={() => navigation.navigate('Horario')}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir horario semanal"
+                accessibilityHint="Consulta y edita tus clases de la semana."
+                style={({ pressed }) => [styles.scheduleLink, pressed ? styles.pressed : null]}
+              >
                 <Icon name="arrow-up-right" size={20} color={colors.accent} />
               </Pressable>
             </View>
 
-            {activities.length === 0 ? (
+            {surfaceId === 'nex' && (activities.length > 0 || routines.length > 0) ? (
+                <Image
+                source={data.todayAgenda.length === 0 && data.suspendedToday.length === 0
+                  ? FREE_DAY_ART
+                  : data.todayAgenda.some((item) => item.kind === 'routine') ? NEX_HOME_ART : SCHEDULE_ART}
+                style={styles.scheduleArtwork}
+                resizeMode="cover"
+                accessible={false}
+                importantForAccessibility="no"
+              />
+            ) : null}
+
+            {activities.length === 0 && routines.length === 0 && data.todayEvents.length === 0 ? (
               <View style={styles.scheduleEmpty}>
                 <Icon name="calendar" size={24} color={colors.accent} />
                 <View style={styles.scheduleEmptyCopy}>
@@ -128,7 +190,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <TextButton label="Configurar" onPress={() => navigation.navigate('Horario')} />
               </View>
-            ) : data.todayActivities.length === 0 && data.suspendedToday.length > 0 ? (
+            ) : data.todayAgenda.length === 0 && data.suspendedToday.length > 0 ? (
               <View style={styles.scheduleEmpty}>
                 <Icon name="pause" size={24} color={colors.accent} />
                 <View style={styles.scheduleEmptyCopy}>
@@ -137,7 +199,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <TextButton label="Ver" onPress={() => navigation.navigate('Horario')} />
               </View>
-            ) : data.todayActivities.length === 0 ? (
+            ) : data.todayAgenda.length === 0 ? (
               <View style={styles.scheduleEmpty}>
                 <Icon name="sun" size={24} color={colors.accent} />
                 <View style={styles.scheduleEmptyCopy}>
@@ -148,46 +210,65 @@ export default function HomeScreen({ navigation }) {
             ) : (
               <View style={styles.classList}>
                 {scheduleItems.map((item, index) => {
-                  const inProgress = item.start <= currentTime && String(item.end || item.start) > currentTime;
-                  const finished = !remainingClasses.length;
+                  const start = item.startTime || item.start;
+                  const end = item.endTime || item.end;
+                  const inProgress = item.kind === 'activity' && start <= currentTime && String(end || start) > currentTime;
                   return (
                     <View key={item.id} style={[styles.classRow, index ? styles.classDivider : null]}>
-                      <View style={styles.classTime}>
-                        <Text style={[typography.tabular, styles.classTimeText]}>{item.start}</Text>
-                        <Text style={typography.caption}>{item.end}</Text>
+                      <View accessible accessibilityLabel={start ? `De ${start}${end ? ` a ${end}` : ''}` : 'Sin hora asignada'} style={[styles.classTime, { width: timeColumnWidth }]}>
+                        <Text style={[typography.tabular, styles.classTimeText]} numberOfLines={1}>{start || '—'}</Text>
+                        {end ? <Text style={typography.caption} numberOfLines={1}>{end}</Text> : null}
                       </View>
                       <View style={[styles.classMarker, { backgroundColor: item.color || colors.accent }]} />
                       <View style={styles.classCopy}>
-                        <Text style={typography.bodyStrong} numberOfLines={1}>{item.title}</Text>
-                        <Text style={typography.caption} numberOfLines={1}>{item.location || 'Clase'}</Text>
+                        <Text style={typography.bodyStrong} numberOfLines={2}>{item.title}</Text>
+                        <Text style={typography.caption} numberOfLines={1}>{item.detail}</Text>
                       </View>
-                      {inProgress ? <Pill label="En curso" tone="accent" /> : finished ? null : index === 0 ? <Pill label="Siguiente" tone="accent" /> : null}
+                      {item.kind === 'routine' ? <Pill label={item.completed ? 'Hecha' : 'Rutina'} tone={item.completed ? 'neutral' : 'accent'} /> : null}
+                      {inProgress ? <Pill label="En curso" tone="accent" /> : item.kind === 'activity' && item.id === `act-${nextClass?.id}` ? (
+                        <Pill
+                          label={formatTimeUntil(minutesUntilActivity(data.today, start, new Date(clockTimestamp))) || 'Siguiente'}
+                          tone="accent"
+                        />
+                      ) : null}
                     </View>
                   );
                 })}
-                <TextButton label="Ver horario semanal" onPress={() => navigation.navigate('Horario')} />
               </View>
             )}
+            {data.suspendedToday.length > 0 && data.todayAgenda.length > 0 ? (
+              <Text style={[typography.caption, styles.suspendedHint]}>
+                {data.suspendedToday.length} {data.suspendedToday.length === 1 ? 'clase suspendida' : 'clases suspendidas'} · el horario semanal no se modificó.
+              </Text>
+            ) : null}
           </View>
 
-          <SectionTitle title="Próximos eventos" count={upcomingEvents.length} right={<TextButton label="Ver calendario" onPress={goToAgenda} />} />
+          <TextButton label="Gestionar mi rutina" tone="ghost" onPress={() => navigation.navigate('Mi rutina')} style={styles.routineLink} />
+
+          <SectionTitle title="Próximos eventos" count={upcomingEvents.length} variant="editorial" right={<TextButton label="Ver calendario" onPress={goToAgenda} />} />
 
           {upcomingEvents.length === 0 ? (
             <View style={styles.eventsEmpty}>
               <Text style={typography.small}>No tienes eventos próximos en la agenda.</Text>
             </View>
-          ) : upcomingEvents.map((item) => (
-            <Card key={item.id} accent={item.color} onPress={goToAgenda} style={styles.nextCard}>
-              <View style={styles.nextRow}>
-                <Text style={[styles.nextTime, typography.tabular]}>{item.dateKey === data.today ? formatTime(item.time) : formatDateShort(item.dateKey)}</Text>
-                <View style={styles.nextBody}>
-                  <Text style={typography.bodyStrong} numberOfLines={1}>{item.title}</Text>
-                  <Text style={typography.caption} numberOfLines={1}>{relativeDayLabel(item.dateKey)}</Text>
-                </View>
-                <Icon name="chevron-right" size={18} color={colors.textMuted} />
-              </View>
-            </Card>
-          ))}
+          ) : (
+            <View style={styles.eventList}>
+              {upcomingEvents.map((item) => (
+                <Card key={item.id} variant="tinted" accent={item.color} onPress={goToAgenda} style={styles.nextCard}>
+                  <View style={styles.nextRow}>
+                    <Text style={[styles.nextTime, typography.tabular, { width: eventTimeWidth }]} numberOfLines={2}>
+                      {item.dateKey === data.today ? formatTime(item.time) : formatDateShort(item.dateKey)}
+                    </Text>
+                    <View style={styles.nextBody}>
+                      <Text style={typography.bodyStrong} numberOfLines={2}>{item.title}</Text>
+                      <Text style={typography.caption} numberOfLines={1}>{relativeDayLabel(item.dateKey)}</Text>
+                    </View>
+                    <Icon name="chevron-right" size={18} color={colors.textMuted} />
+                  </View>
+                </Card>
+              ))}
+            </View>
+          )}
 
           {showPermissionCard ? (
             <Card accent={colors.warning}>
@@ -236,25 +317,29 @@ const styles = themedStyles({
   scheduleTitleWrap: { flex: 1, gap: spacing.xs },
   scheduleKicker: { color: colors.accent, letterSpacing: 0.9 },
   scheduleTitle: { color: colors.text },
+  scheduleArtwork: { width: '100%', height: 100, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
   scheduleLink: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   scheduleEmpty: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   scheduleEmptyCopy: { flex: 1, gap: spacing.xs },
   classList: { gap: spacing.sm },
-  classRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  suspendedHint: { color: colors.warning, marginTop: spacing.xs },
+  routineLink: { alignSelf: 'flex-start', marginTop: -spacing.sm },
+  classRow: { minHeight: 64, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md },
   classDivider: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   classTime: { width: 48, alignItems: 'flex-start', gap: 1 },
   classTimeText: { color: colors.accent },
   classMarker: { width: 3, height: 38, borderRadius: radius.pill },
-  classCopy: { flex: 1, gap: 2 },
+  classCopy: { flex: 1, minWidth: 0, gap: 2 },
   eventsEmpty: { padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
 
   nextCard: { paddingVertical: spacing.md },
-  nextRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  nextTime: { fontSize: 15.5, fontWeight: '700', color: colors.text, width: 54 },
-  nextBody: { flex: 1, gap: 2 },
+  eventList: { gap: spacing.sm },
+  nextRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md },
+  nextTime: { fontSize: 15.5, fontWeight: '700', color: colors.text, minWidth: 54, flexShrink: 0 },
+  nextBody: { flex: 1, minWidth: 0, gap: 2 },
 
   pressed: { opacity: 0.7 },
   bannerCard: {

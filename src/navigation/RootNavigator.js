@@ -8,6 +8,7 @@ import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { themedStyles, colors, navigationTheme } from '../theme/theme';
 import { BottomTabBar } from './BottomTabBar';
+import RoutinesScreen from '../screens/RoutinesScreen';
 import { HOME_TAB, PRIMARY_TAB_NAMES, TABS } from './tabs';
 
 const Stack = createNativeStackNavigator();
@@ -16,7 +17,7 @@ const RouteChangeContext = createContext(() => {});
 const PRIMARY_NAVIGATOR_ROUTE = 'Principal';
 
 /**
- * Three swipeable primary pages live inside a native stack. Secondary destinations are
+ * Four swipeable primary pages live inside a native stack. Secondary destinations are
  * pushed above them, so a horizontal page gesture can never land on Settings or a module.
  */
 export default function RootNavigator({ initialRouteName = HOME_TAB, initialPrimaryRouteName = HOME_TAB, onRouteChange }) {
@@ -57,6 +58,12 @@ export default function RootNavigator({ initialRouteName = HOME_TAB, initialPrim
               options={{ headerShown: false }}
             />
           ))}
+          <Stack.Screen
+            name="Mi rutina"
+            component={RoutinesScreen}
+            listeners={{ focus: () => onRouteChange?.('Mi rutina') }}
+            options={{ headerShown: false }}
+          />
         </Stack.Navigator>
       </RouteChangeContext.Provider>
     </NavigationContainer>

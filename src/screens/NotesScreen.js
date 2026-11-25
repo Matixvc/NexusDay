@@ -1,6 +1,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
+import { useAccentTheme } from '../context/ThemeContext';
 import { useAppData } from '../context/AppDataContext';
 import { useFocusRequest } from '../hooks/useFocusId';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
@@ -38,6 +39,7 @@ import {
   blankNote,
   checklistSummary,
   collectTags,
+  hasNoteContent,
   makeCheckItem,
   notePreview,
   toggleCheckItem,
@@ -50,6 +52,7 @@ import { selectNoteGroups } from './notesPresentation';
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
 const BLANK = () => ({ ...blankNote(colors.accent) });
 const EMPTY_NOTES_IMAGE = require('../../assets/nexusday-empty-notes.png');
+const NEX_U11_NOTES_IMAGE = require('../../assets/nex/u11/tutorial/tutorial-notes.jpg');
 
 const PRIVATE_NOTE_PLACEHOLDER = Object.freeze({
   title: 'Nota privada',
@@ -66,6 +69,7 @@ const PRIVATE_NOTE_PLACEHOLDER = Object.freeze({
 
 export default function NotesScreen({ navigation }) {
   const { notes, addNote, updateNote, removeNote, settings } = useAppData();
+  const { surfaceId } = useAccentTheme();
   // The global lock can be turned off in Ajustes; secure by default.
   const privacyEnabled = settings?.privacyEnabled;
   const [query, setQuery] = useState('');
@@ -75,6 +79,7 @@ export default function NotesScreen({ navigation }) {
   const [importing, setImporting] = useState(false);
   const [pickError, setPickError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   // Vista: lista vertical o cuadrícula de dos columnas; y la etiqueta activa del filtro superior.
   const [grid, setGrid] = useState(false);
   const [activeTag, setActiveTag] = useState(null);
@@ -107,7 +112,8 @@ export default function NotesScreen({ navigation }) {
     setQuery('');
     setActiveTag(null);
     setActiveFilter('all');
-    setSheet({ mode: 'create', values: { ...BLANK() } });
+    setConfirmDiscard(false);
+    setSheet({ mode: 'create', dirty: false, values: { ...BLANK() } });
   }, []);
 
   /** Rellena el editor con el modelo completo de la nota (texto o checklist, con sus tags). */
@@ -128,6 +134,7 @@ export default function NotesScreen({ navigation }) {
     (note) =>
       setSheet({
         mode: 'edit',
+        dirty: false,
         id: note.id,
         original: note,
         values: toSheetValues(note),
@@ -135,7 +142,10 @@ export default function NotesScreen({ navigation }) {
     [],
   );
 
-  const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
+  const setValue = (patch) => setSheet((prev) => (prev ? { ...prev, dirty: true, values: { ...prev.values, ...patch } } : prev));
+  const markDraftDirty = useCallback(() => {
+    setSheet((prev) => (prev ? { ...prev, dirty: true } : prev));
+  }, []);
 
   // ── Editor de checklist ───────────────────────────────────────────────────────────────
   const setKind = (kind) => setValue({ kind });
@@ -224,14 +234,7 @@ export default function NotesScreen({ navigation }) {
   );
 
   // Una nota guarda sentido con título, texto, o al menos una casilla por marcar.
-  const hasContent =
-    Boolean(sheet) &&
-    Boolean(
-      sheet.values.title.trim() ||
-        sheet.values.body.trim() ||
-        (sheet.values.kind === NOTE_KINDS.checklist &&
-          sheet.values.items.some((item) => String(item.text || '').trim())),
-    );
+  const hasContent = Boolean(sheet && hasNoteContent(sheet.values));
   const canSave = hasContent && !saving;
 
   /** Voice notes and imported documents are sandbox copies: they die with the note. */
@@ -287,7 +290,9 @@ export default function NotesScreen({ navigation }) {
       addNote(applyPrivacyFlag({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp }, values.private));
     }
 
+    successHaptic();
     setSaving(false);
+    setConfirmDiscard(false);
     setSheet(null);
   };
 
@@ -311,7 +316,27 @@ export default function NotesScreen({ navigation }) {
    * left running while the recorder unmounts — and the note itself is untouched.
    */
   const closeSheet = async () => {
+    if (sheet?.dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
     await recorderRef.current?.discardTake?.();
+    setConfirmDiscard(false);
+    setSheet(null);
+    setPickError(null);
+  };
+
+  const discardDraft = async () => {
+    await recorderRef.current?.discardTake?.();
+    const draft = sheet;
+    const original = draft?.original;
+    if (draft?.values?.audio?.uri && draft.values.audio.uri !== original?.audio?.uri) {
+      deleteRecording(draft.values.audio);
+    }
+    if (draft?.values?.attachment?.uri && draft.values.attachment.uri !== original?.attachment?.uri) {
+      removeFile(draft.values.attachment);
+    }
+    setConfirmDiscard(false);
     setSheet(null);
     setPickError(null);
   };
@@ -322,16 +347,6 @@ export default function NotesScreen({ navigation }) {
       PRIVATE_ACTIONS.mutate,
       'Desbloquea la nota privada',
       () => updateNote(note.id, { pinned: !note.pinned }),
-    ),
-    [runNoteAction, updateNote],
-  );
-
-  const togglePrivate = useCallback(
-    (note) => runNoteAction(
-      note,
-      note.private ? PRIVATE_ACTIONS.removePrivacy : PRIVATE_ACTIONS.mutate,
-      'Autoriza quitar la privacidad de la nota',
-      () => updateNote(note.id, { private: !note.private }),
     ),
     [runNoteAction, updateNote],
   );
@@ -373,6 +388,7 @@ export default function NotesScreen({ navigation }) {
       async () => {
         await recorderRef.current?.discardTake?.();
         setConfirmId(sheet.id);
+        setConfirmDiscard(false);
         setSheet(null);
       },
     );
@@ -491,7 +507,7 @@ export default function NotesScreen({ navigation }) {
 
         {filteredPublic.length === 0 && visiblePrivate.length === 0 ? (
           <EmptyState
-            image={hasFilters ? undefined : EMPTY_NOTES_IMAGE}
+            image={hasFilters ? undefined : surfaceId === 'nex' ? NEX_U11_NOTES_IMAGE : EMPTY_NOTES_IMAGE}
             icon={hasFilters ? (activeFilter === 'private' ? 'lock' : 'search') : 'note'}
             title={hasFilters ? 'Nada coincide' : 'Todavía no hay notas'}
             hint={
@@ -514,7 +530,7 @@ export default function NotesScreen({ navigation }) {
           <>
             {pinnedNotes.length ? (
               <>
-                <SectionTitle title="Fijadas" count={pinnedNotes.length} />
+                <SectionTitle title="Fijadas" count={pinnedNotes.length} variant="editorial" />
                 <View style={grid ? styles.gridWrap : styles.listWrap}>
                   {pinnedNotes.map((note) => (
                     <NoteRow
@@ -523,7 +539,6 @@ export default function NotesScreen({ navigation }) {
                       grid={grid}
                       onOpen={openNote}
                       onTogglePin={togglePin}
-                      onTogglePrivate={togglePrivate}
                       onDelete={requestDelete}
                       onToggleItem={toggleItemFromCard}
                     />
@@ -537,6 +552,7 @@ export default function NotesScreen({ navigation }) {
                 <SectionTitle
                   title={trimmed || activeTag ? 'Coincidencias' : 'Otras notas'}
                   count={restNotes.length}
+                  variant="editorial"
                   right={!visiblePrivate.length ? <TextButton label="+ Nueva" onPress={openCreate} /> : null}
                 />
                 <View style={grid ? styles.gridWrap : styles.listWrap}>
@@ -547,7 +563,6 @@ export default function NotesScreen({ navigation }) {
                       grid={grid}
                       onOpen={openNote}
                       onTogglePin={togglePin}
-                      onTogglePrivate={togglePrivate}
                       onDelete={requestDelete}
                       onToggleItem={toggleItemFromCard}
                     />
@@ -558,7 +573,7 @@ export default function NotesScreen({ navigation }) {
 
             {visiblePrivate.length ? (
               <>
-                <SectionTitle title="Privadas" />
+                <SectionTitle title="Privadas" variant="editorial" />
                 <View style={grid ? styles.gridWrap : styles.listWrap}>
                   {visiblePrivate.map((note) => (
                     <NoteRow
@@ -567,7 +582,6 @@ export default function NotesScreen({ navigation }) {
                       grid={grid}
                       onOpen={openNote}
                       onTogglePin={togglePin}
-                      onTogglePrivate={togglePrivate}
                       onDelete={requestDelete}
                       onToggleItem={toggleItemFromCard}
                     />
@@ -579,32 +593,41 @@ export default function NotesScreen({ navigation }) {
         )}
       </Screen>
 
-      <Fab onPress={openCreate} />
+      <Fab onPress={openCreate} label="Crear nota" />
 
       <Sheet
         visible={Boolean(sheet)}
         onClose={closeSheet}
         title={sheet?.mode === 'edit' ? 'Editar nota' : 'Nueva nota'}
-        subtitle="Se guarda en el dispositivo al tocar Guardar."
+        subtitle={confirmDiscard ? 'El borrador aún no se ha guardado.' : 'Se guarda en el dispositivo al tocar Guardar.'}
         footer={
-          <>
-            {sheet?.mode === 'edit' ? (
-              <TextButton
-                label="Eliminar"
-                tone="danger"
-                onPress={requestSheetDelete}
+          confirmDiscard ? (
+            <>
+              <TextButton label="Seguir editando" tone="ghost" onPress={() => setConfirmDiscard(false)} style={styles.discardChoice} />
+              <TextButton label="Descartar cambios" tone="danger" onPress={discardDraft} style={styles.discardChoice} />
+            </>
+          ) : (
+            <>
+              {sheet?.mode === 'edit' ? (
+                <TextButton label="Eliminar" tone="danger" onPress={requestSheetDelete} />
+              ) : null}
+              <PrimaryButton
+                label={saving ? 'Guardando…' : 'Guardar'}
+                onPress={save}
+                disabled={!canSave}
               />
-            ) : null}
-            <PrimaryButton
-              label={saving ? 'Guardando…' : 'Guardar'}
-              onPress={save}
-              disabled={!canSave}
-            />
-          </>
+            </>
+          )
         }
       >
         {sheet ? (
           <>
+            {confirmDiscard ? (
+              <View style={styles.discardNotice} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+                <Icon name="alertCircle" size={20} color={colors.warning} />
+                <Text style={typography.small}>Tienes cambios sin guardar. Puedes seguir editando o descartarlos.</Text>
+              </View>
+            ) : null}
             <TextField
               label="Título"
               value={sheet.values.title}
@@ -647,9 +670,11 @@ export default function NotesScreen({ navigation }) {
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: Boolean(item.done) }}
                       accessibilityLabel={item.text || 'Tarea'}
-                      style={[styles.checkBox, item.done ? styles.checkBoxDone : null]}
+                      style={styles.checkEditToggle}
                     >
-                      {item.done ? <Text style={styles.checkMark}>✓</Text> : null}
+                      <View style={[styles.checkBox, item.done ? styles.checkBoxDone : null]}>
+                        {item.done ? <Text style={styles.checkMark}>✓</Text> : null}
+                      </View>
                     </Pressable>
                     <TextInput
                       value={item.text}
@@ -702,6 +727,7 @@ export default function NotesScreen({ navigation }) {
               label="Nota de voz (opcional)"
               value={sheet.values.audio}
               onChange={(audio) => setValue({ audio })}
+              onRecordingStart={markDraftDirty}
               prefix="nota"
               hint="Se guarda en la app; puedes escucharla desde la nota."
               controllerRef={recorderRef}
@@ -728,9 +754,9 @@ export default function NotesScreen({ navigation }) {
               ) : null}
               {pickError ? <Notice text={pickError} tone="danger" /> : null}
             </View>
-            <View style={styles.pinRow}>
-              <Text style={typography.overline}>Privada</Text>
-              <View style={styles.privateRow}>
+            <View style={[styles.pinRow, styles.privatePinRow]}>
+              <View style={styles.privateCopy}>
+                <Text style={typography.overline}>Privada</Text>
                 <Text style={styles.privateHint}>
                   {sheet.values.private
                     ? privacyEnabled === false
@@ -738,12 +764,12 @@ export default function NotesScreen({ navigation }) {
                       : 'Oculta en listas · requiere autorización'
                     : 'Oculta el contenido de las listas'}
                 </Text>
-                <Switch
-                  value={Boolean(sheet.values.private)}
-                  onValueChange={changeSheetPrivacy}
-                  label="Nota privada"
-                />
               </View>
+              <Switch
+                value={Boolean(sheet.values.private)}
+                onValueChange={changeSheetPrivacy}
+                label="Nota privada"
+              />
             </View>
 
             <View style={styles.pinRow}>
@@ -790,28 +816,36 @@ export default function NotesScreen({ navigation }) {
  * vista previa recortada. Las casillas de una checklist se marcan aquí mismo, sin abrir el
  * editor.
  */
-const NoteRow = memo(function NoteRow({ note, grid, onOpen, onTogglePin, onTogglePrivate, onDelete, onToggleItem }) {
+const NoteRow = memo(function NoteRow({ note, grid, onOpen, onTogglePin, onDelete, onToggleItem }) {
   const exposed = canExposeInList(note);
   const displayNote = redactPrivateRecord(note, PRIVATE_NOTE_PLACEHOLDER);
   const open = useCallback(() => onOpen(note), [note, onOpen]);
   const togglePin = useCallback(() => onTogglePin(note), [note, onTogglePin]);
   const askDelete = useCallback(() => onDelete(note), [note, onDelete]);
+  const accessibilityActions = useMemo(() => [
+    { name: 'togglePin', label: exposed ? (note.pinned ? 'Quitar fijación' : 'Fijar nota') : 'Cambiar fijación' },
+    { name: 'delete', label: exposed ? 'Eliminar nota' : 'Eliminar nota privada' },
+  ], [exposed, note.pinned]);
+  const handleAccessibilityAction = useCallback(({ nativeEvent }) => {
+    if (nativeEvent.actionName === 'togglePin') togglePin();
+    if (nativeEvent.actionName === 'delete') askDelete();
+  }, [askDelete, togglePin]);
 
   const leftAction = useMemo(
     () => ({
-      label: exposed ? (note.pinned ? 'Quitar fijada' : 'Fijar arriba') : 'Abrir nota privada',
+      label: exposed ? (note.pinned ? 'Quitar fijada' : 'Fijar nota') : 'Cambiar fijación',
       color: exposed ? note.color || colors.accent : colors.accent,
-      onPress: exposed ? togglePin : open,
+      onPress: togglePin,
     }),
-    [exposed, note.color, note.pinned, open, togglePin],
+    [exposed, note.color, note.pinned, togglePin],
   );
   const rightAction = useMemo(
     () => ({
-      label: exposed ? 'Hacer privada' : 'Eliminar nota privada',
-      color: exposed ? colors.accent : colors.danger,
-      onPress: exposed ? () => onTogglePrivate(note) : askDelete,
+      label: exposed ? 'Eliminar nota' : 'Eliminar nota privada',
+      color: colors.danger,
+      onPress: askDelete,
     }),
-    [askDelete, exposed, note, onTogglePrivate],
+    [askDelete, exposed],
   );
 
   const preview = notePreview(displayNote);
@@ -823,9 +857,13 @@ const NoteRow = memo(function NoteRow({ note, grid, onOpen, onTogglePin, onToggl
     <SwipeRow style={[styles.swipeRow, grid ? styles.swipeRowGrid : null]} leftAction={leftAction} rightAction={rightAction}>
       <Card
         accent={displayNote.color}
+        variant={exposed && note.pinned ? 'featured' : 'standard'}
         onPress={open}
         accessibilityLabel={exposed ? undefined : 'Nota privada. Desbloquea para ver el contenido'}
-        style={[styles.noteCard, grid ? styles.noteCardGrid : null]}
+      accessibilityHint="Usa las acciones de accesibilidad para fijar o eliminar esta nota."
+        accessibilityActions={accessibilityActions}
+        onAccessibilityAction={handleAccessibilityAction}
+        style={[styles.noteCard, exposed && note.pinned ? styles.noteCardPinned : null, grid ? styles.noteCardGrid : null]}
       >
         <View style={styles.noteHeader}>
           <Text style={[typography.bodyStrong, styles.noteTitle]} numberOfLines={2}>
@@ -994,7 +1032,8 @@ const styles = themedStyles({
 
   // Checklist en la tarjeta.
   checkList: { gap: 2, marginTop: 2 },
-  checkLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 2 },
+  checkLine: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 2 },
+  checkEditToggle: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   checkBox: {
     width: 18,
     height: 18,
@@ -1015,8 +1054,10 @@ const styles = themedStyles({
   kindOption: { minHeight: 52, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
   kindOptionSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   kindOptionLabelSelected: { color: colors.accent },
-  editorTitle: { fontSize: 19, lineHeight: 26, fontWeight: '700', minHeight: 56 },
+  editorTitle: { fontSize: 22, lineHeight: 30, fontWeight: '700', minHeight: 64 },
   editorBody: { fontSize: 16, lineHeight: 24, paddingTop: spacing.lg },
+  discardNotice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft },
+  discardChoice: { flex: 1, alignItems: 'center' },
   checkEditor: { gap: spacing.sm },
   checkEditRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkEditInput: {
@@ -1038,6 +1079,7 @@ const styles = themedStyles({
 
   swipeRow: { marginBottom: spacing.md },
   noteCard: { gap: spacing.md, borderRadius: radius.xl, paddingVertical: spacing.lg },
+  noteCardPinned: { borderWidth: 1.5, borderColor: colors.accent },
   noteHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   noteTitle: { flex: 1, fontSize: 16, lineHeight: 22 },
   noteBody: { lineHeight: 22, fontSize: 14 },
@@ -1063,8 +1105,9 @@ const styles = themedStyles({
     borderColor: colors.border,
     paddingLeft: spacing.md,
   },
+  privatePinRow: { minHeight: 76, alignItems: 'center', paddingVertical: spacing.sm, paddingRight: spacing.xs },
+  privateCopy: { flex: 1, minWidth: 0, gap: spacing.xs, paddingVertical: spacing.xs },
   pinButton: { paddingVertical: spacing.sm },
-  privateRow: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: spacing.md },
-  privateHint: { ...typography.caption },
+  privateHint: { ...typography.caption, flexShrink: 1, minWidth: 0 },
 });
 

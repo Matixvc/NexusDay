@@ -44,6 +44,7 @@ function assertContrast(label, foreground, background, minimum = 4.5) {
 
 const surfaceModule = loadPureModule('src/theme/surfaces.js', [
   'SURFACE_MODES',
+  'SELECTABLE_SURFACE_MODES',
   'DEFAULT_SURFACE_ID',
   'getSurfaceMode',
   'isSurfaceId',
@@ -64,10 +65,13 @@ const overlay = themeSource.match(/Object\.assign\(\{ overlay: '([^']+)'/)?.[1];
 const surfaces = surfaceModule.SURFACE_MODES;
 const accents = accentModule.ACCENT_THEMES;
 const expectedIds = ['light', 'dark', 'mono', 'nex'];
+const selectableIds = ['light', 'dark', 'nex'];
 const historicalAccentIds = ['verde', 'cian', 'azul', 'rojo', 'amarillo', 'purpura'];
 const tokenKeys = Object.keys(surfaces[0].tokens).sort();
 
 assert(JSON.stringify(surfaces.map((mode) => mode.id)) === JSON.stringify(expectedIds), 'Deben existir exactamente Claro, Oscuro, Blanco y negro y Nex.');
+assert(JSON.stringify(surfaceModule.SELECTABLE_SURFACE_MODES.map((mode) => mode.id)) === JSON.stringify(selectableIds), 'Solo Blanco, Oscuro y Nex deben ofrecerse como temas seleccionables.');
+assert(JSON.stringify(surfaceModule.SELECTABLE_SURFACE_MODES.map((mode) => mode.label)) === JSON.stringify(['Blanco', 'Oscuro', 'Nex']), 'Los nombres visibles de los temas deben ser Blanco, Oscuro y Nex.');
 assert(surfaceModule.DEFAULT_SURFACE_ID === 'nex', 'Nex debe ser la identidad visual por defecto.');
 assert(surfaceModule.getSurfaceMode('desconocido').id === 'nex', 'Una superficie desconocida debe caer en Nex.');
 assert(surfaceModule.normalizeSurfaceId('amoled') === 'mono', 'El identificador histórico amoled debe resolver a Blanco y negro.');

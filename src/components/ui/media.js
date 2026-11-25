@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from 'react-native';
+import { useEffect } from 'react';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { Field } from './inputs';
@@ -23,7 +24,7 @@ const UNAVAILABLE = 'La grabación de audio requiere una versión de desarrollo 
  * deletes files: the owner (the screen) removes the replaced or discarded file once the
  * change is actually persisted, so cancelling a sheet cannot destroy an older take.
  */
-export function VoiceRecorder({ label = 'Nota de voz', value, onChange, prefix = 'voz', hint }) {
+export function VoiceRecorder({ label = 'Nota de voz', value, onChange, prefix = 'voz', hint, controllerRef, onRecordingStart }) {
   if (!audioAvailable()) {
     return (
       <Field label={label}>
@@ -31,12 +32,30 @@ export function VoiceRecorder({ label = 'Nota de voz', value, onChange, prefix =
       </Field>
     );
   }
-  return <VoiceRecorderControls value={value} onChange={onChange} prefix={prefix} label={label} hint={hint} />;
+  return (
+    <VoiceRecorderControls
+      value={value}
+      onChange={onChange}
+      prefix={prefix}
+      label={label}
+      hint={hint}
+      controllerRef={controllerRef}
+      onRecordingStart={onRecordingStart}
+    />
+  );
 }
 
-function VoiceRecorderControls({ label, value, onChange, prefix, hint }) {
+function VoiceRecorderControls({ label, value, onChange, prefix, hint, controllerRef, onRecordingStart }) {
   const recorder = useRecorder({ prefix });
   const attached = value?.uri ? value : null;
+
+  useEffect(() => {
+    if (!controllerRef) return undefined;
+    controllerRef.current = { finishTake: recorder.finishTake, discardTake: recorder.discardTake };
+    return () => {
+      if (controllerRef.current?.finishTake === recorder.finishTake) controllerRef.current = null;
+    };
+  }, [controllerRef, recorder.discardTake, recorder.finishTake]);
 
   const handlePress = async () => {
     if (recorder.recording) {
@@ -44,7 +63,7 @@ function VoiceRecorderControls({ label, value, onChange, prefix, hint }) {
       if (info) onChange?.(info);
       return;
     }
-    await recorder.start();
+    if (await recorder.start()) onRecordingStart?.();
   };
 
   const handleRemove = () => onChange?.(null);

@@ -101,7 +101,7 @@ function AppShell() {
 
   return (
     <RootNavigator
-      // The normalized legacy signature is stable for the fixed three-section layout.
+      // The normalized legacy signature is stable for the fixed four-section layout.
       key={tabOrderSignature(tabConfig)}
       initialRouteName={lastRoute}
       initialPrimaryRouteName={lastPrimaryRoute}

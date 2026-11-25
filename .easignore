@@ -17,10 +17,12 @@ expo-env.d.ts
 *.aab
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
+credentials.json
 
 # Metro
 .metro-health-check*
@@ -35,6 +37,8 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
 
 # typescript
@@ -47,3 +51,5 @@ yarn-error.*
 # Workspace-only materials excluded from Expo build archive
 design/
 tsconfig.json
+.claude/
+.superpowers/

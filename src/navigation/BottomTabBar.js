@@ -21,7 +21,7 @@ export function TabBadge({ count }) {
 }
 
 /**
- * Fixed three-destination bar.
+ * Fixed four-destination bar.
  *
  * Buttons come from `PRIMARY_TABS`, not from persisted configuration or the pager's current
  * route subset. The navigator state is only used to identify the active route and emit the

@@ -1,4 +1,5 @@
-export const BACKUP_COLLECTIONS = ['activities', 'events', 'birthdays', 'notes', 'habits', 'expenses'];
+export const BACKUP_COLLECTIONS = ['activities', 'events', 'birthdays', 'notes', 'habits', 'expenses', 'routines'];
+const SCHEMA_1_COLLECTIONS = BACKUP_COLLECTIONS.filter((name) => name !== 'routines');
 export const RESTORE_JOURNAL_KEY = '@nexusday/v1/restore_journal';
 const RESTORE_KEYS = new Set([
   ...BACKUP_COLLECTIONS.map((name) => `@nexusday/v1/${name}`),
@@ -12,6 +13,7 @@ const RECORD_FIELDS = {
   notes: { kind: 'string', title: 'string', body: 'string', items: 'array', tags: 'stringArray', color: 'string', pinned: 'boolean', private: 'boolean', createdAt: 'number', updatedAt: 'number', attachment: 'nullableDescriptor', audio: 'nullableDescriptor' },
   habits: { name: 'string', emoji: 'string', color: 'string', marks: 'stringArray', notificationId: 'nullableString' },
   expenses: { dateKey: 'string', amount: 'number', category: 'string', note: 'string', createdAt: 'number', private: 'boolean' },
+  routines: { name: 'string', description: 'string', icon: 'string', color: 'string', weekdays: 'numberArray', startTime: 'nullableString', endTime: 'nullableString', enabled: 'boolean', completedDates: 'stringArray' },
 };
 const REQUIRED_FIELDS = {
   activities: ['day', 'title', 'start', 'end'],
@@ -20,6 +22,7 @@ const REQUIRED_FIELDS = {
   notes: ['title'],
   habits: ['name'],
   expenses: ['dateKey', 'amount', 'category'],
+  routines: ['name', 'weekdays'],
 };
 const SETTINGS_FIELDS = { displayName: 'string', career: 'string', privacyEnabled: 'boolean', reduceMotion: 'boolean', lastBackupAt: 'nullableNumber' };
 
@@ -35,6 +38,7 @@ function matchesType(value, type) {
   if (type === 'nullableNumber') return value === null || (typeof value === 'number' && Number.isFinite(value));
   if (type === 'nullableString') return value === null || typeof value === 'string';
   if (type === 'stringArray') return Array.isArray(value) && value.every((item) => typeof item === 'string');
+  if (type === 'numberArray') return Array.isArray(value) && value.every((item) => Number.isInteger(item));
   if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value);
   if (type === 'nullableDescriptor') return value === null || (
     value && typeof value === 'object' && !Array.isArray(value) && typeof value.uri === 'string' &&
@@ -55,6 +59,12 @@ function validRecord(record, domain) {
     item && typeof item === 'object' && !Array.isArray(item) &&
     typeof item.id === 'string' && typeof item.text === 'string' && typeof item.done === 'boolean'
   ))) return false;
+  if (domain === 'routines') {
+    try {
+      // Normalize legacy-compatible optional fields and completed date history without dropping it.
+      require('./routines').normalizeRoutine(record);
+    } catch { return false; }
+  }
   return Object.entries(RECORD_FIELDS[domain]).every(([key, type]) => !(key in record) || matchesType(record[key], type));
 }
 
@@ -62,7 +72,7 @@ function validRecord(record, domain) {
 export function validateBackup(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.app !== 'NexusDay') return 'invalid-document';
   // Historical exports without a marker may omit collections; those domains are preserved during restore.
-  if (Object.prototype.hasOwnProperty.call(parsed, 'schema') && parsed.schema !== 1) return 'unsupported-schema';
+  if (Object.prototype.hasOwnProperty.call(parsed, 'schema') && ![1, 2].includes(parsed.schema)) return 'unsupported-schema';
   if (Object.prototype.hasOwnProperty.call(parsed, 'exportedAt') && (!Number.isFinite(parsed.exportedAt) || typeof parsed.exportedAt !== 'number')) return 'invalid-document';
   if (Object.prototype.hasOwnProperty.call(parsed, 'settings') && (
     !parsed.settings || typeof parsed.settings !== 'object' || Array.isArray(parsed.settings) || !isJsonValue(parsed.settings) ||
@@ -72,9 +82,13 @@ export function validateBackup(parsed) {
   if (Object.prototype.hasOwnProperty.call(parsed, 'tabConfig') && (!parsed.tabConfig || typeof parsed.tabConfig !== 'object' || Array.isArray(parsed.tabConfig) || !isJsonValue(parsed.tabConfig))) return 'invalid-document';
   const collections = parsed.collections;
   if (!collections || typeof collections !== 'object' || Array.isArray(collections)) return 'invalid-document';
-  const presentCollections = BACKUP_COLLECTIONS.filter((name) => Object.prototype.hasOwnProperty.call(collections, name));
+  if (Object.keys(collections).some((name) => !BACKUP_COLLECTIONS.includes(name))) return 'invalid-document';
+  const hasSchema = Object.prototype.hasOwnProperty.call(parsed, 'schema');
+  if (parsed.schema === 1 && Object.prototype.hasOwnProperty.call(collections, 'routines')) return 'invalid-document';
+  const expected = parsed.schema === 1 ? SCHEMA_1_COLLECTIONS : BACKUP_COLLECTIONS;
+  const presentCollections = expected.filter((name) => Object.prototype.hasOwnProperty.call(collections, name));
   if (!presentCollections.length) return 'missing-collection';
-  if (parsed.schema === 1 && presentCollections.length !== BACKUP_COLLECTIONS.length) return 'missing-collection';
+  if (hasSchema && presentCollections.length !== expected.length) return 'missing-collection';
   for (const domain of presentCollections) {
     const records = collections[domain];
     if (!Array.isArray(records)) return 'invalid-collection';
@@ -111,14 +125,16 @@ export function backupRequiresPrivateAuthorization({ collections, currentPrivacy
 
 export function isPartialHistoricalBackup(parsed) {
   return parsed?.app === 'NexusDay' && !Object.prototype.hasOwnProperty.call(parsed, 'schema') &&
-    BACKUP_COLLECTIONS.some((name) => !Object.prototype.hasOwnProperty.call(parsed.collections || {}, name));
+    SCHEMA_1_COLLECTIONS.some((name) => !Object.prototype.hasOwnProperty.call(parsed.collections || {}, name));
 }
 
 /** Merges historical partial exports without interpreting omitted domains as empty. */
 export function completeBackupCollections(collections, currentCollections) {
   return Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [
     name,
-    Array.isArray(collections?.[name]) ? collections[name] : currentCollections[name],
+    Array.isArray(collections?.[name])
+      ? (name === 'routines' ? collections[name].map((routine) => require('./routines').normalizeRoutine(routine)) : collections[name])
+      : (currentCollections[name] || []),
   ]));
 }
 

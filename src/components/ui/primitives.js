@@ -55,9 +55,9 @@ export function Screen({ title, subtitle, headerLeft, headerRight, children, con
 }
 
 /** Elevated container used for every list item and group of controls. */
-function Card({ children, style, accent, onPress, dimmed, disabled = false, variant = 'standard', accessibilityLabel, accessibilityHint, accessibilityState }) {
+function Card({ children, style, accent, onPress, dimmed, disabled = false, variant = 'standard', accessibilityLabel, accessibilityHint, accessibilityState, accessibilityActions, onAccessibilityAction }) {
   const body = (
-    <View style={[styles.card, variant === 'tinted' ? styles.cardTinted : null, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
+    <View style={[styles.card, variant === 'tinted' ? styles.cardTinted : null, variant === 'featured' ? styles.cardFeatured : null, accent ? styles.cardWithAccent : null, dimmed ? styles.dimmed : null, style]}>
       {accent ? <View style={[styles.accentBar, { backgroundColor: accent }]} /> : null}
       {children}
     </View>
@@ -73,6 +73,8 @@ function Card({ children, style, accent, onPress, dimmed, disabled = false, vari
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ ...accessibilityState, disabled }}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={({ pressed }) => [styles.cardPressable, disabled ? styles.disabled : null, pressed && !disabled ? styles.pressed : null]}
     >
       {body}
@@ -80,11 +82,15 @@ function Card({ children, style, accent, onPress, dimmed, disabled = false, vari
   );
 }
 
-function SectionTitle({ title, count, right }) {
+function SectionTitle({ title, count, right, variant = 'compact' }) {
+  const editorial = variant === 'editorial';
   return (
-    <View style={styles.sectionRow}>
-      <View style={styles.sectionLeft}>
-        <Text style={typography.overline}>{title}</Text>
+    <View style={[styles.sectionRow, editorial ? styles.sectionEditorial : null]}>
+      <View style={[styles.sectionLeft, editorial ? styles.sectionEditorialLeft : null]}>
+        {editorial ? <View style={styles.sectionAccent} /> : null}
+        <Text style={editorial ? styles.sectionEditorialTitle : typography.overline} accessibilityRole="header">
+          {title}
+        </Text>
         {count != null ? <Text style={[styles.sectionCount, typography.tabular]}>{count}</Text> : null}
       </View>
       {right}
@@ -202,15 +208,16 @@ function PrimaryButton({ label, onPress, disabled, style }) {
   return <Button label={label} onPress={onPress} disabled={disabled} style={[styles.primaryButtonLegacy, style]} />;
 }
 
-function Fab({ onPress, label = '+' }) {
+function Fab({ onPress, label = 'Agregar' }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label === '+' ? 'Agregar' : label}
+      accessibilityHint="Abre el formulario para crear un elemento."
       style={({ pressed }) => [styles.fab, shadow.fab, pressed ? styles.pressed : null]}
     >
-      <Text style={styles.fabLabel}>{label}</Text>
+      <Icon name="plus" size={24} color={colors.accentInk} />
     </Pressable>
   );
 }
@@ -353,6 +360,7 @@ const styles = themedStyles({
     overflow: 'hidden',
   },
   cardTinted: { backgroundColor: colors.surfaceAlt },
+  cardFeatured: { backgroundColor: colors.surfaceAlt, borderColor: colors.accent, borderWidth: 1.5 },
   cardWithAccent: { paddingLeft: spacing.lg + 4 },
   accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   cardPressable: { borderRadius: radius.lg },
@@ -366,7 +374,11 @@ const styles = themedStyles({
     justifyContent: 'space-between',
     marginTop: spacing.xs,
   },
-  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1, minWidth: 0 },
+  sectionEditorial: { marginTop: spacing.md, minHeight: 28, alignItems: 'center' },
+  sectionEditorialLeft: { gap: spacing.sm },
+  sectionAccent: { width: 3, height: 20, borderRadius: radius.pill, backgroundColor: colors.accent },
+  sectionEditorialTitle: { ...typography.title, fontSize: 17, lineHeight: 23 },
   sectionCount: {
     fontSize: 11,
     fontWeight: '700',
@@ -432,7 +444,6 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fabLabel: { fontFamily: typography.display.fontFamily, fontSize: 28, lineHeight: 32, fontWeight: '500', color: colors.accentInk, marginTop: -2 },
 
   stat: {
     flex: 1,

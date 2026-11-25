@@ -5,7 +5,7 @@
  */
 export const SURFACE_MODES = [
   {
-    id: 'light', label: 'Claro',
+    id: 'light', label: 'Blanco',
     hint: 'Base luminosa, tarjetas limpias y textos oscuros de alta legibilidad.',
     dark: false, statusBar: 'dark', swatch: ['#F7F8FC', '#171A26'],
     tokens: {
@@ -67,6 +67,9 @@ export const SURFACE_MODES = [
 ];
 
 export const DEFAULT_SURFACE_ID = 'nex';
+
+/** Tres temas que se ofrecen en Ajustes; los IDs mono/amoled siguen resolviéndose al hidratar. */
+export const SELECTABLE_SURFACE_MODES = Object.freeze(SURFACE_MODES.filter((mode) => mode.id !== 'mono'));
 
 const SURFACE_ALIASES = Object.freeze({ amoled: 'mono' });
 const SURFACE_INDEX = new Map(SURFACE_MODES.map((mode) => [mode.id, mode]));
