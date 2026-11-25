@@ -4,7 +4,7 @@
 
 NexusDay es una aplicación móvil de organización personal, diseñada para funcionar sin cuenta y guardar la información de la aplicación en el dispositivo. Reúne el horario, las rutinas, las notas y el calendario en una experiencia sencilla con tres temas: **Blanco, Oscuro y Nex**.
 
-> **Estado:** proyecto experimental. La versión Android 1.2.0 está en preparación. Todavía no hay una APK verificada publicada en GitHub Releases.
+> **Estado:** primera pre-release pública para Android. NexusDay 1.2.0 ya está disponible para descargar.
 
 [![Expo SDK 58](https://img.shields.io/badge/Expo-SDK%2058-4630EB?logo=expo)](https://docs.expo.dev/versions/v58.0.0/)
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](#requisitos)
@@ -12,9 +12,9 @@ NexusDay es una aplicación móvil de organización personal, diseñada para fun
 
 ## Descargar
 
-**[Ver versiones y descargas en GitHub Releases](https://github.com/Matixvc/NexusDay/releases/latest)**
+**[Descargar NexusDay 1.2.0 Preview para Android](https://github.com/Matixvc/NexusDay/releases/download/v1.2.0-preview/NexusDay-v1.2.0-preview.apk)**
+[Ver todas las versiones en GitHub Releases](https://github.com/Matixvc/NexusDay/releases)
 
-La descarga se habilitará cuando se publique una versión con su APK y suma SHA-256 verificadas. Si el enlace aún no muestra un instalador, no hay una versión pública lista para instalar.
 
 ## Qué incluye
 
