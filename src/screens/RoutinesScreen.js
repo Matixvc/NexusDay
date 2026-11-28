@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { Screen, Card, Button, Chip, Pill, SectionTitle, TextButton } from '../components/ui/primitives';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
@@ -9,6 +9,7 @@ import { colors, palette, radius, spacing, themedStyles, typography } from '../t
 import { ROUTINE_ICONS } from '../services/routines';
 import { syncRoutineAlarm } from '../services/reminders';
 import { ALARM_LEAD_PRESETS, cancelAlarm, getExactAlarmPermission, normalizeAlarmLead } from '../services/notifications';
+import { timeInputError } from '../services/timeInput';
 import { WEEKDAYS, todayKey } from '../utils/dates';
 
 const EMPTY_FORM = { name: '', description: '', icon: 'checkCircle', color: colors.accent, weekdays: [], startTime: '', endTime: '', alarmEnabled: false, alarmLeadMinutes: null, alarmNotificationId: null, customAlarmLead: '' };
@@ -34,10 +35,16 @@ export default function RoutinesScreen() {
     removeRoutine, toggleRoutineCompletion,
   } = useAppData();
   const [form, setForm] = useState(null);
+  const [formInitial, setFormInitial] = useState(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [removeId, setRemoveId] = useState(null);
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
   const [exactAlarmPermission, setExactAlarmPermission] = useState({ status: 'checking', granted: false });
+  const descriptionRef = useRef(null);
+  const startTimeRef = useRef(null);
+  const endTimeRef = useRef(null);
+  const customAlarmRef = useRef(null);
   const savingRef = useRef(false);
   const today = todayKey();
   const selectedRoutine = useMemo(() => routines.find((item) => item.id === removeId), [routines, removeId]);
@@ -47,17 +54,23 @@ export default function RoutinesScreen() {
     setExactAlarmPermission(result);
     return result;
   };
-  const openCreate = () => { setNotice(''); refreshExactPermission(); setForm({ ...EMPTY_FORM, color: colors.accent }); };
+  const openCreate = () => { setNotice(''); refreshExactPermission(); const values = { ...EMPTY_FORM, color: colors.accent }; setForm(values); setFormInitial(values); };
   const openEdit = (routine) => {
     setNotice('');
     refreshExactPermission();
-    setForm({
+    const values = {
       ...routine,
       startTime: routine.startTime || '',
       endTime: routine.endTime || '',
       alarmEnabled: routine.alarmLeadMinutes != null,
       customAlarmLead: ALARM_LEAD_PRESETS.includes(routine.alarmLeadMinutes) ? '' : String(routine.alarmLeadMinutes || ''),
-    });
+    };
+    setForm(values);
+    setFormInitial(values);
+  };
+  const requestClose = () => {
+    if (!form || JSON.stringify(form) === JSON.stringify(formInitial)) setForm(null);
+    else setDiscardOpen(true);
   };
   const patchForm = (patch) => setForm((current) => current ? ({ ...current, ...patch }) : current);
 
@@ -181,6 +194,11 @@ export default function RoutinesScreen() {
     setNotice(alarm.notice || (routine.completedDates.includes(today) ? 'Rutina marcada como pendiente.' : 'Rutina completada.'));
   };
 
+  const startTimeError = form?.startTime ? timeInputError(form.startTime) : null;
+  const endTimeError = form?.endTime ? timeInputError(form.endTime) : null;
+  const alarmLeadError = form?.alarmEnabled && !normalizeAlarmLead(form.alarmLeadMinutes) ? 'Usa entre 1 y 10080 minutos.' : null;
+  const formInvalid = Boolean(form && (!form.name.trim() || startTimeError || endTimeError || alarmLeadError || (form.alarmEnabled && !form.startTime)));
+
   return (
     <>
       <Screen title="Mi rutina" subtitle="Hábitos personales, sin mezclar tu horario de clases." headerRight={null}>
@@ -192,7 +210,7 @@ export default function RoutinesScreen() {
           <Text style={typography.bodyStrong}>No se pudieron leer las rutinas guardadas</Text>
           <Text style={typography.small}>No se modificarán esos datos automáticamente. Puedes recuperarlos importando una copia que incluya rutinas; una copia antigua se rechazará para evitar borrarlas.</Text>
         </Card> : null}
-        <Button label={form ? 'Cerrar editor' : 'Crear rutina'} icon={form ? undefined : 'plus'} onPress={() => (form ? setForm(null) : openCreate())} disabled={routinesBusy || routinesRecoveryError} />
+        <Button label={form ? 'Cerrar editor' : 'Crear rutina'} icon={form ? undefined : 'plus'} onPress={() => (form ? requestClose() : openCreate())} disabled={routinesBusy || routinesRecoveryError} />
 
         {form ? (
           <Card style={styles.editor}>
@@ -205,6 +223,7 @@ export default function RoutinesScreen() {
               placeholderTextColor={colors.textMuted}
               maxLength={70}
               returnKeyType="next"
+              onSubmitEditing={() => descriptionRef.current?.focus()}
               accessibilityLabel="Nombre obligatorio de la rutina"
               style={styles.input}
             />
@@ -218,6 +237,9 @@ export default function RoutinesScreen() {
               accessibilityLabel="Descripción opcional"
               style={[styles.input, styles.multiline]}
               multiline
+              ref={descriptionRef}
+              returnKeyType="next"
+              onSubmitEditing={() => startTimeRef.current?.focus()}
             />
             <Text style={typography.label}>Se repite</Text>
             <View style={styles.chips}>
@@ -228,8 +250,8 @@ export default function RoutinesScreen() {
             </View>
             <Text style={typography.label}>Horario (opcional)</Text>
             <View style={styles.timeRow}>
-              <TextInput value={form.startTime} onChangeText={(startTime) => patchForm({ startTime })} placeholder="Inicio HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} accessibilityLabel="Hora de inicio opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />
-              <TextInput value={form.endTime} onChangeText={(endTime) => patchForm({ endTime })} placeholder="Término HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} accessibilityLabel="Hora de término opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />
+              <View style={styles.timeField}><TextInput ref={startTimeRef} value={form.startTime} onChangeText={(startTime) => patchForm({ startTime })} placeholder="Inicio HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} returnKeyType="next" onSubmitEditing={() => endTimeRef.current?.focus()} accessibilityLabel="Hora de inicio opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />{startTimeError ? <Text accessibilityRole="alert" style={styles.fieldError}>{startTimeError}</Text> : null}</View>
+              <View style={styles.timeField}><TextInput ref={endTimeRef} value={form.endTime} onChangeText={(endTime) => patchForm({ endTime })} placeholder="Término HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} returnKeyType={form.alarmEnabled ? 'next' : 'done'} onSubmitEditing={() => form.alarmEnabled && !ALARM_LEAD_PRESETS.includes(form.alarmLeadMinutes) ? customAlarmRef.current?.focus() : Keyboard.dismiss()} accessibilityLabel="Hora de término opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />{endTimeError ? <Text accessibilityRole="alert" style={styles.fieldError}>{endTimeError}</Text> : null}</View>
             </View>
             <View style={styles.alarmBlock}>
               <View style={styles.alarmHeading}>
@@ -253,8 +275,9 @@ export default function RoutinesScreen() {
                       patchForm({ alarmLeadMinutes: custom, customAlarmLead: String(custom) });
                     }} />
                   </View>
+                  {alarmLeadError ? <Text accessibilityRole="alert" style={styles.fieldError}>{alarmLeadError}</Text> : null}
                   {!ALARM_LEAD_PRESETS.includes(form.alarmLeadMinutes) ? (
-                    <TextInput value={form.customAlarmLead} onChangeText={(text) => patchForm({ customAlarmLead: text, alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Minutos antes, ej. 45" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5} accessibilityLabel="Anticipación personalizada de alarma en minutos" style={styles.input} />
+                    <TextInput ref={customAlarmRef} value={form.customAlarmLead} onChangeText={(text) => patchForm({ customAlarmLead: text, alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Minutos antes, ej. 45" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} accessibilityLabel="Anticipación personalizada de alarma en minutos" style={styles.input} />
                   ) : null}
                 </>
               ) : null}
@@ -274,8 +297,8 @@ export default function RoutinesScreen() {
               ))}
             </View>
             <View style={styles.actions}>
-              <Button label="Guardar rutina" onPress={save} loading={routinesBusy} />
-              <TextButton label="Cancelar" tone="ghost" onPress={() => setForm(null)} disabled={routinesBusy} />
+              <Button label="Guardar rutina" onPress={save} loading={routinesBusy} disabled={formInvalid} />
+              <TextButton label="Cancelar" tone="ghost" onPress={requestClose} disabled={routinesBusy} />
             </View>
           </Card>
         ) : null}
@@ -328,6 +351,14 @@ export default function RoutinesScreen() {
         })}
       </Screen>
       <ConfirmSheet
+        visible={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        onConfirm={() => { setDiscardOpen(false); setForm(null); }}
+        title="¿Descartar cambios?"
+        message="Se perderán los cambios de esta rutina."
+        confirmLabel="Descartar"
+      />
+      <ConfirmSheet
         visible={Boolean(removeId)}
         onClose={() => setRemoveId(null)}
         onConfirm={confirmRemove}
@@ -362,6 +393,8 @@ const styles = themedStyles({
   multiline: { minHeight: 76, textAlignVertical: 'top' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   timeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  timeField: { flex: 1, minWidth: 145, gap: spacing.xs },
+  fieldError: { color: colors.danger, fontSize: 12, fontFamily: 'Manrope' },
   timeInput: { flex: 1, minWidth: 145 },
   alarmBlock: { gap: spacing.sm, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
   alarmHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

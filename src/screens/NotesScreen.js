@@ -52,6 +52,7 @@ import { TimeField } from '../components/ui/TimeField';
 import { syncNoteAlarm } from '../services/reminders';
 import { ALARM_LEAD_PRESETS, cancelAlarm, normalizeAlarmLead } from '../services/notifications';
 import { selectNoteGroups } from './notesPresentation';
+import { timeInputError } from '../services/timeInput';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
 const BLANK = () => ({ ...blankNote(colors.coral) });
@@ -255,7 +256,10 @@ export default function NotesScreen({ navigation }) {
 
   // Una nota guarda sentido con título, texto, o al menos una casilla por marcar.
   const hasContent = Boolean(sheet && hasNoteContent(sheet.values));
-  const canSave = hasContent && !saving && !importing;
+  const noteAlarmTimeError = sheet?.values.alarmLeadMinutes != null ? timeInputError(sheet.values.alarmTime) : null;
+  const noteAlarmLeadError = sheet?.values.alarmLeadMinutes != null && !normalizeAlarmLead(sheet.values.alarmLeadMinutes) ? 'Usa entre 1 y 10080 minutos.' : null;
+  const noteAlarmDateError = sheet?.values.alarmLeadMinutes != null && !/^\d{4}-\d{2}-\d{2}$/.test(String(sheet.values.alarmDateKey || '')) ? 'Elige una fecha válida.' : null;
+  const canSave = hasContent && !saving && !importing && !noteAlarmTimeError && !noteAlarmLeadError && !noteAlarmDateError;
 
   /** Voice notes and imported documents are sandbox copies: they die with the note. */
   const destroyFiles = (note) => {
@@ -833,10 +837,10 @@ export default function NotesScreen({ navigation }) {
                 hint="Sonido y vibración; las notas privadas usan contenido genérico."
               />
               {sheet.values.alarmLeadMinutes != null ? <>
-                <DateField label="Fecha de alarma" value={sheet.values.alarmDateKey} onChange={(alarmDateKey) => setValue({ alarmDateKey })} />
-                <TimeField label="Hora de alarma" value={sheet.values.alarmTime || '09:00'} onChange={(alarmTime) => setValue({ alarmTime })} />
+                <DateField label="Fecha de alarma" value={sheet.values.alarmDateKey} onChange={(alarmDateKey) => setValue({ alarmDateKey })} hint={noteAlarmDateError || 'Debe ser una fecha futura.'} />
+                <TimeField label="Hora de alarma" value={sheet.values.alarmTime || '09:00'} onChange={(alarmTime) => setValue({ alarmTime })} hint={noteAlarmTimeError || 'Hora válida en formato HH:mm.'} />
                 <ChipScroller>{[15, 30, 60, 120].map((minutes) => <Chip key={minutes} label={`${minutes} min`} compact selected={sheet.values.alarmLeadMinutes === minutes} onPress={() => setValue({ alarmLeadMinutes: minutes })} />)}</ChipScroller>
-                <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} keyboardType="number-pad" placeholder="Ej. 45" />
+                <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} keyboardType="number-pad" placeholder="Ej. 45" hint={noteAlarmLeadError || 'Entre 1 y 10080 minutos.'} />
               </> : null}
             </View>
 

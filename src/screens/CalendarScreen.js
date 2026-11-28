@@ -112,6 +112,7 @@ export default function CalendarScreen({ navigation }) {
   const [birthdaySheet, setBirthdaySheet] = useState(null);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [leadSheetOpen, setLeadSheetOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [birthdayConfirmId, setBirthdayConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -185,15 +186,12 @@ export default function CalendarScreen({ navigation }) {
    * choosing a day and then being sent back to today meant typing the same date twice.
    */
   const openCreate = useCallback(
-    () => setSheet({ mode: 'create', values: { ...BLANK(), dateKey: selected } }),
+    () => { const values = { ...BLANK(), dateKey: selected }; setSheet({ mode: 'create', values, initialValues: values }); },
     [selected],
   );
 
   const openEdit = useCallback((event) => {
-    setSheet({
-      mode: 'edit',
-      id: event.id,
-      values: {
+    const values = {
         title: event.title,
         dateKey: event.dateKey,
         time: event.time,
@@ -206,31 +204,32 @@ export default function CalendarScreen({ navigation }) {
         alarmLeadMinutes: event.alarmLeadMinutes ?? null,
         alarmNotificationId: event.alarmNotificationId || null,
         alarmTime: event.alarmTime || null,
-      },
+      };
+    setSheet({
+      mode: 'edit',
+      id: event.id,
+      values,
+      initialValues: values,
     });
   }, []);
 
   const openBirthdayCreate = useCallback(
-    () => setBirthdaySheet({ mode: 'create', values: blankBirthday(colors.amber, selected) }),
+    () => { const values = blankBirthday(colors.amber, selected); setBirthdaySheet({ mode: 'create', values, initialValues: values }); },
     [selected],
   );
 
   const openBirthdayEdit = useCallback((birthday) => {
+    const values = {
+        name: birthday.name, emoji: birthday.emoji || '🎂', dateKey: birthday.dateKey,
+        time: birthday.time || '09:00', daysBefore: birthday.daysBefore ?? 0,
+        color: birthday.color || colors.accent, notificationId: birthday.notificationId || null,
+        alarmLeadMinutes: birthday.alarmLeadMinutes ?? null, alarmNotificationId: birthday.alarmNotificationId || null,
+        alarmTime: birthday.alarmTime || '09:00',
+      };
     setBirthdaySheet({
       mode: 'edit',
       id: birthday.id,
-      values: {
-        name: birthday.name,
-        emoji: birthday.emoji || '🎂',
-        dateKey: birthday.dateKey,
-        time: birthday.time || '09:00',
-        daysBefore: birthday.daysBefore ?? 0,
-        color: birthday.color || colors.accent,
-        notificationId: birthday.notificationId || null,
-        alarmLeadMinutes: birthday.alarmLeadMinutes ?? null,
-        alarmNotificationId: birthday.alarmNotificationId || null,
-        alarmTime: birthday.alarmTime || '09:00',
-      },
+      values, initialValues: values,
     });
   }, []);
 
@@ -238,6 +237,13 @@ export default function CalendarScreen({ navigation }) {
     (patch) => setBirthdaySheet((previous) => ({ ...previous, values: { ...previous.values, ...patch } })),
     [],
   );
+  const requestClose = (kind) => {
+    const current = kind === 'birthday' ? birthdaySheet : sheet;
+    if (!current || JSON.stringify(current.values) === JSON.stringify(current.initialValues)) {
+      if (kind === 'birthday') setBirthdaySheet(null);
+      else setSheet(null);
+    } else setDiscardOpen(kind);
+  };
 
   const goToday = useCallback(() => {
     const nextToday = todayKey();
@@ -273,7 +279,9 @@ export default function CalendarScreen({ navigation }) {
 
   const eventTimeError = sheet ? timeInputError(sheet.values.time) : null;
   const eventRangeError = sheet?.values.endTime ? timeRangeError(sheet.values.time, sheet.values.endTime) : null;
-  const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.title.trim()) && !eventTimeError && !eventRangeError;
+  const alarmTimeError = sheet?.values.alarmLeadMinutes != null ? timeInputError(sheet.values.alarmTime || sheet.values.time) : null;
+  const alarmLeadError = sheet?.values.alarmLeadMinutes != null && !normalizeAlarmLead(sheet.values.alarmLeadMinutes) ? 'Usa entre 1 y 10080 minutos.' : null;
+  const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.title.trim()) && !eventTimeError && !eventRangeError && !alarmTimeError && !alarmLeadError;
 
   // The moment the sheet points at, already gone by the clock? Nothing can be announced about
   // it, so the switch shows *why* it refuses to go on instead of scheduling a notification the
@@ -553,7 +561,7 @@ export default function CalendarScreen({ navigation }) {
 
       <Sheet
         visible={Boolean(sheet)}
-        onClose={() => setSheet(null)}
+        onClose={() => requestClose('event')}
         title={sheet?.mode === 'edit' ? 'Editar evento' : 'Nuevo evento'}
         subtitle="Todo se guarda en el dispositivo; el aviso se programa aparte."
         footer={<PrimaryButton label={saving ? 'Guardando…' : 'Guardar'} onPress={save} disabled={!canSave} />}
@@ -639,9 +647,9 @@ export default function CalendarScreen({ navigation }) {
               />
               {sheet.values.alarmLeadMinutes != null ? (
                 <>
-                  <TimeField label="Hora de alarma" value={sheet.values.alarmTime || sheet.values.time} onChange={(alarmTime) => setValue({ alarmTime })} />
+                  <TimeField label="Hora de alarma" value={sheet.values.alarmTime || sheet.values.time} onChange={(alarmTime) => setValue({ alarmTime })} hint={alarmTimeError || 'Hora válida en formato HH:mm.'} />
                   <View style={styles.categoryRow}>{[15, 30, 60, 120].map((minutes) => <Chip key={minutes} label={`${minutes} min`} compact selected={sheet.values.alarmLeadMinutes === minutes} onPress={() => setValue({ alarmLeadMinutes: minutes })} />)}</View>
-                  <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} keyboardType="number-pad" onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Ej. 45" />
+                  <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} keyboardType="number-pad" onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Ej. 45" hint={alarmLeadError || 'Entre 1 y 10080 minutos.'} />
                 </>
               ) : null}
             </View>
@@ -676,7 +684,7 @@ export default function CalendarScreen({ navigation }) {
       <BirthdayEditor
         sheet={birthdaySheet}
         saving={birthdaySaving}
-        onClose={() => setBirthdaySheet(null)}
+        onClose={() => requestClose('birthday')}
         onChange={setBirthdayValue}
         onSave={saveBirthday}
         onRequestDelete={(id) => {
@@ -706,6 +714,14 @@ export default function CalendarScreen({ navigation }) {
         onSelect={pickLead}
       />
 
+      <ConfirmSheet
+        visible={Boolean(discardOpen)}
+        onClose={() => setDiscardOpen(null)}
+        onConfirm={() => { const kind = discardOpen; setDiscardOpen(null); if (kind === 'birthday') setBirthdaySheet(null); else setSheet(null); }}
+        title="¿Descartar cambios?"
+        message="Se perderán los cambios de este formulario."
+        confirmLabel="Descartar"
+      />
       <ConfirmSheet
         visible={Boolean(confirmId)}
         onClose={() => setConfirmId(null)}

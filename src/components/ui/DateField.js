@@ -30,7 +30,7 @@ function monthMatrix(year, month) {
  * Also avoids `@react-native-community/datetimepicker` so everything keeps
  * running in Expo Go — a plain month grid is enough for these forms.
  */
-export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
+export function DateField({ label = 'Fecha', value, onChange, quick = true, hint }) {
   const [anchor, setAnchor] = useState(() => {
     const d = fromDateKey(value || todayKey());
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -118,6 +118,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
           />
         </ChipScroller>
       ) : null}
+
+      {hint ? <Text style={styles.hint} accessibilityRole="alert">{hint}</Text> : null}
 
       {open ? (
         <View style={styles.calendar}>
@@ -235,6 +237,7 @@ const styles = themedStyles({
   displayText: { ...typography.body, flex: 1 },
   chevron: { fontFamily: typography.body.fontFamily, color: colors.textMuted, fontSize: 14 },
   quickRow: { paddingTop: spacing.xs },
+  hint: { ...typography.caption, color: colors.danger, marginTop: spacing.xs },
   calendar: {
     backgroundColor: colors.surface,
     borderWidth: 1,

@@ -69,6 +69,7 @@ export default function ScheduleScreen({ navigation }) {
   const [confirmId, setConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [exactAlarmPermission, setExactAlarmPermission] = useState({ status: 'checking', granted: false });
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -125,16 +126,14 @@ export default function ScheduleScreen({ navigation }) {
 
   const openCreate = () => {
     refreshExactPermission();
-    setSheet({ mode: 'create', values: { ...BLANK() } });
+    const values = { ...BLANK() };
+    setSheet({ mode: 'create', values, initialValues: values });
   };
 
   const openEdit = (item) => {
     refreshExactPermission();
     const leadMinutes = item.leadMinutes ?? -1;
-    setSheet({
-      mode: 'edit',
-      id: item.id,
-      values: {
+    const values = {
         title: item.title,
         start: item.start,
         end: item.end,
@@ -143,7 +142,12 @@ export default function ScheduleScreen({ navigation }) {
         alarmEnabled: leadMinutes !== -1,
         leadMinutes,
         customLead: ALARM_LEAD_PRESETS.includes(leadMinutes) ? '' : String(leadMinutes > 0 ? leadMinutes : ''),
-      },
+      };
+    setSheet({
+      mode: 'edit',
+      id: item.id,
+      values,
+      initialValues: values,
     });
   };
 
@@ -158,6 +162,10 @@ export default function ScheduleScreen({ navigation }) {
   const setValue = (patch) => setSheet((prev) => (
     prev ? { ...prev, values: { ...prev.values, ...patch } } : prev
   ));
+  const requestClose = () => {
+    if (!sheet || JSON.stringify(sheet.values) === JSON.stringify(sheet.initialValues)) setSheet(null);
+    else setDiscardOpen(true);
+  };
 
   const invalidTitle = !sheet?.values.title.trim();
   const invalidTime = sheet ? Boolean(timeInputError(sheet.values.start) || timeInputError(sheet.values.end)) : false;
@@ -412,7 +420,7 @@ export default function ScheduleScreen({ navigation }) {
 
       <Sheet
         visible={Boolean(sheet)}
-        onClose={() => setSheet(null)}
+        onClose={requestClose}
         title={sheet?.mode === 'edit' ? 'Editar actividad' : 'Nueva actividad'}
         subtitle={
           sheet?.mode === 'edit'
@@ -599,6 +607,14 @@ export default function ScheduleScreen({ navigation }) {
         ) : null}
       </Sheet>
 
+      <ConfirmSheet
+        visible={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        onConfirm={() => { setDiscardOpen(false); setSheet(null); }}
+        title="¿Descartar cambios?"
+        message="Se perderán los cambios de esta clase."
+        confirmLabel="Descartar"
+      />
       <ConfirmSheet
         visible={Boolean(confirmId)}
         onClose={() => setConfirmId(null)}
