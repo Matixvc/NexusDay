@@ -17,7 +17,7 @@ require.extensions['.js'] = (module, filename) => {
   module._compile(result.code, filename);
 };
 
-const { validateBackup, prepareBackupImport, backupContainsPrivateRecords, backupRequiresPrivateAuthorization, runBackupExport, isPartialHistoricalBackup, completeBackupCollections, runRestoreTransaction, recoverRestoreTransaction, RESTORE_JOURNAL_KEY } = require('../src/services/backupRestore');
+const { validateBackup, prepareBackupImport, backupContainsPrivateRecords, backupRequiresPrivateAuthorization, runBackupExport, isPartialHistoricalBackup, completeBackupCollections, normalizeAlarmContractRecord, runRestoreTransaction, recoverRestoreTransaction, RESTORE_JOURNAL_KEY } = require('../src/services/backupRestore');
 const { PRIVATE_ACTIONS, createPrivacyAuthorizer } = require('../src/services/privacyPolicy');
 
 const collections = {
@@ -28,7 +28,18 @@ const collections = {
   habits: [],
   expenses: [],
 };
+const legacyContracts = { ...collections, events: [{ id: 'e1', dateKey: '2026-01-01', time: '08:00', title: 'Clase' }], birthdays: [{ id: 'b1', name: 'Ana', dateKey: '2026-02-28', time: '09:00' }] };
+const noteWithAlarm = { id: 'n-alarm', title: 'Nota', alarmDateKey: '2099-01-02', alarmTime: '09:00', alarmLeadMinutes: 30, alarmNotificationId: null };
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...collections, notes: [noteWithAlarm], routines: [] } }), null, 'Acepta contrato de alarma de notas.');
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...collections, notes: [{ ...noteWithAlarm, alarmLeadMinutes: 0 }], routines: [] } }), 'invalid-record');
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...legacyContracts, routines: [] } }), null, 'Acepta registros histÃ³ricos sin alarmas.');
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...legacyContracts, events: [{ ...legacyContracts.events[0], alarmLeadMinutes: 30, alarmNotificationId: null, alarmTime: null }], routines: [] } }), null);
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...legacyContracts, events: [{ ...legacyContracts.events[0], alarmLeadMinutes: 0 }], routines: [] } }), 'invalid-record');
+assert.equal(validateBackup({ app: 'NexusDay', schema: 2, collections: { ...legacyContracts, birthdays: [{ ...legacyContracts.birthdays[0], alarmTime: '25:00' }], routines: [] } }), 'invalid-record');
+assert.equal(normalizeAlarmContractRecord(legacyContracts.birthdays[0], 'birthdays').alarmTime, '09:00');
+assert.equal(normalizeAlarmContractRecord({ id: 'e1', alarmNotificationId: 'imported' }, 'events').alarmNotificationId, null);
 const routine = { id: 'r1', name: 'Leer', description: '', icon: 'checkCircle', color: '#8b7cff', weekdays: [0, 2], startTime: null, endTime: null, enabled: true, completedDates: ['2026-01-02'] };
+const routineWithAlarm = { ...routine, startTime: '08:00', alarmLeadMinutes: 30, alarmNotificationId: 'foreign-device-id' };
 const backup = { app: 'NexusDay', schema: 1, exportedAt: 123, collections, settings: { privacyEnabled: true, reduceMotion: false, lastBackupAt: null }, userName: '', tabConfig: {} };
 
 assert.equal(validateBackup(backup), null, 'Acepta el formato actual de exportación.');
@@ -67,6 +78,10 @@ assert.notEqual(validateBackup({ ...historical, collections: { ...collections, n
 assert.equal(validateBackup({ ...backup, collections: { ...collections, routines: [routine] } }), 'invalid-document', 'Schema 1 rejects an unknown seventh collection.');
 const schema2 = { ...backup, schema: 2, collections: { ...collections, routines: [routine] } };
 assert.equal(validateBackup(schema2), null, 'Schema 2 requires and accepts seven validated collections.');
+assert.equal(validateBackup({ ...schema2, collections: { ...collections, routines: [routineWithAlarm] } }), null, 'Schema 2 accepts optional routine alarm fields.');
+const appDataSource = fs.readFileSync(path.join(__dirname, '../src/context/AppDataContext.js'), 'utf8');
+assert.match(appDataSource, /sourceCollections\.routines\.map\(\(item\) => \(\{ \.\.\.item, alarmNotificationId: null \}\)\)/, 'Restores never reuse imported routine notification IDs.');
+assert.match(appDataSource, /if \(key === KEYS\.events\) events\.replaceAll\(next\);[\s\S]*else if \(key === KEYS\.birthdays\) birthdays\.replaceAll\(next\);/, 'Alarm restore patches publish the committed event/birthday snapshots.');
 assert.equal(validateBackup({ ...schema2, collections: { ...collections, routines: undefined } }), 'invalid-collection');
 const missingRoutine = { ...schema2.collections };
 delete missingRoutine.routines;

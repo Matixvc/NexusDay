@@ -4,6 +4,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 export const ROUTINE_ICONS = ['checkCircle', 'calendar', 'heart', 'star', 'clock'];
 const COLOR_PATTERN = /^#[\da-fA-F]{6}$/;
+const MAX_ALARM_LEAD_MINUTES = 7 * 24 * 60;
 
 function validDateKey(value) {
   if (!DATE_PATTERN.test(String(value || ''))) return false;
@@ -41,6 +42,13 @@ export function normalizeRoutine(source) {
   if (source.enabled != null && typeof source.enabled !== 'boolean') throw new Error('invalid-enabled');
   if (source.color != null && (typeof source.color !== 'string' || (source.color && !COLOR_PATTERN.test(source.color)))) throw new Error('invalid-color');
   if (source.icon != null && (typeof source.icon !== 'string' || !ROUTINE_ICONS.includes(source.icon))) throw new Error('invalid-icon');
+  const alarmLeadMinutes = source.alarmLeadMinutes == null ? null : source.alarmLeadMinutes;
+  if (alarmLeadMinutes !== null && (!Number.isInteger(alarmLeadMinutes) || alarmLeadMinutes < 1 || alarmLeadMinutes > MAX_ALARM_LEAD_MINUTES)) {
+    throw new Error('invalid-alarm-lead');
+  }
+  if (alarmLeadMinutes !== null && startTime === null) throw new Error('alarm-time-required');
+  const alarmNotificationId = source.alarmNotificationId == null ? null : source.alarmNotificationId;
+  if (alarmNotificationId !== null && typeof alarmNotificationId !== 'string') throw new Error('invalid-alarm-id');
   return {
     ...source,
     id: source.id.trim(),
@@ -53,6 +61,8 @@ export function normalizeRoutine(source) {
     endTime,
     enabled: source.enabled !== false,
     completedDates: normalizedDates,
+    alarmLeadMinutes,
+    alarmNotificationId,
   };
 }
 

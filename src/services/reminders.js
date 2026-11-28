@@ -7,6 +7,7 @@ import {
   parseTime,
   toDateKey,
   todayKey,
+  weekdayIndex,
 } from '../utils/dates';
 
 /** Lead times for calendar events, in minutes. -1 = no reminder. */
@@ -91,7 +92,6 @@ export async function syncEventReminder({ id, title, notes, dateKey, time, leadM
 
   const when = buildDateTime(dateKey, time);
   when.setMinutes(when.getMinutes() - leadMinutes);
-
   const result = await Notif.scheduleAt({
     title: `📌 ${title}`,
     body: notes && notes.trim() ? notes.trim().slice(0, 120) : `A las ${time}.`,
@@ -102,6 +102,21 @@ export async function syncEventReminder({ id, title, notes, dateKey, time, leadM
   if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
   return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }
+
+export async function syncEventAlarm({ id, dateKey, time, title, alarmTime, alarmLeadMinutes }, existingId) {
+  await Notif.cancel(existingId);
+  if (alarmLeadMinutes == null) return { alarmNotificationId: null, status: 'disabled' };
+  const result = await Notif.scheduleAlarm({ targetDate: buildDateTime(dateKey, alarmTime || time), leadMinutes: alarmLeadMinutes, title: 'Alarma de evento', body: 'Tienes un evento programado.', data: { kind: 'event-alarm', itemId: id }, privateContent: true });
+  return result.status === 'scheduled' ? { alarmNotificationId: result.id, status: result.status, precision: result.precision } : { alarmNotificationId: null, status: result.status, notice: describe(result.status, result) };
+}
+
+export async function syncNoteAlarm({ id, alarmDateKey, alarmTime, alarmLeadMinutes, private: isPrivate }, existingId) {
+  await Notif.cancel(existingId);
+  if (alarmLeadMinutes == null || !alarmDateKey || !alarmTime) return { alarmNotificationId: null, status: 'disabled' };
+  const result = await Notif.scheduleAlarm({ targetDate: buildDateTime(alarmDateKey, alarmTime), leadMinutes: alarmLeadMinutes, title: 'Alarma de NexusDay', body: 'Tienes una nota programada.', data: { kind: 'note-alarm', itemId: id }, privateContent: Boolean(isPrivate) });
+  return result.status === 'scheduled' ? { alarmNotificationId: result.id, status: result.status, precision: result.precision } : { alarmNotificationId: null, status: result.status, notice: describe(result.status, result) };
+}
+
 
 /**
  * Fecha y hora de la próxima ocurrencia de una clase semanal que no esté suspendida.
@@ -130,6 +145,13 @@ export function nextClassOccurrence({ day, start, suspended = {} }, from = new D
   return null;
 }
 
+/** First class whose advance alarm is still in the future. */
+export function nextClassAlarmOccurrence(activity, leadMinutes, from = new Date()) {
+  const lead = Number(leadMinutes);
+  if (!Number.isInteger(lead) || lead < 1) return null;
+  return nextClassOccurrence(activity, new Date(from.getTime() + lead * 60000));
+}
+
 /**
  * Recordatorio one-shot para una clase del horario, en la próxima ocurrencia no suspendida.
  * Siempre cancela `existingId` primero, igual que el resto de sincronizadores.
@@ -141,19 +163,72 @@ export async function syncClassReminder({ id, title, day, start, location, leadM
     return { notificationId: null, notice: null, status: 'disabled' };
   }
 
-  const when = nextClassOccurrence({ day, start, suspended });
+  // If this week's lead point already passed, target the following active occurrence.
+  const when = nextClassAlarmOccurrence({ day, start, suspended }, leadMinutes);
   if (!when) return { notificationId: null, notice: null, status: 'skipped' };
-  when.setMinutes(when.getMinutes() - leadMinutes);
-
-  const result = await Notif.scheduleAt({
+  const result = await Notif.scheduleAlarm({
     title: `📚 ${title}`,
     body: location ? `${location} · empieza a las ${start}.` : `Empieza a las ${start}.`,
-    date: when,
+    targetDate: when,
+    leadMinutes,
     data: { kind: 'class', itemId: id },
   });
 
-  if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
-  return { notificationId: null, notice: describe(result.status, result), status: result.status };
+  if (result.status === 'scheduled') {
+    return {
+      notificationId: result.id,
+      notice: result.precision === 'approximate' ? 'La alarma se programó, pero Android puede entregarla con retraso.' : null,
+      status: result.status,
+      precision: result.precision,
+      exactPermission: result.exactPermission,
+    };
+  }
+  return { notificationId: null, notice: describe(result.status, result), status: result.status, precision: result.precision };
+}
+
+/** Next enabled routine occurrence whose advance alarm is still in the future. */
+export function nextRoutineAlarmOccurrence({ weekdays, startTime, enabled = true, completedDates = [] }, leadMinutes, from = new Date()) {
+  if (!enabled || !startTime || !Array.isArray(weekdays) || !weekdays.length) return null;
+  const lead = Number(leadMinutes);
+  if (!Number.isInteger(lead) || lead < 1) return null;
+  const { hour, minute } = parseTime(startTime);
+  const threshold = new Date(from.getTime() + lead * 60000);
+  for (let offset = 0; offset < 14; offset += 1) {
+    const candidate = new Date(threshold);
+    candidate.setHours(hour, minute, 0, 0);
+    candidate.setDate(candidate.getDate() + offset);
+    if (!weekdays.includes(weekdayIndex(candidate))) continue;
+    if (candidate.getTime() <= threshold.getTime()) continue;
+    if (completedDates.includes(toDateKey(candidate))) continue;
+    return candidate;
+  }
+  return null;
+}
+
+export async function syncRoutineAlarm(routine, existingId = routine?.alarmNotificationId) {
+  await Notif.cancel(existingId);
+  const leadMinutes = routine?.alarmLeadMinutes;
+  if (routine?.enabled === false || leadMinutes == null || !routine?.startTime) {
+    return { alarmNotificationId: null, notice: null, status: 'disabled' };
+  }
+  const targetDate = nextRoutineAlarmOccurrence(routine, leadMinutes);
+  if (!targetDate) return { alarmNotificationId: null, notice: null, status: 'skipped' };
+  const result = await Notif.scheduleAlarm({
+    title: `Rutina: ${routine.name}`,
+    body: `Comienza a las ${routine.startTime}.`,
+    targetDate,
+    leadMinutes,
+    data: { kind: 'routine', itemId: routine.id },
+  });
+  if (result.status === 'scheduled') {
+    return {
+      alarmNotificationId: result.id,
+      notice: result.precision === 'approximate' ? 'La alarma se programó, pero Android puede entregarla con retraso.' : null,
+      status: result.status,
+      precision: result.precision,
+    };
+  }
+  return { alarmNotificationId: null, notice: describe(result.status, result), status: result.status };
 }
 
 /**
@@ -165,12 +240,17 @@ export async function syncClassReminder({ id, title, day, start, location, leadM
  * silencio, así que es seguro ejecutarlo una vez por arranque. Los recordatorios de clase y de
  * hábito son one-shot: deben reconstruirse aquí o quedarían mudos tras el que ya disparó.
  */
-export async function resyncReminders({ events = [], birthdays = [], habits = [], activities = [] }) {
+export async function resyncReminders({ events = [], birthdays = [], notes = [], habits = [], activities = [], routines = [] }) {
   const eventPatches = [];
   const birthdayPatches = [];
+  const eventAlarmPatches = [];
+  const birthdayAlarmPatches = [];
+  const noteAlarmPatches = [];
   const habitPatches = [];
   const activityPatches = [];
+  const routinePatches = [];
   const failures = [];
+  const scheduledAlarmIds = new Set((await Notif.getScheduledAlarms()).map((request) => request.identifier));
   const recordOutcome = (result, domain, id, patches) => {
     if (result.notificationId) patches.push({ id, notificationId: result.notificationId });
     else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) {
@@ -179,13 +259,40 @@ export async function resyncReminders({ events = [], birthdays = [], habits = []
   };
 
   for (const event of events) {
-    if (event.notificationId || (event.leadMinutes ?? -1) === -1) continue;
-    recordOutcome(await syncEventReminder(event, null), 'events', event.id, eventPatches);
+    if (event.alarmLeadMinutes == null && event.alarmNotificationId) {
+      await Notif.cancel(event.alarmNotificationId);
+      eventAlarmPatches.push({ id: event.id, alarmNotificationId: null });
+    }
+    if (!event.notificationId && (event.leadMinutes ?? -1) !== -1) recordOutcome(await syncEventReminder(event, null), 'events', event.id, eventPatches);
+    if (event.alarmLeadMinutes != null && (!event.alarmNotificationId || !scheduledAlarmIds.has(event.alarmNotificationId))) {
+      const result = await syncEventAlarm(event, null);
+      if (result.alarmNotificationId) eventAlarmPatches.push({ id: event.id, alarmNotificationId: result.alarmNotificationId });
+      else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) failures.push({ domain: 'event-alarms', id: event.id, status: result.status });
+    }
   }
 
   for (const birthday of birthdays) {
-    if (birthday.notificationId) continue;
-    recordOutcome(await syncBirthdayReminder(birthday, null), 'birthdays', birthday.id, birthdayPatches);
+    if (birthday.alarmLeadMinutes == null && birthday.alarmNotificationId) {
+      await Notif.cancel(birthday.alarmNotificationId);
+      birthdayAlarmPatches.push({ id: birthday.id, alarmNotificationId: null });
+    }
+    if (!birthday.notificationId) recordOutcome(await syncBirthdayReminder(birthday, null), 'birthdays', birthday.id, birthdayPatches);
+    if (birthday.alarmLeadMinutes != null && (!birthday.alarmNotificationId || !scheduledAlarmIds.has(birthday.alarmNotificationId))) {
+      const result = await syncBirthdayAlarm(birthday, null);
+      if (result.alarmNotificationId) birthdayAlarmPatches.push({ id: birthday.id, alarmNotificationId: result.alarmNotificationId });
+      else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) failures.push({ domain: 'birthday-alarms', id: birthday.id, status: result.status });
+    }
+  }
+
+  for (const note of notes) {
+    if (note.alarmLeadMinutes == null && note.alarmNotificationId) {
+      await Notif.cancel(note.alarmNotificationId);
+      noteAlarmPatches.push({ id: note.id, alarmNotificationId: null });
+    } else if (note.alarmLeadMinutes != null && (!note.alarmNotificationId || !scheduledAlarmIds.has(note.alarmNotificationId))) {
+      const result = await syncNoteAlarm(note, null);
+      if (result.alarmNotificationId) noteAlarmPatches.push({ id: note.id, alarmNotificationId: result.alarmNotificationId });
+      else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) failures.push({ domain: 'note-alarms', id: note.id, status: result.status });
+    }
   }
 
   for (const habit of habits) {
@@ -196,11 +303,26 @@ export async function resyncReminders({ events = [], birthdays = [], habits = []
   // Class reminders are one-shots for the next occurrence, so they must be re-armed every
   // start — exactly like habits — or the class would go silent after the one that fired.
   for (const activity of activities) {
-    if (activity.notificationId || (activity.leadMinutes ?? -1) === -1) continue;
+    if ((activity.leadMinutes ?? -1) === -1) continue;
+    if (activity.notificationId && scheduledAlarmIds.has(activity.notificationId)) continue;
     recordOutcome(await syncClassReminder(activity, null), 'activities', activity.id, activityPatches);
   }
 
-  return { eventPatches, birthdayPatches, habitPatches, activityPatches, failures };
+  for (const routine of routines) {
+    if (routine.enabled === false || routine.alarmLeadMinutes == null || !routine.startTime) {
+      if (routine.alarmNotificationId) {
+        await Notif.cancel(routine.alarmNotificationId);
+        routinePatches.push({ id: routine.id, alarmNotificationId: null });
+      }
+      continue;
+    }
+    if (routine.alarmNotificationId && scheduledAlarmIds.has(routine.alarmNotificationId)) continue;
+    const result = await syncRoutineAlarm(routine, null);
+    if (result.alarmNotificationId) routinePatches.push({ id: routine.id, alarmNotificationId: result.alarmNotificationId });
+    else if (result.status && !['disabled', 'skipped', 'past'].includes(result.status)) failures.push({ domain: 'routines', id: routine.id, status: result.status });
+  }
+
+  return { eventPatches, birthdayPatches, eventAlarmPatches, birthdayAlarmPatches, noteAlarmPatches, habitPatches, activityPatches, routinePatches, failures };
 }
 
 /**
@@ -232,6 +354,16 @@ export async function syncBirthdayReminder({ id, name, dateKey, time, daysBefore
   if (result.status === 'scheduled') return { notificationId: result.id, notice: null, status: result.status };
   return { notificationId: null, notice: describe(result.status, result), status: result.status };
 }
+
+export async function syncBirthdayAlarm({ id, dateKey, alarmTime = '09:00', alarmLeadMinutes }, existingId) {
+  await Notif.cancel(existingId);
+  if (alarmLeadMinutes == null) return { alarmNotificationId: null, status: 'disabled' };
+  const birth = fromDateKey(dateKey);
+  const { hour, minute } = parseTime(alarmTime || '09:00');
+  const result = await Notif.scheduleAlarm({ targetDate: nextYearlyOccurrence(birth.getMonth(), birth.getDate(), hour, minute), leadMinutes: alarmLeadMinutes, title: 'Alarma de cumpleaños', body: 'Tienes un cumpleaños próximo.', data: { kind: 'birthday-alarm', itemId: id }, privateContent: true });
+  return result.status === 'scheduled' ? { alarmNotificationId: result.id, status: result.status, precision: result.precision } : { alarmNotificationId: null, status: result.status, notice: describe(result.status, result) };
+}
+
 
 /**
  * Daily nudge for a habit, scheduled for *today* only.

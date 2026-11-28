@@ -2,7 +2,7 @@
 
 ## Formato aceptado
 
-Las nuevas exportaciones usan `app: "NexusDay"`, `schema: 2` y siete colecciones: `activities`, `events`, `birthdays`, `notes`, `habits`, `expenses` y `routines`. Todas deben estar presentes, aunque esten vacias. Rutinas usa un registro por recurrencia; sus fechas de cumplimiento se validan, deduplican y ordenan sin eliminar historial.
+Las nuevas exportaciones usan `app: "NexusDay"`, `schema: 2` y siete colecciones: `activities`, `events`, `birthdays`, `notes`, `habits`, `expenses` y `routines`. Todas deben estar presentes, aunque esten vacias. Rutinas usa un registro por recurrencia; sus fechas de cumplimiento se validan, deduplican y ordenan sin eliminar historial. `alarmLeadMinutes` y `alarmNotificationId` son opcionales: una rutina histórica sin ellos conserva la alarma desactivada, y los IDs importados se descartan antes de reconciliar con Android.
 
 Se aceptan copias `schema: 1` con las seis colecciones anteriores y exportaciones historicas sin `schema`. Al restaurar una copia anterior que no incluya `routines`, las rutinas actuales se conservan; una copia schema 2 puede reemplazarlas o vaciarlas explicitamente. Las copias historicas sin `schema` pueden omitir dominios conocidos: las colecciones omitidas conservan los datos actuales. Se rechazan esquemas desconocidos, colecciones malformadas, IDs duplicados y tipos incompatibles. Los campos desconocidos de los registros se conservan para extensibilidad.
 

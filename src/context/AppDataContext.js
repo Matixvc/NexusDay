@@ -143,10 +143,10 @@ export function AppDataProvider({ children }) {
   // were saved before permission was granted. Runs once per session, after
   // hydration, and retries when permission flips to granted.
   const resyncedOnce = useRef(false);
-  const pendingRef = useRef({ events: [], birthdays: [], activities: [] });
+  const pendingRef = useRef({ events: [], birthdays: [], notes: [], activities: [], routines: [] });
 
   useEffect(() => {
-    pendingRef.current = { events: events.items, birthdays: birthdays.items, activities: activities.items };
+    pendingRef.current = { events: events.items, birthdays: birthdays.items, notes: notes.items, activities: activities.items, routines: routines.items };
   });
 
   const allHydrated =
@@ -160,11 +160,12 @@ export function AppDataProvider({ children }) {
   const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError) || routines.restoreRecoveryError;
 
   /** Wipes every local collection (used by Ajustes › Borrar datos). */
-  const clearAllData = useCallback(async () => routines.runExclusive(async ({ setSnapshot }) => withCollectionLock(async () => {
+  const clearAllData = useCallback(async () => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => withCollectionLock(async () => {
     const empty = [];
     const entries = [KEYS.activities, KEYS.events, KEYS.birthdays, KEYS.notes, KEYS.habits, KEYS.expenses, KEYS.routines]
       .map((key) => ({ key, value: JSON.stringify(empty) }));
     await persistRestoreSnapshot(entries);
+    await Promise.all(currentRoutines.map((item) => Notif.cancelAlarm(item.alarmNotificationId)));
     activities.replaceAll(empty);
     events.replaceAll(empty);
     birthdays.replaceAll(empty);
@@ -198,12 +199,12 @@ export function AppDataProvider({ children }) {
       // elimina `notificationId` explícitamente para que `resyncReminders` genere
       // recordatorios válidos sobre los datos restaurados en este mismo dispositivo.
       const restoredActivities = sourceCollections.activities.map((item) => ({ ...item, notificationId: null }));
-      const restoredEvents = sourceCollections.events.map((item) => ({ ...item, notificationId: null }));
-      const restoredBirthdays = sourceCollections.birthdays.map((item) => ({ ...item, notificationId: null }));
-      const restoredNotes = sourceCollections.notes.map((item) => ({ ...item, notificationId: null }));
+      const restoredEvents = sourceCollections.events.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null }));
+      const restoredBirthdays = sourceCollections.birthdays.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null, alarmTime: item.alarmTime || '09:00' }));
+      const restoredNotes = sourceCollections.notes.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null }));
       const restoredHabits = sourceCollections.habits.map((item) => ({ ...item, notificationId: null }));
       const restoredExpenses = sourceCollections.expenses.map((item) => ({ ...item, notificationId: null }));
-      const restoredRoutines = sourceCollections.routines;
+      const restoredRoutines = sourceCollections.routines.map((item) => ({ ...item, alarmNotificationId: null }));
 
       // Un array puede estar vacío y el `Array.isArray` distingue un resultado válido de
       // una colección ausente: `replaceAll([])` limpia los registros anteriores.
@@ -224,6 +225,7 @@ export function AppDataProvider({ children }) {
       if (nextTabConfig) entries.push({ key: KEYS.tabConfig, value: JSON.stringify(nextTabConfig) });
 
       await persistRestoreSnapshot(entries);
+      await Promise.all(currentRoutines.map((item) => Notif.cancelAlarm(item.alarmNotificationId)));
 
       activities.replaceAll(restoredActivities);
       events.replaceAll(restoredEvents);
@@ -238,13 +240,17 @@ export function AppDataProvider({ children }) {
 
       // `resyncReminders` se ejecuta sobre los datos reales restaurados. Un fallo aquí no
       // revierte la restauración de datos.
+      let scheduledRoutineAlarmIds = [];
       try {
         const patches = await resyncReminders({
           events: restoredEvents,
           birthdays: restoredBirthdays,
+          notes: restoredNotes,
           habits: restoredHabits,
           activities: restoredActivities,
+          routines: restoredRoutines,
         });
+        scheduledRoutineAlarmIds = patches.routinePatches?.map((patch) => patch.alarmNotificationId).filter(Boolean) || [];
         for (const [key, updates] of [
           [KEYS.events, patches.eventPatches], [KEYS.birthdays, patches.birthdayPatches],
           [KEYS.habits, patches.habitPatches], [KEYS.activities, patches.activityPatches],
@@ -255,9 +261,31 @@ export function AppDataProvider({ children }) {
             ids.has(item.id) ? { ...item, notificationId: ids.get(item.id) } : item
           ));
         }
+        for (const [key, updates] of [[KEYS.events, patches.eventAlarmPatches], [KEYS.birthdays, patches.birthdayAlarmPatches], [KEYS.notes, patches.noteAlarmPatches]]) {
+          if (!updates?.length) continue;
+          const ids = new Map(updates.map((patch) => [patch.id, patch.alarmNotificationId]));
+          const source = key === KEYS.events ? restoredEvents : key === KEYS.birthdays ? restoredBirthdays : restoredNotes;
+          const next = source.map((item) => ids.has(item.id) ? { ...item, alarmNotificationId: ids.get(item.id) } : item);
+          const committed = await mutateLockedCollection(key, () => next);
+          if (!committed) throw new Error('RESTORE_ALARM_PATCH_FAILED');
+          // The storage listener normally publishes this too; explicitly publish the exact
+          // committed snapshot so React cannot lag behind when a restore is already hydrated.
+          if (key === KEYS.events) events.replaceAll(next);
+          else if (key === KEYS.birthdays) birthdays.replaceAll(next);
+          else notes.replaceAll(next);
+        }
+        if (patches.routinePatches?.length) {
+          const alarmIds = new Map(patches.routinePatches.map((patch) => [patch.id, patch.alarmNotificationId]));
+          const patchedRoutines = restoredRoutines.map((item) => (
+            alarmIds.has(item.id) ? { ...item, alarmNotificationId: alarmIds.get(item.id) } : item
+          ));
+          await mutateLockedCollection(KEYS.routines, () => patchedRoutines);
+          setSnapshot(patchedRoutines);
+        }
         return { dataRestored: true, notificationsRecreated: patches.failures.length === 0 };
       } catch (error) {
         void error;
+        await Promise.all(scheduledRoutineAlarmIds.map((id) => Notif.cancelAlarm(id)));
         return { dataRestored: true, notificationsRecreated: false };
       }
     })),
@@ -292,12 +320,19 @@ export function AppDataProvider({ children }) {
     // El cleanup cancela el timer si el contexto cambia antes de tiempo.
     const timer = setTimeout(() => {
       resyncReminders({ ...pendingRef.current, habits: habits.items }).then(
-        ({ eventPatches, birthdayPatches, habitPatches, activityPatches = [] }) => {
+        async ({ eventPatches, birthdayPatches, eventAlarmPatches = [], birthdayAlarmPatches = [], noteAlarmPatches = [], habitPatches, activityPatches = [], routinePatches = [] }) => {
           if (!active) return;
           eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
           birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
           habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
           activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
+          eventAlarmPatches.forEach(({ id, alarmNotificationId }) => events.update(id, { alarmNotificationId }));
+          birthdayAlarmPatches.forEach(({ id, alarmNotificationId }) => birthdays.update(id, { alarmNotificationId }));
+          noteAlarmPatches.forEach(({ id, alarmNotificationId }) => notes.update(id, { alarmNotificationId }));
+          for (const { id, alarmNotificationId } of routinePatches) {
+            const linked = await routines.update(id, { alarmNotificationId });
+            if (!linked?.ok && alarmNotificationId) await Notif.cancelAlarm(alarmNotificationId);
+          }
         },
       );
     }, 350);
@@ -306,7 +341,7 @@ export function AppDataProvider({ children }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [allCollectionsHydrated, permission.granted, events, birthdays, habits, activities]);
+  }, [allCollectionsHydrated, permission.granted, events, birthdays, notes, habits, activities, routines]);
 
   const value = useMemo(
     () => ({

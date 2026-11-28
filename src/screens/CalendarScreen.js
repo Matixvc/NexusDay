@@ -27,14 +27,16 @@ import { DateField } from '../components/ui/DateField';
 import { TimeField } from '../components/ui/TimeField';
 import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
 import { SwitchRow } from '../components/ui/Switch';
-import { EVENT_REMINDERS, dropReminder, syncEventReminder } from '../services/reminders';
+import { ALARM_LEAD_PRESETS, normalizeAlarmLead, EVENT_REMINDERS, dropReminder, syncEventAlarm, syncEventReminder } from '../services/reminders';
 import { EVENT_CATEGORIES, categoryOf } from '../services/eventCategories';
+import { cancelAlarm } from '../services/notifications';
 import {
   blankBirthday,
   deleteBirthdayRecord,
   saveBirthdayRecord,
 } from '../services/birthdays';
 import { buildCalendarMarks, buildDayAgenda, calendarEmptyState, CALENDAR_FILTERS, dateKeyInMonth, shiftCalendarMonth } from '../services/calendar';
+import { timeInputError, timeRangeError } from '../services/timeInput';
 import {
   formatDateLong,
   formatDateShort,
@@ -56,8 +58,11 @@ const BLANK = () => ({
   notes: '',
   category: 'Personal',
   leadMinutes: -1,
-  color: colors.accent,
+  color: colors.violet,
   notificationId: null,
+  alarmLeadMinutes: null,
+  alarmNotificationId: null,
+  alarmTime: null,
 });
 const EMPTY_CALENDAR_IMAGE = require('../../assets/nexusday-empty-calendar.png');
 const NEX_BIRTHDAY_IMAGE = require('../../assets/nex/calendar/nex-birthday.jpg');
@@ -127,7 +132,7 @@ export default function CalendarScreen({ navigation }) {
         year: Number(visibleMonth.slice(0, 4)),
         selectedKey: selected,
         filter,
-        colors: { event: colors.accent, birthday: colors.warning },
+        colors: { event: colors.violet, birthday: colors.amber },
       }),
     [birthdays, events, filter, selected, visibleMonth],
   );
@@ -144,14 +149,14 @@ export default function CalendarScreen({ navigation }) {
       textSectionTitleDisabledColor: surface.textMuted,
       dayTextColor: surface.text,
       textDisabledColor: surface.borderStrong,
-      selectedDayTextColor: surface.text,
+      selectedDayTextColor: activeAccent.accentInk,
       todayTextColor: activeAccent.accent,
       arrowColor: activeAccent.accent,
       disabledArrowColor: surface.borderStrong,
       monthTextColor: surface.text,
       indicatorColor: activeAccent.accent,
       dotColor: activeAccent.accent,
-      selectedDotColor: activeAccent.accent,
+      selectedDotColor: activeAccent.accentInk,
       textDayFontSize: Math.round(16 * scale),
       textDayHeaderFontSize: Math.round(11 * scale),
       'stylesheet.day.basic': {
@@ -159,8 +164,8 @@ export default function CalendarScreen({ navigation }) {
         base: { ...dayStyles.base, minHeight: Math.round(44 * scale), aspectRatio: undefined },
         today: { ...dayStyles.today, borderWidth: 1, borderColor: activeAccent.accent },
         todayText: { color: activeAccent.accent, fontWeight: '700' },
-        selected: { ...dayStyles.selected, backgroundColor: activeAccent.accentSoft, borderRadius: radius.md, borderColor: activeAccent.accent },
-        selectedText: { ...dayStyles.selectedText, color: activeAccent.accent },
+        selected: { ...dayStyles.selected, backgroundColor: activeAccent.accent, borderRadius: radius.md, borderColor: activeAccent.accent },
+        selectedText: { ...dayStyles.selectedText, color: activeAccent.accentInk, fontWeight: '800' },
       },
     };
   }, [activeAccent, fontScale, surfaceMode]);
@@ -198,12 +203,15 @@ export default function CalendarScreen({ navigation }) {
         leadMinutes: event.leadMinutes ?? -1,
         color: event.color || colors.accent,
         notificationId: event.notificationId || null,
+        alarmLeadMinutes: event.alarmLeadMinutes ?? null,
+        alarmNotificationId: event.alarmNotificationId || null,
+        alarmTime: event.alarmTime || null,
       },
     });
   }, []);
 
   const openBirthdayCreate = useCallback(
-    () => setBirthdaySheet({ mode: 'create', values: blankBirthday(colors.accent, selected) }),
+    () => setBirthdaySheet({ mode: 'create', values: blankBirthday(colors.amber, selected) }),
     [selected],
   );
 
@@ -219,6 +227,9 @@ export default function CalendarScreen({ navigation }) {
         daysBefore: birthday.daysBefore ?? 0,
         color: birthday.color || colors.accent,
         notificationId: birthday.notificationId || null,
+        alarmLeadMinutes: birthday.alarmLeadMinutes ?? null,
+        alarmNotificationId: birthday.alarmNotificationId || null,
+        alarmTime: birthday.alarmTime || '09:00',
       },
     });
   }, []);
@@ -260,7 +271,9 @@ export default function CalendarScreen({ navigation }) {
     [],
   );
 
-  const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.title.trim());
+  const eventTimeError = sheet ? timeInputError(sheet.values.time) : null;
+  const eventRangeError = sheet?.values.endTime ? timeRangeError(sheet.values.time, sheet.values.endTime) : null;
+  const canSave = Boolean(sheet) && !saving && Boolean(sheet.values.title.trim()) && !eventTimeError && !eventRangeError;
 
   // The moment the sheet points at, already gone by the clock? Nothing can be announced about
   // it, so the switch shows *why* it refuses to go on instead of scheduling a notification the
@@ -310,12 +323,14 @@ export default function CalendarScreen({ navigation }) {
       // nor ask for, a reminder that can never fire.
       leadMinutes: isPastDateTime(values.dateKey, values.time) ? -1 : values.leadMinutes,
       color,
+      alarmLeadMinutes: values.alarmLeadMinutes ?? null,
+      alarmTime: values.alarmLeadMinutes == null ? null : (values.alarmTime || values.time),
     };
 
     setSaving(true);
     const result = await syncEventReminder(payload, values.notificationId);
 
-    const record = { ...payload, notificationId: result.notificationId };
+    const record = { ...payload, notificationId: result.notificationId, alarmNotificationId: null };
     const committed = mode === 'edit' ? await updateEvent(id, record) : await addEvent(record);
     if (!committed) {
       if (result.notificationId) await dropReminder(record);
@@ -325,8 +340,13 @@ export default function CalendarScreen({ navigation }) {
     }
     if (mode !== 'edit') setSelected(values.dateKey);
 
+    const alarm = await syncEventAlarm({ ...record, id: mode === 'edit' ? id : committed.id }, values.alarmNotificationId);
+    const alarmId = alarm.alarmNotificationId;
+    if (mode === 'edit') await updateEvent(id, { alarmNotificationId: alarmId });
+    else if (committed?.id) await updateEvent(committed.id, { alarmNotificationId: alarmId });
+
     setSaving(false);
-    setNotice(result.notice);
+    setNotice(alarm.notice || result.notice);
     setSheet(null);
   };
 
@@ -348,6 +368,7 @@ export default function CalendarScreen({ navigation }) {
   const confirmDelete = async () => {
     const target = events.find((event) => event.id === confirmId);
     if (target) await dropReminder(target);
+    if (target?.alarmNotificationId) await cancelAlarm(target.alarmNotificationId);
     removeEvent(confirmId);
     setConfirmId(null);
   };
@@ -535,25 +556,7 @@ export default function CalendarScreen({ navigation }) {
         onClose={() => setSheet(null)}
         title={sheet?.mode === 'edit' ? 'Editar evento' : 'Nuevo evento'}
         subtitle="Todo se guarda en el dispositivo; el aviso se programa aparte."
-        footer={
-          <>
-            {sheet?.mode === 'edit' ? (
-              <TextButton
-                label="Eliminar"
-                tone="danger"
-                onPress={() => {
-                  setConfirmId(sheet.id);
-                  setSheet(null);
-                }}
-              />
-            ) : null}
-            <PrimaryButton
-              label={saving ? 'Guardando…' : 'Guardar'}
-              onPress={save}
-              disabled={!canSave}
-            />
-          </>
-        }
+        footer={<PrimaryButton label={saving ? 'Guardando…' : 'Guardar'} onPress={save} disabled={!canSave} />}
       >
         {sheet ? (
           <>
@@ -572,8 +575,10 @@ export default function CalendarScreen({ navigation }) {
               value={sheet.values.endTime || sheet.values.time}
               onChange={(endTime) => setValue({ endTime })}
               hint={
-                sheet.values.endTime && minutesBetween(sheet.values.time, sheet.values.endTime) > 0
-                  ? `Duración: ${formatDuration(minutesBetween(sheet.values.time, sheet.values.endTime))}`
+                eventRangeError
+                  ? eventRangeError
+                  : sheet.values.endTime && minutesBetween(sheet.values.time, sheet.values.endTime) > 0
+                    ? `Duración: ${formatDuration(minutesBetween(sheet.values.time, sheet.values.endTime))}`
                   : 'Opcional: cuánto dura el evento.'
               }
             />
@@ -624,6 +629,22 @@ export default function CalendarScreen({ navigation }) {
                 />
               ) : null}
             </View>
+            <View style={styles.leadWrap}>
+              <SwitchRow
+                title="Alarma"
+                value={sheet.values.alarmLeadMinutes != null}
+                onValueChange={(enabled) => setValue({ alarmLeadMinutes: enabled ? 15 : null, alarmTime: enabled ? (sheet.values.alarmTime || sheet.values.time) : null })}
+                disabled={!notificationsSupported}
+                hint={sheet.values.alarmLeadMinutes != null ? 'Sonido y vibración; puede ser exacta o aproximada según Android.' : 'Sin alarma sonora.'}
+              />
+              {sheet.values.alarmLeadMinutes != null ? (
+                <>
+                  <TimeField label="Hora de alarma" value={sheet.values.alarmTime || sheet.values.time} onChange={(alarmTime) => setValue({ alarmTime })} />
+                  <View style={styles.categoryRow}>{[15, 30, 60, 120].map((minutes) => <Chip key={minutes} label={`${minutes} min`} compact selected={sheet.values.alarmLeadMinutes === minutes} onPress={() => setValue({ alarmLeadMinutes: minutes })} />)}</View>
+                  <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} keyboardType="number-pad" onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Ej. 45" />
+                </>
+              ) : null}
+            </View>
             <TextArea
               label="Notas (opcional)"
               value={sheet.values.notes}
@@ -632,6 +653,22 @@ export default function CalendarScreen({ navigation }) {
               minHeight={80}
             />
             <ColorPicker value={sheet.values.color} onChange={(color) => setValue({ color })} />
+            {sheet.mode === 'edit' ? (
+              <View style={styles.destructiveSection}>
+                <View style={styles.destructiveCopy}>
+                  <Text style={typography.overline}>Acciones del evento</Text>
+                  <Text style={typography.caption}>Elimina el evento y cancela su recordatorio programado.</Text>
+                </View>
+                <TextButton
+                  label="Eliminar evento"
+                  tone="danger"
+                  onPress={() => {
+                    setConfirmId(sheet.id);
+                    setSheet(null);
+                  }}
+                />
+              </View>
+            ) : null}
           </>
         ) : null}
       </Sheet>
@@ -778,6 +815,8 @@ const styles = themedStyles({
   calendar: { width: '100%', backgroundColor: 'transparent' },
   legend: { minHeight: 32, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.lg, paddingTop: spacing.xs },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  destructiveSection: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.dangerSoft },
+  destructiveCopy: { gap: spacing.xs },
   legendDot: { width: 8, height: 8, borderRadius: radius.pill },
   leadWrap: { gap: spacing.xs },
   leadHint: { fontSize: 11, fontWeight: '700', color: colors.accent },

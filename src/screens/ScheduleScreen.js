@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
@@ -20,11 +20,13 @@ import {
 } from '../components/ui/primitives';
 import { ColorPicker, TextField } from '../components/ui/inputs';
 import { TimeField } from '../components/ui/TimeField';
-import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
+import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
 import { Switch } from '../components/ui/Switch';
-import { CLASS_REMINDERS, syncClassReminder } from '../services/reminders';
+import { syncClassReminder } from '../services/reminders';
+import { ALARM_LEAD_PRESETS, cancelAlarm, getExactAlarmPermission, normalizeAlarmLead } from '../services/notifications';
+import { timeInputError, timeRangeError } from '../services/timeInput';
 import { blankNote } from '../services/notes';
-import { tap as tapHaptic, select as selectHaptic, success as successHaptic, warning as warningHaptic } from '../services/haptics';
+import { tap as tapHaptic, success as successHaptic, warning as warningHaptic } from '../services/haptics';
 import {
   WEEKDAYS,
   formatDateLong,
@@ -37,7 +39,17 @@ import {
 import { Icon } from '../components/Icon';
 import { HeaderIconButton } from '../components/ui/HeaderIconButton';
 
-const BLANK = () => ({ title: '', start: '09:00', end: '10:00', location: '', color: colors.accent, leadMinutes: -1 });
+const BLANK = () => ({
+  title: '', start: '09:00', end: '10:00', location: '', color: colors.mint,
+  alarmEnabled: false, leadMinutes: -1, customLead: '',
+});
+
+const ALARM_LABELS = new Map([[15, '15 min'], [30, '30 min'], [60, '1 h'], [120, '2 h']]);
+
+function alarmLeadLabel(value) {
+  if (value == null || value === -1) return 'Desactivada';
+  return ALARM_LABELS.get(value) || `${value} min antes`;
+}
 
 function durationOf(activity) {
   return minutesBetween(activity.start, activity.end);
@@ -56,13 +68,16 @@ export default function ScheduleScreen({ navigation }) {
   const [sheet, setSheet] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
+  const [exactAlarmPermission, setExactAlarmPermission] = useState({ status: 'checking', granted: false });
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   // El "Centro de Asignatura": al tocar una materia se abre este sheet con las 4 acciones
   // directas en lugar del formulario de edición. Guarda solo el id y la actividad se deriva
   // siempre de `activities` abajo, para que el sheet refleje al instante un cambio (suspender,
   // cambiar el aviso) sin copias obsoletas.
   const [hubId, setHubId] = useState(null);
   const hub = hubId ? activities.find((a) => a.id === hubId) || null : null;
-  const [leadSheetOpen, setLeadSheetOpen] = useState(false);
   const focusId = useFocusId();
   const [handledFocusId, setHandledFocusId] = useState(null);
 
@@ -102,9 +117,20 @@ export default function ScheduleScreen({ navigation }) {
     return rest ? `en ${hours} h ${rest} min` : `en ${hours} h`;
   }, [upcoming]);
 
-  const openCreate = () => setSheet({ mode: 'create', values: { ...BLANK() } });
+  const refreshExactPermission = async () => {
+    const result = await getExactAlarmPermission();
+    setExactAlarmPermission(result);
+    return result;
+  };
 
-  const openEdit = (item) =>
+  const openCreate = () => {
+    refreshExactPermission();
+    setSheet({ mode: 'create', values: { ...BLANK() } });
+  };
+
+  const openEdit = (item) => {
+    refreshExactPermission();
+    const leadMinutes = item.leadMinutes ?? -1;
     setSheet({
       mode: 'edit',
       id: item.id,
@@ -114,9 +140,12 @@ export default function ScheduleScreen({ navigation }) {
         end: item.end,
         location: item.location || '',
         color: item.color || colors.accent,
-        leadMinutes: item.leadMinutes ?? -1,
+        alarmEnabled: leadMinutes !== -1,
+        leadMinutes,
+        customLead: ALARM_LEAD_PRESETS.includes(leadMinutes) ? '' : String(leadMinutes > 0 ? leadMinutes : ''),
       },
     });
+  };
 
   const focusedActivity = focusId ? activities.find((item) => item.id === focusId) : null;
   if (!focusId && handledFocusId) setHandledFocusId(null);
@@ -126,13 +155,21 @@ export default function ScheduleScreen({ navigation }) {
     setHubId(focusedActivity.id);
   }
 
-  const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
+  const setValue = (patch) => setSheet((prev) => (
+    prev ? { ...prev, values: { ...prev.values, ...patch } } : prev
+  ));
 
   const invalidTitle = !sheet?.values.title.trim();
-  const invalidRange = sheet ? minutesBetween(sheet.values.start, sheet.values.end) <= 0 : false;
-  const canSave = Boolean(sheet) && !invalidTitle && !invalidRange;
+  const invalidTime = sheet ? Boolean(timeInputError(sheet.values.start) || timeInputError(sheet.values.end)) : false;
+  const invalidRange = sheet ? Boolean(timeRangeError(sheet.values.start, sheet.values.end)) : false;
+  const invalidAlarm = Boolean(sheet?.values.alarmEnabled && !normalizeAlarmLead(sheet.values.leadMinutes));
+  const canSave = Boolean(sheet) && !invalidTitle && !invalidTime && !invalidRange && !invalidAlarm && !saving;
 
   const save = async () => {
+    if (!canSave || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setNotice(null);
     const { mode, id, values } = sheet;
     const payload = {
       title: values.title.trim(),
@@ -140,25 +177,39 @@ export default function ScheduleScreen({ navigation }) {
       end: formatTime(values.end),
       location: values.location.trim(),
       color: values.color,
-      leadMinutes: values.leadMinutes ?? -1,
+      leadMinutes: values.alarmEnabled ? values.leadMinutes : -1,
     };
 
     // El recordatorio de clase se reprograma junto con el dato (one-shot a la próxima
     // ocurrencia no suspendida); la actividad previa se cancela para no dejar huérfanas.
-    if (mode === 'edit') {
-      if (!await updateActivity(id, payload)) { setNotice('No se pudo guardar la actividad.'); return; }
-      syncClassReminder({ id, ...payload, suspended: activities.find((a) => a.id === id)?.suspended }, activities.find((a) => a.id === id)?.notificationId);
-    } else {
-      const created = await addActivity({ day, ...payload, suspended: {}, notificationId: null });
-      if (!created) { setNotice('No se pudo guardar la actividad.'); return; }
-      if (created.leadMinutes && created.leadMinutes !== -1) {
-        syncClassReminder(created, null).then(({ notificationId }) => {
-          if (notificationId) updateActivity(created.id, { notificationId });
-        });
+    try {
+      let activity;
+      let previousNotificationId = null;
+      if (mode === 'edit') {
+        const previous = activities.find((item) => item.id === id);
+        if (!previous || !await updateActivity(id, { ...payload, notificationId: null })) {
+          setNotice('No se pudo guardar la actividad.');
+          return;
+        }
+        previousNotificationId = previous.notificationId;
+        activity = { ...previous, ...payload, notificationId: null };
+      } else {
+        activity = await addActivity({ day, ...payload, suspended: {}, notificationId: null });
+        if (!activity) { setNotice('No se pudo guardar la actividad.'); return; }
       }
-    }
 
-    setSheet(null);
+      const alarm = await syncClassReminder(activity, previousNotificationId);
+      if (alarm.notificationId && !await updateActivity(activity.id, { notificationId: alarm.notificationId })) {
+        await cancelAlarm(alarm.notificationId);
+        setNotice('La clase se guardó, pero la alarma no pudo vincularse. Se reintentará al abrir la app.');
+        return;
+      }
+      if (alarm.notice) setNotice(alarm.notice);
+      setSheet(null);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   /** Fecha concreta (YYYY-MM-DD) de la sesión de `day` dentro de la semana en curso. */
@@ -174,25 +225,49 @@ export default function ScheduleScreen({ navigation }) {
    * tarjeta en la grilla y reprograma el recordatorio, que saltará esa fecha. Háptica de
    * aviso para que la suspensión se sienta como una acción con peso.
    */
-  const toggleSuspend = (item, dateKey) => {
+  const toggleSuspend = async (item, dateKey) => {
     const suspended = { ...(item.suspended || {}) };
     if (suspended[dateKey]) delete suspended[dateKey];
     else suspended[dateKey] = true;
-    updateActivity(item.id, { suspended });
+    if (!await updateActivity(item.id, { suspended, notificationId: null })) {
+      setNotice('No se pudo cambiar la suspensión.');
+      return;
+    }
     warningHaptic();
-    syncClassReminder({ ...item, suspended }, item.notificationId).then(({ notificationId }) => {
-      updateActivity(item.id, { notificationId });
-    });
+    const alarm = await syncClassReminder({ ...item, suspended }, item.notificationId);
+    if (alarm.notificationId && !await updateActivity(item.id, { notificationId: alarm.notificationId })) {
+      await cancelAlarm(alarm.notificationId);
+      setNotice('La suspensión se guardó; la alarma se reintentará al abrir la app.');
+    } else if (alarm.notice) setNotice(alarm.notice);
   };
 
-  /** Cambia el aviso previo de la clase y reprograma su recordatorio one-shot. */
-  const changeLead = (item, leadMinutes) => {
-    updateActivity(item.id, { leadMinutes });
-    selectHaptic();
-    syncClassReminder({ ...item, leadMinutes }, item.notificationId).then(({ notificationId, notice: warn }) => {
-      updateActivity(item.id, { notificationId });
-      if (warn) setNotice(warn);
-    });
+  const toggleAlarm = (enabled) => {
+    if (!enabled) {
+      setValue({ alarmEnabled: false, leadMinutes: -1 });
+      return;
+    }
+    if (exactAlarmPermission.granted) {
+      setValue({ alarmEnabled: true, leadMinutes: 15 });
+      return;
+    }
+    setPermissionSheetOpen(true);
+  };
+
+  const continueAlarmSetup = async () => {
+    const permission = await getExactAlarmPermission({ request: true });
+    setExactAlarmPermission(permission);
+    setValue({ alarmEnabled: true, leadMinutes: 15 });
+  };
+
+  const removeClass = async () => {
+    const item = activities.find((activity) => activity.id === confirmId);
+    if (!item) return;
+    if (!await removeActivity(item.id)) {
+      setNotice('No se pudo eliminar la actividad.');
+      return;
+    }
+    await cancelAlarm(item.notificationId);
+    setHubId(null);
   };
 
   /** a) Crear Nota de Clase: nota nueva etiquetada con el nombre de la asignatura. */
@@ -388,6 +463,60 @@ export default function ScheduleScreen({ navigation }) {
               placeholder="Ej. Aula B-204"
               maxLength={40}
             />
+            <View style={styles.alarmBlock}>
+              <View style={styles.alarmHeading}>
+                <View style={styles.alarmCopy}>
+                  <Text style={typography.bodyStrong}>Alarma</Text>
+                  <Text style={typography.caption}>Sonido y vibración antes de esta clase semanal.</Text>
+                </View>
+                <Switch
+                  value={sheet.values.alarmEnabled}
+                  onValueChange={toggleAlarm}
+                  label="Activar alarma de clase"
+                  hideLabel
+                />
+              </View>
+              {sheet.values.alarmEnabled ? (
+                <>
+                  <Text style={[typography.caption, exactAlarmPermission.granted ? styles.exactStatus : styles.approximateStatus]}>
+                    {exactAlarmPermission.granted
+                      ? 'Alarma exacta permitida por Android.'
+                      : 'Aviso aproximado: Android puede entregarlo con retraso.'}
+                  </Text>
+                  <View style={styles.alarmOptions}>
+                    {ALARM_LEAD_PRESETS.map((minutes) => (
+                      <Chip
+                        key={minutes}
+                        label={ALARM_LABELS.get(minutes)}
+                        selected={sheet.values.leadMinutes === minutes}
+                        onPress={() => setValue({ leadMinutes: minutes, customLead: '' })}
+                        compact
+                      />
+                    ))}
+                    <Chip
+                      label="Personalizada"
+                      selected={!ALARM_LEAD_PRESETS.includes(sheet.values.leadMinutes)}
+                      onPress={() => {
+                        const custom = normalizeAlarmLead(sheet.values.customLead) || 45;
+                        setValue({ leadMinutes: custom, customLead: String(custom) });
+                      }}
+                      compact
+                    />
+                  </View>
+                  {!ALARM_LEAD_PRESETS.includes(sheet.values.leadMinutes) ? (
+                    <TextField
+                      label="Minutos antes"
+                      value={sheet.values.customLead}
+                      onChangeText={(text) => setValue({ customLead: text, leadMinutes: normalizeAlarmLead(text) })}
+                      placeholder="Ej. 45"
+                      keyboardType="number-pad"
+                      maxLength={5}
+                      error={invalidAlarm ? 'Usa un número entero entre 1 y 10080.' : undefined}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+            </View>
             <ColorPicker value={sheet.values.color} onChange={(color) => setValue({ color })} />
           </>
         ) : null}
@@ -440,15 +569,17 @@ export default function ScheduleScreen({ navigation }) {
 
             <Pressable
               onPress={() => {
-                setLeadSheetOpen(true);
+                const target = hub;
+                setHubId(null);
+                openEdit(target);
               }}
               style={({ pressed }) => [styles.hubAction, pressed ? styles.pressed : null]}
             >
               <Icon name="bell" size={20} color={colors.textSecondary} />
               <View style={styles.hubBody}>
-                <Text style={typography.bodyStrong}>Notificación de clase</Text>
+                <Text style={typography.bodyStrong}>Alarma de clase</Text>
                 <Text style={typography.caption}>
-                  {CLASS_REMINDERS.find((option) => option.value === (hub.leadMinutes ?? -1))?.label ?? 'Desactivado'}
+                  {alarmLeadLabel(hub.leadMinutes)}
                 </Text>
               </View>
             </Pressable>
@@ -468,24 +599,31 @@ export default function ScheduleScreen({ navigation }) {
         ) : null}
       </Sheet>
 
-      <OptionSheet
-        visible={leadSheetOpen}
-        onClose={() => setLeadSheetOpen(false)}
-        title="Aviso de la clase"
-        options={CLASS_REMINDERS}
-        value={hub?.leadMinutes ?? -1}
-        onSelect={(leadMinutes) => {
-          if (hub) changeLead(hub, leadMinutes);
-        }}
-      />
-
       <ConfirmSheet
         visible={Boolean(confirmId)}
         onClose={() => setConfirmId(null)}
-        onConfirm={() => confirmId && removeActivity(confirmId)}
+        onConfirm={removeClass}
         title="¿Eliminar actividad?"
         message="Desaparece del horario semanal. Esta acción no se puede deshacer."
       />
+      <Sheet
+        visible={permissionSheetOpen}
+        onClose={() => setPermissionSheetOpen(false)}
+        title="Permitir alarmas exactas"
+        subtitle="Android controla este permiso. Si lo omites, la alarma seguirá disponible, pero puede sonar con retraso."
+        scrollable={false}
+      >
+        <View style={styles.permissionActions}>
+          <TextButton label="Cancelar" tone="ghost" onPress={() => setPermissionSheetOpen(false)} />
+          <PrimaryButton
+            label="Continuar"
+            onPress={async () => {
+              setPermissionSheetOpen(false);
+              await continueAlarmSetup();
+            }}
+          />
+        </View>
+      </Sheet>
     </>
   );
 }
@@ -523,6 +661,13 @@ const styles = themedStyles({
   activityBody: { flex: 1, gap: 3 },
   meta: { fontSize: 12.5 },
   suspendedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
+  alarmBlock: { gap: spacing.sm, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  alarmHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  alarmCopy: { flex: 1, gap: 2 },
+  alarmOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  exactStatus: { color: colors.mint },
+  approximateStatus: { color: colors.amber },
+  permissionActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
 
   // Centro de Asignatura.
   hubList: { gap: spacing.sm },

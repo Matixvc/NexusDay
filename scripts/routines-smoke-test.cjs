@@ -22,10 +22,19 @@ const {
 const { buildDashboard } = require('../src/services/dashboard');
 const { todayKey, weekdayIndex } = require('../src/utils/dates');
 const { buildScheduleWidgetSnapshot } = require('../src/services/scheduleWidgetSnapshot');
+const routinesScreenSource = fs.readFileSync(path.join(__dirname, '../src/screens/RoutinesScreen.js'), 'utf8');
+assert.match(routinesScreenSource, /cancelAlarm\(selectedRoutine\?\.alarmNotificationId\)/, 'Deleting a routine cancels its alarm.');
+assert.match(routinesScreenSource, /toggleRoutineEnabled/, 'Pause and resume use the alarm-aware routine path.');
 
 const base = {
   id: 'fixture-routine', name: 'Estudiar', weekdays: [0, 2, 4], startTime: '18:00', endTime: '19:00',
 };
+const historical = normalizeRoutine(base);
+assert.equal(historical.alarmLeadMinutes, null, 'Historical routines default to alarms disabled.');
+assert.equal(historical.alarmNotificationId, null, 'Historical notification IDs are never invented.');
+assert.equal(normalizeRoutine({ ...base, alarmLeadMinutes: 45, alarmNotificationId: 'local-id' }).alarmLeadMinutes, 45);
+assert.throws(() => normalizeRoutine({ ...base, alarmLeadMinutes: 15, startTime: null, endTime: null }), /alarm-time-required/);
+assert.throws(() => normalizeRoutine({ ...base, alarmLeadMinutes: 0 }), /invalid-alarm-lead/);
 assert.deepEqual(normalizeRoutine({ ...base, completedDates: ['2026-01-02', '2026-01-02'] }).completedDates, ['2026-01-02']);
 assert.equal(isRoutineScheduledForDate(base, '2026-11-23'), true, 'Monday is weekday index zero in local routine recurrence.');
 assert.equal(isRoutineScheduledForDate(base, '2026-11-24'), false);
@@ -73,7 +82,7 @@ async function repositoryCases() {
   assert.equal(concurrent.filter((result) => result.ok).length, 1, 'Concurrent duplicate creation is serialized.');
   const beforeFailure = repository.getSnapshot();
   failNextWrite = true;
-  const failed = await repository.update(created.item.id, { name: 'Leer más' });
+  const failed = await repository.update(created.item.id, { name: 'Leer más', startTime: '08:00', alarmLeadMinutes: 30 });
   assert.equal(failed.error, 'storage-write-failed');
   assert.deepEqual(repository.getSnapshot(), beforeFailure, 'A failed write does not become visible in memory.');
   assert.equal((await repository.remove('missing-id')).error, 'routine-not-found');

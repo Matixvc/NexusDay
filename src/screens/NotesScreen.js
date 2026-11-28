@@ -22,7 +22,7 @@ import {
 import { ColorPicker, TextArea, TextField } from '../components/ui/inputs';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
 import SwipeRow from '../components/ui/SwipeRow';
-import { Switch } from '../components/ui/Switch';
+import { Switch, SwitchRow } from '../components/ui/Switch';
 import { AttachmentRow, VoicePlayback, VoiceRecorder } from '../components/ui/media';
 import { deleteRecording, formatSeconds } from '../services/audio';
 import { authorizePrivateAction, describePrivacyFailure } from '../services/privacy';
@@ -47,10 +47,14 @@ import {
 } from '../services/notes';
 import { select as selectHaptic, success as successHaptic } from '../services/haptics';
 import { timeAgo } from '../utils/dates';
+import { DateField } from '../components/ui/DateField';
+import { TimeField } from '../components/ui/TimeField';
+import { ALARM_LEAD_PRESETS, normalizeAlarmLead, syncNoteAlarm } from '../services/reminders';
+import { cancelAlarm } from '../services/notifications';
 import { selectNoteGroups } from './notesPresentation';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */
-const BLANK = () => ({ ...blankNote(colors.accent) });
+const BLANK = () => ({ ...blankNote(colors.coral) });
 const EMPTY_NOTES_IMAGE = require('../../assets/nexusday-empty-notes.png');
 const NEX_U11_NOTES_IMAGE = require('../../assets/nex/u11/tutorial/tutorial-notes.jpg');
 
@@ -130,6 +134,10 @@ export default function NotesScreen({ navigation }) {
     audio: note.audio || null,
     attachment: note.attachment || null,
     private: Boolean(note.private),
+    alarmDateKey: note.alarmDateKey || null,
+    alarmTime: note.alarmTime || null,
+    alarmLeadMinutes: note.alarmLeadMinutes ?? null,
+    alarmNotificationId: note.alarmNotificationId || null,
   });
 
   const openEdit = useCallback(
@@ -273,6 +281,11 @@ export default function NotesScreen({ navigation }) {
       const take = (await recorderRef.current?.finishTake?.()) || null;
       if (take) setValue({ audio: take }, true);
       const { mode, id, values, original } = sheet;
+      const stamp = new Date().getTime();
+      if (values.alarmLeadMinutes != null && (!values.alarmDateKey || !values.alarmTime || new Date(`${values.alarmDateKey}T${values.alarmTime}:00`).getTime() <= stamp)) {
+        setPickError('La fecha y hora de la alarma deben ser futuras.');
+        return;
+      }
       const audio = take || values.audio || null;
       const isChecklist = values.kind === NOTE_KINDS.checklist;
       // Las casillas vacías se descartan al guardar: una línea en blanco no es una tarea.
@@ -290,15 +303,26 @@ export default function NotesScreen({ navigation }) {
         color: values.color,
         audio,
         attachment: values.attachment || null,
+        alarmDateKey: values.alarmLeadMinutes == null ? null : values.alarmDateKey,
+        alarmTime: values.alarmLeadMinutes == null ? null : values.alarmTime,
+        alarmLeadMinutes: values.alarmLeadMinutes ?? null,
+        alarmNotificationId: null,
       };
 
-      const stamp = new Date().getTime();
       const committed = mode === 'edit'
         ? await updateNote(id, { ...payload, pinned: values.pinned, private: Boolean(values.private), updatedAt: stamp })
         : await addNote(applyPrivacyFlag({ ...payload, pinned: false, createdAt: stamp, updatedAt: stamp }, values.private));
       if (!committed) {
         setPickError('No se pudo guardar la nota. Tu borrador sigue abierto para reintentar.');
         return;
+      }
+      const savedId = mode === 'edit' ? id : committed.id;
+      const alarm = typeof syncNoteAlarm === 'function'
+        ? await syncNoteAlarm({ ...payload, id: savedId, private: Boolean(values.private) }, values.alarmNotificationId)
+        : { alarmNotificationId: null };
+      if (typeof syncNoteAlarm === 'function') {
+        if (mode === 'edit') await updateNote(id, { alarmNotificationId: alarm.alarmNotificationId });
+        else if (savedId) await updateNote(savedId, { alarmNotificationId: alarm.alarmNotificationId });
       }
 
       if (original?.audio?.uri && original.audio.uri !== payload.audio?.uri) deleteRecording(original.audio);
@@ -315,11 +339,13 @@ export default function NotesScreen({ navigation }) {
   };
 
   const confirmDelete = async () => {
+    const target = notes.find((note) => note.id === confirmId);
     if (!await removeNote(confirmId)) {
       setUnlockError('No se pudo eliminar la nota.');
       setConfirmId(null);
       return;
     }
+    if (target?.alarmNotificationId) await cancelAlarm(target.alarmNotificationId);
     destroyFiles(notes.find((note) => note.id === confirmId));
     setConfirmId(null);
   };
@@ -797,6 +823,21 @@ export default function NotesScreen({ navigation }) {
                 onValueChange={changeSheetPrivacy}
                 label="Nota privada"
               />
+            </View>
+
+            <View style={styles.privateCopy}>
+              <SwitchRow
+                title="Alarma"
+                value={sheet.values.alarmLeadMinutes != null}
+                onValueChange={(enabled) => setValue({ alarmLeadMinutes: enabled ? 15 : null, alarmDateKey: enabled ? (sheet.values.alarmDateKey || new Date().toISOString().slice(0, 10)) : null, alarmTime: enabled ? (sheet.values.alarmTime || '09:00') : null })}
+                hint="Sonido y vibración; las notas privadas usan contenido genérico."
+              />
+              {sheet.values.alarmLeadMinutes != null ? <>
+                <DateField label="Fecha de alarma" value={sheet.values.alarmDateKey} onChange={(alarmDateKey) => setValue({ alarmDateKey })} />
+                <TimeField label="Hora de alarma" value={sheet.values.alarmTime || '09:00'} onChange={(alarmTime) => setValue({ alarmTime })} />
+                <ChipScroller>{[15, 30, 60, 120].map((minutes) => <Chip key={minutes} label={`${minutes} min`} compact selected={sheet.values.alarmLeadMinutes === minutes} onPress={() => setValue({ alarmLeadMinutes: minutes })} />)}</ChipScroller>
+                <TextField label="Personalizada (minutos)" value={ALARM_LEAD_PRESETS.includes(sheet.values.alarmLeadMinutes) ? '' : String(sheet.values.alarmLeadMinutes || '')} onChangeText={(text) => setValue({ alarmLeadMinutes: normalizeAlarmLead(text) })} keyboardType="number-pad" placeholder="Ej. 45" />
+              </> : null}
             </View>
 
             <View style={styles.pinRow}>

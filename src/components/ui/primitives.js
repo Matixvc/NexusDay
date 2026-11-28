@@ -111,7 +111,7 @@ function Chip({ label, selected, onPress, color, compact, disabled = false, acce
       style={({ pressed }) => [
         styles.chip,
         compact ? styles.chipCompact : null,
-        selected ? { backgroundColor: colors.surfaceAlt, borderColor: tint } : null,
+        selected ? { backgroundColor: colors.selectedSurface, borderColor: tint, borderWidth: 1.5 } : null,
         disabled ? styles.disabled : null,
         pressed && !disabled ? styles.pressed : null,
       ]}
@@ -352,7 +352,7 @@ const styles = themedStyles({
   content: { paddingBottom: spacing.xxxl * 3, gap: spacing.lg },
 
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.editorialSurface,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -360,11 +360,11 @@ const styles = themedStyles({
     overflow: 'hidden',
   },
   cardTinted: { backgroundColor: colors.surfaceAlt },
-  cardFeatured: { backgroundColor: colors.surfaceAlt, borderColor: colors.accent, borderWidth: 1.5 },
+  cardFeatured: { backgroundColor: colors.selectedSurface, borderColor: colors.violet, borderWidth: 1.5 },
   cardWithAccent: { paddingLeft: spacing.lg + 4 },
   accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   cardPressable: { borderRadius: radius.lg },
-  pressed: { opacity: 0.68 },
+  pressed: { opacity: 0.82, transform: [{ scale: 0.988 }] },
   disabled: { opacity: 0.4 },
   dimmed: { opacity: 0.52 },
 
@@ -394,7 +394,7 @@ const styles = themedStyles({
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 1,
     minHeight: 48,
@@ -402,7 +402,7 @@ const styles = themedStyles({
     justifyContent: 'center',
   },
   chipCompact: { paddingHorizontal: spacing.sm + 2, paddingVertical: spacing.xs + 2 },
-  chipLabel: { ...typography.label, fontWeight: '500', color: colors.textSecondary },
+  chipLabel: { ...typography.label, fontWeight: '600', color: colors.textSecondary },
   chipLabelCompact: { ...typography.caption },
   chipScroll: { flexGrow: 0 },
   chipScrollContent: { gap: spacing.sm, paddingRight: layout.gutter },

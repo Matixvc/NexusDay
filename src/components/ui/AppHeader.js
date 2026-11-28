@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { themedStyles, spacing, typography } from '../../theme/theme';
+import { themedStyles, colors, spacing, typography } from '../../theme/theme';
 import { useResponsiveLayout } from '../../theme/responsive';
 
 export function AppHeader({ title, subtitle, headerLeft, headerRight, variant = 'large', style }) {
@@ -16,6 +16,7 @@ export function AppHeader({ title, subtitle, headerLeft, headerRight, variant = 
         {subtitle ? <Text style={[typography.subtitle, styles.subtitle]}>{subtitle}</Text> : null}
       </View>
       {headerRight ? <View style={[styles.actions, headerStacked ? styles.actionsStacked : null]}>{headerRight}</View> : null}
+      <View style={styles.rule} />
     </View>
   );
 }
@@ -28,4 +29,5 @@ const styles = themedStyles({
   subtitle: { marginTop: spacing.xs },
   actions: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   actionsStacked: { marginLeft: 'auto' },
+  rule: { position: 'absolute', left: 0, bottom: -spacing.sm, width: 28, height: 3, borderRadius: 3, backgroundColor: colors.violet },
 });

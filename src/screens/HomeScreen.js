@@ -7,6 +7,7 @@ import { themedStyles, colors, layout, spacing, typography } from '../theme/them
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
+  Button,
   PrimaryButton,
   TextButton,
 } from '../components/ui/primitives';
@@ -174,6 +175,14 @@ export default function HomeScreen({ navigation }) {
           />
         ) : (
           <>
+          <Card variant="featured" style={styles.organizeCard} accessibilityLabel="Organizar mi día">
+            <Text style={[typography.title, styles.organizeTitle]}>Organizar mi día</Text>
+            <Text style={[typography.small, styles.organizeHint]}>Ajusta tu semana o tus rutinas desde un mismo lugar.</Text>
+            <View style={styles.organizeActions}>
+              <Button label="Mi horario semanal" icon="schedule" onPress={goToSchedule} style={styles.organizeButton} />
+              <Button label="Mis rutinas" icon="checkCircle" variant="secondary" onPress={goToRoutines} style={styles.organizeButton} />
+            </View>
+          </Card>
           <CurrentActivitySection
             current={data.currentActivity}
             concurrent={data.concurrentActivities}
@@ -243,4 +252,9 @@ const styles = themedStyles({
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
+  organizeCard: { borderColor: colors.violet, paddingVertical: spacing.lg },
+  organizeTitle: { color: colors.text },
+  organizeHint: { marginTop: spacing.xs, maxWidth: 360 },
+  organizeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  organizeButton: { flexGrow: 1, flexBasis: 150 },
 });

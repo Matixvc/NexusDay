@@ -4,69 +4,48 @@ import { getSurfaceMode, SELECTABLE_SURFACE_MODES } from '../theme/surfaces';
 export const TUTORIAL_STEPS = [
   {
     key: 'welcome',
-    icon: 'home',
-    title: 'Tu día, con más claridad',
-    objective: 'Reconocer dónde empieza tu jornada y cómo se organiza NexusDay.',
-    body: 'Día a Día reúne tus clases, eventos cercanos y rutinas en una vista local.',
-    points: ['Empieza en Día a Día para ver lo que viene.', 'Tus datos permanecen en este dispositivo.', 'Puedes repetir esta guía desde Ajustes.'],
-    tip: 'La tarjeta de ejemplo siguiente es ficticia y no consulta tus registros.',
+    eyebrow: 'BIENVENIDA',
+    title: 'Tu día, en un solo lugar',
+    body: 'NexusDay organiza tu jornada sin sacar tus datos del dispositivo.',
+    imageKey: 'welcome',
+    imageAlt: 'Nex, el personaje de NexusDay, presenta una jornada organizada.',
     demoId: 'welcome',
-    field: true,
   },
   {
     key: 'day',
-    icon: 'home',
-    title: 'Organiza tu jornada',
-    objective: 'Distinguir clases, rutinas personales y eventos en el mismo día.',
-    body: 'Las clases conservan su horario; tus rutinas se repiten en los días elegidos.',
-    points: ['Consulta la próxima clase y su cuenta regresiva.', 'Marca una rutina al completarla.', 'Abre Horario para revisar tu semana.'],
-    tip: 'Para crear una rutina real: Inicio → Gestionar mi rutina → Crear rutina.',
+    eyebrow: 'DÍA A DÍA',
+    title: 'Avanza a tu ritmo',
+    body: 'Mira lo que viene y completa tus rutinas con un toque.',
     imageKey: 'day',
+    imageAlt: 'Nex avanza entre bloques que representan actividades del día.',
     demoId: 'routine',
   },
   {
     key: 'notes',
-    icon: 'note',
-    title: 'Guarda lo que importa',
-    objective: 'Practicar una checklist y entender qué cambia al marcar una nota privada.',
-    body: 'Crea notas de texto o checklist, encuéntralas con búsqueda y organízalas con etiquetas.',
-    points: ['Marca y desmarca tareas.', 'Activa Privada para proteger el acceso.', 'El contenido privado no aparece en vistas previas públicas.'],
-    tip: 'Para una nota real: Bloc de Notas → Crear nota. Esta práctica usa contenido de muestra.',
+    eyebrow: 'BLOC DE NOTAS',
+    title: 'Captura y completa',
+    body: 'Escribe ideas o convierte una nota en una checklist privada.',
     imageKey: 'notes',
+    imageAlt: 'Nex junto a un cuaderno con tareas marcadas.',
     demoId: 'notes',
   },
   {
     key: 'calendar',
-    icon: 'calendar',
-    title: 'Mira el mes, planea el día',
-    objective: 'Elegir una fecha y leer la agenda que corresponde a ese día.',
-    body: 'Calendario reúne eventos, clases y cumpleaños recurrentes.',
-    points: ['Toca una fecha para abrir su agenda.', 'Los puntos indican fechas con actividad.', 'Los cumpleaños se repiten cada año.'],
-    tip: 'En Calendario puedes crear eventos desde el botón Crear en Calendario.',
+    eyebrow: 'CALENDARIO',
+    title: 'Elige una fecha',
+    body: 'Eventos, clases y cumpleaños aparecen juntos en cada día.',
     imageKey: 'calendar',
+    imageAlt: 'Nex observa un calendario mensual con fechas destacadas.',
     demoId: 'calendar',
   },
   {
-    key: 'themes',
-    icon: 'palette',
-    title: 'Adáptalo a tu ambiente',
-    objective: 'Comparar las superficies Blanco, Oscuro y Nex antes de elegir una.',
-    body: 'Apariencia permite cambiar el tema y escoger uno de los acentos disponibles.',
-    points: ['Las vistas previas muestran superficies reales.', 'Cambiar el tema no altera tus registros.', 'La prueba de esta pantalla no cambia tu preferencia.'],
-    tip: 'Para aplicar un tema: Ajustes → Apariencia y personalización.',
+    key: 'personalize',
+    eyebrow: 'A TU MANERA',
+    title: 'Hazlo tuyo',
+    body: 'Prueba Blanco, Oscuro y Nex. Esta vista previa no cambia tus ajustes.',
     imageKey: 'themes',
+    imageAlt: 'Tres materiales visuales representan los temas Blanco, Oscuro y Nex.',
     demoId: 'themes',
-  },
-  {
-    key: 'privacy',
-    icon: 'shieldCheck',
-    title: 'Protege y conserva tus datos',
-    objective: 'Saber dónde encontrar privacidad, respaldos, widgets y ayuda.',
-    body: 'Las notas privadas requieren autorización según tu configuración. Los respaldos se administran en el dispositivo.',
-    points: ['Exporta una copia antes de cambiar de dispositivo.', 'Los adjuntos pueden depender de archivos locales.', 'Añade Mi horario desde Widgets en el launcher Android.'],
-    tip: 'La demostración no solicita permisos ni crea una copia. Los widgets requieren una compilación Android compatible.',
-    imageKey: 'privacy',
-    demoId: 'first-steps',
   },
 ];
 
@@ -105,15 +84,6 @@ export const TUTORIAL_THEME_PREVIEWS = SELECTABLE_SURFACE_MODES.map((mode) => {
   };
 });
 
-export const TUTORIAL_HELP_ITEMS = [
-  { title: 'Crear una rutina', detail: 'Inicio → Gestionar mi rutina → Crear rutina. Elige días y, si quieres, una hora.' },
-  { title: 'Crear una nota', detail: 'Bloc de Notas → Crear nota. Puedes escribir texto, elegir checklist y marcar Privada.' },
-  { title: 'Consultar el calendario', detail: 'Calendario → toca un día para leer la agenda de esa fecha.' },
-  { title: 'Personalizar el tema', detail: 'Ajustes → Apariencia y personalización → elige Blanco, Oscuro o Nex.' },
-  { title: 'Exportar un respaldo', detail: 'Ajustes → Datos y respaldos → Exportar copia (.json).' },
-  { title: 'Añadir Mi horario', detail: 'En Android, mantén pulsada la pantalla de inicio → Widgets → NexusDay → Mi horario.' },
-];
-
 export function toggleTutorialChecklistItem(items, id) {
   if (!items.some((item) => item.id === id)) return items;
   return items.map((item) => (item.id === id ? { ...item, done: !item.done } : item));
@@ -121,4 +91,8 @@ export function toggleTutorialChecklistItem(items, id) {
 
 export function getTutorialAgenda(dayId) {
   return TUTORIAL_CALENDAR_DAYS.find((day) => day.id === dayId)?.agenda || [];
+}
+
+export function tutorialStepIndex(current, delta) {
+  return Math.min(Math.max(current + delta, 0), TUTORIAL_STEPS.length - 1);
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Modal, Pressable, Text, View } from 'react-native';
+import { Alert, AppState, Image, Linking, Modal, Pressable, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
 import { ACCENT_THEMES, getAccentTheme, resolveAccent, resolvePreviewAccent } from '../theme/accents';
@@ -46,6 +46,7 @@ import {
   requestMicrophonePermission,
 } from '../services/audio';
 import { BACKUP_COLLECTIONS, backupRequiresPrivateAuthorization, isPartialHistoricalBackup, prepareBackupImport, runBackupExport } from '../services/backupRestore';
+import { ALARM_CHANNEL_ID, getExactAlarmPermission } from '../services/notifications';
 
 const PERMISSION_TONE = { granted: 'accent', unknown: 'neutral', denied: 'warning' };
 
@@ -153,6 +154,17 @@ export default function SettingsScreen({ navigation }) {
     notificationsSupported,
     hydrated,
   } = useAppData();
+  const [exactAlarm, setExactAlarm] = useState(null);
+  const refreshExactAlarm = useCallback(async () => setExactAlarm(await getExactAlarmPermission()), []);
+  useEffect(() => {
+    Promise.resolve().then(refreshExactAlarm);
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') refreshExactAlarm(); });
+    return () => subscription.remove();
+  }, [refreshExactAlarm]);
+  const askExactAlarm = () => Alert.alert('Alarmas exactas', 'Permite este acceso para intentar entregar alarmas a la hora elegida. Sin él, Android puede retrasarlas.', [
+    { text: 'Cancelar', style: 'cancel' },
+    { text: 'Abrir ajustes', onPress: async () => { await getExactAlarmPermission({ request: true }); refreshExactAlarm(); } },
+  ]);
 
   // What the phone can authenticate with (biometric enrolled or device passcode only).
   const [privacyLabel, setPrivacyLabel] = useState('Consultando⬦');
@@ -786,6 +798,22 @@ export default function SettingsScreen({ navigation }) {
         </Accordion>
         </Card>
 
+        <SettingsSection title="Alarmas y notificaciones" icon="clock" />
+        <Card style={styles.card}>
+          <View style={styles.rowBetween}>
+            <View style={styles.rowBody}>
+              <Text style={typography.bodyStrong}>Alarmas exactas</Text>
+              <Text style={typography.caption}>Android puede entregar alarmas aproximadas si este acceso está desactivado.</Text>
+            </View>
+            <View style={styles.permissionRight}>
+              {permissionPill(exactAlarm, { granted: 'Activo', missing: 'Inactivo', blocked: 'Bloqueado' })}
+              {exactAlarm && !exactAlarm.granted ? <TextButton label="Configurar" tone="ghost" onPress={askExactAlarm} /> : null}
+            </View>
+          </View>
+          <Text style={typography.caption}>Canal: {ALARM_CHANNEL_ID} · Sonido predeterminado y vibración configurados por Android.</Text>
+          <TextButton label="Abrir ajustes de notificaciones" tone="ghost" onPress={() => Linking.openSettings()} />
+        </Card>
+
         <SettingsSection title="Privacidad y seguridad" icon="shieldCheck" />
 
 
@@ -830,9 +858,9 @@ export default function SettingsScreen({ navigation }) {
           <View style={styles.rowBetween}>
             <View style={styles.rowBody}>
               <Text style={typography.bodyStrong}>Tutorial de {APP_NAME}</Text>
-              <Text style={typography.caption}>Seis pasos breves para conocer las áreas principales y sus controles.</Text>
+              <Text style={typography.caption}>Cinco pasos visuales para practicar las funciones principales sin tocar tus datos.</Text>
             </View>
-            <Pill label="6 pasos" tone="accent" />
+            <Pill label="5 pasos" tone="accent" />
           </View>
           <TextButton label="Ver el tutorial otra vez" onPress={replayTutorial} />
           <Text style={typography.caption}>

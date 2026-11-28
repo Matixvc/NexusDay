@@ -22,7 +22,10 @@ require.extensions['.js'] = (module, filename) => {
 
 const { birthdayDateKeyForYear, birthdayOccursOn } = require('../src/services/birthdayDates');
 const { buildCalendarMarks, buildDayAgenda, calendarEmptyState, dateKeyInMonth, shiftCalendarMonth } = require('../src/services/calendar');
+const { formatTimeInput, timeInputError, timeRangeError } = require('../src/services/timeInput');
 const calendarScreen = fs.readFileSync(path.resolve(__dirname, '../src/screens/CalendarScreen.js'), 'utf8');
+const timeField = fs.readFileSync(path.resolve(__dirname, '../src/components/ui/TimeField.js'), 'utf8');
+const birthdayEditor = fs.readFileSync(path.resolve(__dirname, '../src/components/BirthdayEditor.js'), 'utf8');
 const rootNavigator = fs.readFileSync(path.resolve(__dirname, '../src/navigation/RootNavigator.js'), 'utf8');
 assert.match(calendarScreen, /LocaleConfig\.defaultLocale = 'nexusEs'/);
 assert.match(calendarScreen, /'Domingo', 'Lunes', 'Martes', 'Miércoles'/);
@@ -33,6 +36,21 @@ assert.match(calendarScreen, /onTouchStart=\{beginCalendarTouch\}[\s\S]*?onTouch
 assert.match(calendarScreen, /const beginCalendarTouch = useCallback\(\(\) => \{[\s\S]*?acquireSwipe\(\)/, 'Al tocar la cuadrícula el pager principal debe quedar bloqueado hasta finalizar el gesto.');
 assert.match(rootNavigator, /swipeEnabled:\s*!locked/, 'El swipe entre secciones principales debe seguir disponible fuera de la región del calendario.');
 assert.match(calendarScreen, /width <= 374 \? styles\.calendarCardCompact/);
+assert.match(timeField, /TextInput[\s\S]*inputMode="numeric"[\s\S]*maxLength=\{5\}/, 'La hora debe poder escribirse con teclado numérico.');
+assert.match(calendarScreen, /Acciones del evento[\s\S]*Eliminar evento/, 'La ficha del evento debe mostrar una acción de borrado visible.');
+assert.match(birthdayEditor, /Acciones del cumpleaños[\s\S]*Eliminar cumpleaños/, 'La ficha del cumpleaños debe mostrar una acción de borrado visible.');
+
+assert.equal(formatTimeInput('9'), '9');
+assert.equal(formatTimeInput('0930'), '09:30');
+assert.equal(formatTimeInput('09:30'), '09:30');
+assert.equal(formatTimeInput('24:00'), '24:00');
+assert.equal(timeInputError(''), 'Escribe una hora en formato HH:mm.');
+assert.equal(timeInputError('09:'), 'Completa la hora en formato HH:mm.');
+assert.equal(timeInputError('23:59'), null);
+assert.equal(timeInputError('24:00'), 'Usa una hora entre 00:00 y 23:59.');
+assert.equal(timeInputError('12:60'), 'Usa una hora entre 00:00 y 23:59.');
+assert.equal(timeRangeError('09:00', '09:00'), 'La hora de fin debe ser posterior al inicio.');
+assert.equal(timeRangeError('09:00', '10:00'), null);
 
 assert.equal(shiftCalendarMonth('2026-01-01', -1), '2025-12-01');
 assert.equal(shiftCalendarMonth('2026-12-01', 1), '2027-01-01');
@@ -79,4 +97,4 @@ assert.equal(marks[dateKey].dots.length, 2);
 assert.equal(marks[dateKey].selected, true);
 assert.equal(marks[dateKey].disableTouchEvent, false);
 
-console.log('calendar-smoke-test: 24 assertions passed');
+console.log('calendar-smoke-test: 39 assertions passed');

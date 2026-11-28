@@ -16,11 +16,11 @@ assert.match(tabCatalog, /export const HOME_TAB = 'Inicio'/);
 assert.match(tabCatalog, /name: 'Nexus AI'[\s\S]*?component: AssistantScreen/, 'La ruta histórica del asistente local debe mantenerse registrada.');
 assert.match(tabCatalog, /'Nex AI': NexAiPreviewScreen/);
 
-const slideKeys = [...tutorialGuide.matchAll(/key: '([^']+)'/g)].slice(0, 6).map((match) => match[1]);
-assert.deepEqual(slideKeys, ['welcome', 'day', 'notes', 'calendar', 'themes', 'privacy']);
+const slideKeys = [...tutorialGuide.matchAll(/key: '([^']+)'/g)].slice(0, 5).map((match) => match[1]);
+assert.deepEqual(slideKeys, ['welcome', 'day', 'notes', 'calendar', 'personalize']);
 assert.match(onboarding, /animated: !reduceMotion/);
-assert.match(settings, /Seis pasos breves/);
-assert.match(settings, /label="6 pasos"/);
+assert.match(settings, /Cinco pasos visuales/);
+assert.match(settings, /label="5 pasos"/);
 
 assert.match(nexAi, /PRÓXIMAMENTE/);
 assert.match(nexAi, /no inicia conversaciones[\s\S]*?no consulta tus datos[\s\S]*?no se conecta a servicios externos/);

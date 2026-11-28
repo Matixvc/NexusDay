@@ -93,22 +93,22 @@ const dayStyles = theme.match(/'stylesheet\.day\.basic':\s*\{([\s\S]*?)\n  \},/)
 const headerStyles = theme.match(/'stylesheet\.calendar\.header':\s*\{([\s\S]*?)\n  \},/)?.[1] || '';
 assert.ok(!/^\s*text\s*:/m.test(dayStyles), 'El tamaño de día debe heredarse de textDayFontSize y no quedar reemplazado por un estilo incompleto.');
 assert.ok(!/^\s*month\s*:/m.test(headerStyles), 'El espaciado del encabezado no debe usar una clave ignorada por react-native-calendars.');
-assert.match(onboarding, /nexusday-onboarding\.(?:png|webp|jpg)/, 'El onboarding debe cargar la ilustración original local.');
-for (const key of ['welcome', 'day', 'notes', 'calendar', 'themes', 'privacy']) {
+assert.match(onboarding, /nex-orb-curious\.jpg/, 'El onboarding debe cargar una ilustración Nex original local.');
+for (const key of ['welcome', 'day', 'notes', 'calendar', 'personalize']) {
   assert.match(tutorialGuide, new RegExp(`key: '${key}'`), `El tutorial debe incluir el paso de ${key}.`);
 }
-for (const asset of ['tutorial-day.jpg', 'tutorial-notes.jpg', 'tutorial-calendar.jpg', 'tutorial-themes.jpg', 'tutorial-privacy.jpg']) {
+for (const asset of ['tutorial-day.jpg', 'tutorial-notes.jpg', 'tutorial-calendar.jpg', 'tutorial-themes.jpg']) {
   assert.ok(onboarding.includes(asset), `El tutorial debe integrar el recurso local ${asset}.`);
 }
-assert.match(onboarding, /firstRun && item\.field/, 'Repetir el tutorial no debe ofrecer cambiar el nombre guardado como parte de la bienvenida inicial.');
-assert.match(onboarding, /label="Atrás"/, 'El tutorial debe permitir regresar al paso anterior.');
+assert.doesNotMatch(onboarding, /setUserName|TextInput/, 'El tutorial no debe modificar el nombre ni otras preferencias.');
+assert.match(onboarding, /index > 0 \? 'Atrás'/, 'El tutorial debe permitir regresar al paso anterior.');
 assert.match(onboarding, /label=\{firstRun \? 'Omitir' : 'Cerrar'\}/, 'El tutorial debe poder omitirse o cerrarse.');
 assert.match(onboarding, /animated: !reduceMotion/, 'La navegación programática del tutorial debe respetar reducir animaciones.');
 assert.match(onboarding, /accessibilityValue=\{\{ min: 1, max: SLIDES\.length, now: index \+ 1 \}\}/, 'El progreso del tutorial debe exponer el paso actual a tecnologías de asistencia.');
-assert.match(onboarding, /progressTarget: \{ minWidth: 44, minHeight: 44/, 'Los indicadores de progreso deben tener objetivos táctiles accesibles.');
+assert.match(onboarding, /progressTarget: \{ minWidth: 48, minHeight: 48/, 'Los indicadores de progreso deben tener objetivos táctiles accesibles.');
 assert.match(onboarding, /scrollToOffset\(\{ offset: target, animated: !reduceMotion \}\)/, 'El tutorial debe seguir respetando movimiento reducido.');
-assert.match(settings, /Seis pasos breves/, 'Ajustes debe describir la duración real del tutorial.');
-assert.match(settings, /label="6 pasos"/, 'El contador del tutorial en Ajustes debe reflejar sus seis pasos.');
+assert.match(settings, /Cinco pasos visuales/, 'Ajustes debe describir la duración real del tutorial.');
+assert.match(settings, /label="5 pasos"/, 'El contador del tutorial en Ajustes debe reflejar sus cinco pasos.');
 assert.match(settings, /label="Ver el tutorial otra vez" onPress=\{replayTutorial\}/, 'El usuario debe poder repetir el tutorial desde Ajustes.');
 assert.match(appData, /saveValue\(KEYS\.onboarding, true\)/, 'Finalizar el tutorial debe persistir su estado completado.');
 assert.match(icon, /import Svg, \{ Circle, SvgProps \} from 'react-native-svg'/, 'El fallback del icono debe usar los componentes SVG nativos.');

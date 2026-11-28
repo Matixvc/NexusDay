@@ -75,7 +75,7 @@ export default function BirthdaysScreen({ navigation }) {
     });
   }, [navigation, soon.length]);
 
-  const openCreate = () => setSheet({ mode: 'create', values: blankBirthday(colors.accent) });
+  const openCreate = () => setSheet({ mode: 'create', values: blankBirthday(colors.amber) });
 
   const openEdit = (item) =>
     setSheet({

@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Screen, Card, Button, Chip, Pill, SectionTitle, TextButton } from '../components/ui/primitives';
-import { ConfirmSheet } from '../components/ui/Sheet';
+import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
+import { Switch } from '../components/ui/Switch';
 import { Icon } from '../components/Icon';
 import { useAppData } from '../context/AppDataContext';
 import { colors, palette, radius, spacing, themedStyles, typography } from '../theme/theme';
 import { ROUTINE_ICONS } from '../services/routines';
+import { syncRoutineAlarm } from '../services/reminders';
+import { ALARM_LEAD_PRESETS, cancelAlarm, getExactAlarmPermission, normalizeAlarmLead } from '../services/notifications';
 import { WEEKDAYS, todayKey } from '../utils/dates';
 
-const EMPTY_FORM = { name: '', description: '', icon: 'checkCircle', color: colors.accent, weekdays: [], startTime: '', endTime: '' };
+const EMPTY_FORM = { name: '', description: '', icon: 'checkCircle', color: colors.accent, weekdays: [], startTime: '', endTime: '', alarmEnabled: false, alarmLeadMinutes: null, alarmNotificationId: null, customAlarmLead: '' };
 const ROUTINE_EMPTY_ART = require('../../assets/nex/u11/routines/routine-rhythm.jpg');
+const ALARM_LABELS = new Map([[15, '15 min'], [30, '30 min'], [60, '1 h'], [120, '2 h']]);
 
 function operationMessage(error) {
   if (error === 'duplicate-routine') return 'Ya existe una rutina igual con esos días y horario.';
@@ -19,6 +23,8 @@ function operationMessage(error) {
   if (error === 'invalid-completed-date') return 'No se pudo validar el historial de fechas.';
   if (error === 'invalid-description') return 'Revisa la descripción de la rutina.';
   if (error === 'name-required') return 'Escribe un nombre para la rutina.';
+  if (error === 'invalid-alarm-lead') return 'Revisa la anticipación de la alarma.';
+  if (error === 'alarm-time-required') return 'Define una hora de inicio para activar la alarma.';
   return 'No se pudo guardar en este teléfono. Tus cambios anteriores siguen disponibles.';
 }
 
@@ -30,36 +36,149 @@ export default function RoutinesScreen() {
   const [form, setForm] = useState(null);
   const [notice, setNotice] = useState('');
   const [removeId, setRemoveId] = useState(null);
+  const [permissionSheetOpen, setPermissionSheetOpen] = useState(false);
+  const [exactAlarmPermission, setExactAlarmPermission] = useState({ status: 'checking', granted: false });
+  const savingRef = useRef(false);
   const today = todayKey();
   const selectedRoutine = useMemo(() => routines.find((item) => item.id === removeId), [routines, removeId]);
 
-  const openCreate = () => { setNotice(''); setForm({ ...EMPTY_FORM, color: colors.accent }); };
-  const openEdit = (routine) => { setNotice(''); setForm({ ...routine, startTime: routine.startTime || '', endTime: routine.endTime || '' }); };
-  const patchForm = (patch) => setForm((current) => ({ ...current, ...patch }));
+  const refreshExactPermission = async () => {
+    const result = await getExactAlarmPermission();
+    setExactAlarmPermission(result);
+    return result;
+  };
+  const openCreate = () => { setNotice(''); refreshExactPermission(); setForm({ ...EMPTY_FORM, color: colors.accent }); };
+  const openEdit = (routine) => {
+    setNotice('');
+    refreshExactPermission();
+    setForm({
+      ...routine,
+      startTime: routine.startTime || '',
+      endTime: routine.endTime || '',
+      alarmEnabled: routine.alarmLeadMinutes != null,
+      customAlarmLead: ALARM_LEAD_PRESETS.includes(routine.alarmLeadMinutes) ? '' : String(routine.alarmLeadMinutes || ''),
+    });
+  };
+  const patchForm = (patch) => setForm((current) => current ? ({ ...current, ...patch }) : current);
 
   const save = async () => {
-    if (routinesBusy) return;
-    const result = form.id
-      ? await updateRoutine(form.id, form)
-      : await createRoutine(form);
-    if (!result?.ok) { setNotice(operationMessage(result?.error)); return; }
-    setForm(null);
-    setNotice(form.id ? 'Rutina actualizada.' : 'Rutina creada.');
+    if (routinesBusy || savingRef.current) return;
+    if (form.alarmEnabled && !form.startTime) { setNotice('Define una hora de inicio para activar la alarma.'); return; }
+    const lead = form.alarmEnabled ? normalizeAlarmLead(form.alarmLeadMinutes) : null;
+    if (form.alarmEnabled && !lead) { setNotice('Usa una anticipación entre 1 y 10080 minutos.'); return; }
+    savingRef.current = true;
+    const previous = form.id ? routines.find((item) => item.id === form.id) : null;
+    const payload = {
+      name: form.name,
+      description: form.description,
+      icon: form.icon,
+      color: form.color,
+      weekdays: form.weekdays,
+      startTime: form.startTime || null,
+      endTime: form.endTime || null,
+      enabled: form.enabled !== false,
+      completedDates: form.completedDates || [],
+      alarmLeadMinutes: lead,
+      alarmNotificationId: null,
+    };
+    try {
+      const result = form.id ? await updateRoutine(form.id, payload) : await createRoutine(payload);
+      if (!result?.ok) { setNotice(operationMessage(result?.error)); return; }
+      const alarm = await syncRoutineAlarm(result.item, previous?.alarmNotificationId);
+      if (lead != null && !alarm.alarmNotificationId) {
+        await updateRoutine(result.item.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+        setForm({ ...result.item, alarmEnabled: false, alarmLeadMinutes: null, alarmNotificationId: null, customAlarmLead: '' });
+        setNotice(alarm.notice || 'La rutina se guardó, pero la alarma no pudo activarse.');
+        return;
+      }
+      if (alarm.alarmNotificationId) {
+        const linked = await updateRoutine(result.item.id, { alarmNotificationId: alarm.alarmNotificationId });
+        if (!linked?.ok) {
+          await cancelAlarm(alarm.alarmNotificationId);
+          await updateRoutine(result.item.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+          setNotice('La rutina se guardó, pero la alarma no pudo vincularse y quedó desactivada.');
+          return;
+        }
+      }
+      setForm(null);
+      setNotice(alarm.notice || (previous ? 'Rutina actualizada.' : 'Rutina creada.'));
+    } finally {
+      savingRef.current = false;
+    }
   };
 
   const confirmRemove = async () => {
     if (!removeId || routinesBusy) return;
     const result = await removeRoutine(removeId);
     if (!result?.ok) setNotice(operationMessage(result?.error));
-    else setNotice('Rutina eliminada.');
+    else {
+      await cancelAlarm(selectedRoutine?.alarmNotificationId);
+      setNotice('Rutina eliminada.');
+    }
     setRemoveId(null);
+  };
+
+  const toggleRoutineEnabled = async (routine) => {
+    if (routinesBusy) return;
+    const enabled = !routine.enabled;
+    const saved = await updateRoutine(routine.id, { enabled, alarmNotificationId: null });
+    if (!saved?.ok) { setNotice(operationMessage(saved?.error)); return; }
+    if (!enabled) {
+      await cancelAlarm(routine.alarmNotificationId);
+      setNotice('Rutina pausada y alarma cancelada.');
+      return;
+    }
+    const alarm = await syncRoutineAlarm(saved.item, null);
+    if (saved.item.alarmLeadMinutes != null && !alarm.alarmNotificationId) {
+      await updateRoutine(routine.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+      setNotice(alarm.notice || 'La rutina se reanudó, pero la alarma no pudo activarse.');
+      return;
+    }
+    if (alarm.alarmNotificationId) {
+      const linked = await updateRoutine(routine.id, { alarmNotificationId: alarm.alarmNotificationId });
+      if (!linked?.ok) {
+        await cancelAlarm(alarm.alarmNotificationId);
+        await updateRoutine(routine.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+        setNotice('La rutina se reanudó, pero la alarma no pudo vincularse y quedó desactivada.');
+        return;
+      }
+    }
+    setNotice(alarm.notice || 'Rutina reanudada.');
+  };
+
+  const toggleAlarm = (enabled) => {
+    if (!enabled) { patchForm({ alarmEnabled: false, alarmLeadMinutes: null }); return; }
+    if (!form.startTime) { setNotice('Define una hora de inicio para activar la alarma.'); return; }
+    if (exactAlarmPermission.granted) { patchForm({ alarmEnabled: true, alarmLeadMinutes: 15 }); return; }
+    setPermissionSheetOpen(true);
+  };
+
+  const continueAlarmSetup = async () => {
+    const permission = await getExactAlarmPermission({ request: true });
+    setExactAlarmPermission(permission);
+    patchForm({ alarmEnabled: true, alarmLeadMinutes: 15 });
   };
 
   const toggleDone = async (routine) => {
     if (routinesBusy) return;
     const result = await toggleRoutineCompletion(routine.id, today);
-    if (!result?.ok) setNotice(operationMessage(result?.error));
-    else setNotice(routine.completedDates.includes(today) ? 'Rutina marcada como pendiente.' : 'Rutina completada.');
+    if (!result?.ok) { setNotice(operationMessage(result?.error)); return; }
+    const alarm = await syncRoutineAlarm(result.item, routine.alarmNotificationId);
+    if (result.item.alarmLeadMinutes != null && !alarm.alarmNotificationId) {
+      await updateRoutine(routine.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+      setNotice(alarm.notice || 'El progreso se guardó, pero la alarma quedó desactivada.');
+      return;
+    }
+    if (alarm.alarmNotificationId) {
+      const linked = await updateRoutine(routine.id, { alarmNotificationId: alarm.alarmNotificationId });
+      if (!linked?.ok) {
+        await cancelAlarm(alarm.alarmNotificationId);
+        await updateRoutine(routine.id, { alarmLeadMinutes: null, alarmNotificationId: null });
+        setNotice('El progreso se guardó, pero la alarma no pudo vincularse.');
+        return;
+      }
+    }
+    setNotice(alarm.notice || (routine.completedDates.includes(today) ? 'Rutina marcada como pendiente.' : 'Rutina completada.'));
   };
 
   return (
@@ -112,6 +231,34 @@ export default function RoutinesScreen() {
               <TextInput value={form.startTime} onChangeText={(startTime) => patchForm({ startTime })} placeholder="Inicio HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} accessibilityLabel="Hora de inicio opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />
               <TextInput value={form.endTime} onChangeText={(endTime) => patchForm({ endTime })} placeholder="Término HH:MM" placeholderTextColor={colors.textMuted} keyboardType="numbers-and-punctuation" maxLength={5} accessibilityLabel="Hora de término opcional, formato 24 horas" style={[styles.input, styles.timeInput]} />
             </View>
+            <View style={styles.alarmBlock}>
+              <View style={styles.alarmHeading}>
+                <View style={styles.alarmCopy}>
+                  <Text style={typography.bodyStrong}>Alarma</Text>
+                  <Text style={typography.caption}>Sonido y vibración antes de la próxima rutina.</Text>
+                </View>
+                <Switch value={form.alarmEnabled} onValueChange={toggleAlarm} label="Activar alarma de rutina" hideLabel />
+              </View>
+              {form.alarmEnabled ? (
+                <>
+                  <Text style={[typography.caption, exactAlarmPermission.granted ? styles.exactStatus : styles.approximateStatus]}>
+                    {exactAlarmPermission.granted ? 'Alarma exacta permitida por Android.' : 'Aviso aproximado: Android puede entregarlo con retraso.'}
+                  </Text>
+                  <View style={styles.chips}>
+                    {ALARM_LEAD_PRESETS.map((minutes) => (
+                      <Chip key={minutes} label={ALARM_LABELS.get(minutes)} selected={form.alarmLeadMinutes === minutes} onPress={() => patchForm({ alarmLeadMinutes: minutes, customAlarmLead: '' })} />
+                    ))}
+                    <Chip label="Personalizada" selected={!ALARM_LEAD_PRESETS.includes(form.alarmLeadMinutes)} onPress={() => {
+                      const custom = normalizeAlarmLead(form.customAlarmLead) || 45;
+                      patchForm({ alarmLeadMinutes: custom, customAlarmLead: String(custom) });
+                    }} />
+                  </View>
+                  {!ALARM_LEAD_PRESETS.includes(form.alarmLeadMinutes) ? (
+                    <TextInput value={form.customAlarmLead} onChangeText={(text) => patchForm({ customAlarmLead: text, alarmLeadMinutes: normalizeAlarmLead(text) })} placeholder="Minutos antes, ej. 45" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5} accessibilityLabel="Anticipación personalizada de alarma en minutos" style={styles.input} />
+                  ) : null}
+                </>
+              ) : null}
+            </View>
             <Text style={typography.label}>Icono</Text>
             <View style={styles.colors}>
               {ROUTINE_ICONS.map((icon) => (
@@ -130,7 +277,6 @@ export default function RoutinesScreen() {
               <Button label="Guardar rutina" onPress={save} loading={routinesBusy} />
               <TextButton label="Cancelar" tone="ghost" onPress={() => setForm(null)} disabled={routinesBusy} />
             </View>
-            <Text style={typography.caption}>Los recordatorios automáticos no están disponibles en esta versión.</Text>
           </Card>
         ) : null}
 
@@ -159,13 +305,22 @@ export default function RoutinesScreen() {
                   <Text style={typography.bodyStrong} accessibilityRole="header">{routine.name}</Text>
                   <Text style={typography.caption}>{days} · {time}</Text>
                   {routine.description ? <Text style={typography.small}>{routine.description}</Text> : null}
+                  {routine.alarmLeadMinutes != null ? (
+                    <Text style={typography.caption}>
+                      {routine.enabled === false
+                        ? 'Alarma pausada'
+                        : routine.alarmNotificationId
+                          ? `Alarma · ${ALARM_LABELS.get(routine.alarmLeadMinutes) || `${routine.alarmLeadMinutes} min`}`
+                          : 'Alarma pendiente de reconciliación'}
+                    </Text>
+                  ) : null}
                 </View>
                 <Pill label={completed ? 'Hecha hoy' : routine.enabled ? 'Activa' : 'Pausada'} tone={completed ? 'accent' : 'neutral'} />
               </View>
               <View style={styles.actions}>
                 <Button label={completed ? 'Marcar pendiente' : 'Completar hoy'} variant="secondary" onPress={() => toggleDone(routine)} disabled={routinesBusy || !routine.enabled} />
                 <TextButton label="Editar" onPress={() => openEdit(routine)} disabled={routinesBusy} />
-                <TextButton label={routine.enabled ? 'Pausar' : 'Reanudar'} onPress={() => updateRoutine(routine.id, { enabled: !routine.enabled }).then((result) => { if (!result?.ok) setNotice(operationMessage(result.error)); })} disabled={routinesBusy} />
+                <TextButton label={routine.enabled ? 'Pausar' : 'Reanudar'} onPress={() => toggleRoutineEnabled(routine)} disabled={routinesBusy} />
                 <TextButton label="Eliminar" tone="danger" onPress={() => setRemoveId(routine.id)} disabled={routinesBusy} />
               </View>
             </Card>
@@ -180,6 +335,21 @@ export default function RoutinesScreen() {
         message={selectedRoutine ? `Se eliminará “${selectedRoutine.name}” y se conservará el resto de tus rutinas.` : 'Esta acción no se puede deshacer.'}
         confirmLabel="Eliminar rutina"
       />
+      <Sheet
+        visible={permissionSheetOpen}
+        onClose={() => setPermissionSheetOpen(false)}
+        title="Permitir alarmas exactas"
+        subtitle="Puedes cancelar. Sin este permiso Android puede entregar la alarma con retraso."
+        scrollable={false}
+      >
+        <View style={styles.permissionActions}>
+          <TextButton label="Cancelar" tone="ghost" onPress={() => setPermissionSheetOpen(false)} />
+          <Button label="Continuar" onPress={async () => {
+            setPermissionSheetOpen(false);
+            await continueAlarmSetup();
+          }} />
+        </View>
+      </Sheet>
     </>
   );
 }
@@ -193,6 +363,12 @@ const styles = themedStyles({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   timeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   timeInput: { flex: 1, minWidth: 145 },
+  alarmBlock: { gap: spacing.sm, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
+  alarmHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  alarmCopy: { flex: 1, gap: 2 },
+  exactStatus: { color: colors.mint },
+  approximateStatus: { color: colors.amber },
+  permissionActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
   colors: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   iconChoice: { width: 44, height: 44, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   iconSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },

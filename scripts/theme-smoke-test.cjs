@@ -68,6 +68,7 @@ const expectedIds = ['light', 'dark', 'mono', 'nex'];
 const selectableIds = ['light', 'dark', 'nex'];
 const historicalAccentIds = ['verde', 'cian', 'azul', 'rojo', 'amarillo', 'purpura'];
 const tokenKeys = Object.keys(surfaces[0].tokens).sort();
+const colorfulRoleKeys = ['violet', 'violetSoft', 'violetInk', 'editorialSurface', 'editorialInk', 'selectedSurface', 'progressTrack', 'violetContainer', 'onVioletContainer', 'mintContainer', 'onMintContainer', 'coralContainer', 'onCoralContainer', 'amberContainer', 'onAmberContainer'];
 
 assert(JSON.stringify(surfaces.map((mode) => mode.id)) === JSON.stringify(expectedIds), 'Deben existir exactamente Claro, Oscuro, Blanco y negro y Nex.');
 assert(JSON.stringify(surfaceModule.SELECTABLE_SURFACE_MODES.map((mode) => mode.id)) === JSON.stringify(selectableIds), 'Solo Blanco, Oscuro y Nex deben ofrecerse como temas seleccionables.');
@@ -88,6 +89,7 @@ assert(JSON.stringify(accents.map((accent) => accent.id)) === JSON.stringify(his
 assert(overlay, 'No se pudo leer el overlay real del runtime.');
 
 for (const surface of surfaces) {
+  assert(colorfulRoleKeys.every((key) => key in surface.tokens), `${surface.id}: faltan roles cromáticos reutilizables.`);
   assert(JSON.stringify(Object.keys(surface.tokens).sort()) === JSON.stringify(tokenKeys), `${surface.id}: conjunto de tokens distinto.`);
 
   const tokens = surface.tokens;
@@ -102,6 +104,10 @@ for (const surface of surfaces) {
   assertContrast(`${surface.id}.mintInk`, tokens.mintInk, tokens.mint);
   assertContrast(`${surface.id}.amberInk`, tokens.amberInk, tokens.amber);
   assertContrast(`${surface.id}.coralInk`, tokens.coralInk, tokens.coral);
+  assertContrast(`${surface.id}.editorialInk`, tokens.editorialInk, tokens.editorialSurface);
+  for (const tone of ['Violet', 'Mint', 'Coral', 'Amber']) {
+    assertContrast(`${surface.id}.on${tone}Container`, tokens[`on${tone}Container`], tokens[`${tone.toLowerCase()}Container`]);
+  }
 
   for (const accent of accents) {
     const resolved = accentModule.resolveAccent(accent, surface.id);

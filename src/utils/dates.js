@@ -108,7 +108,8 @@ export function parseTime(value) {
 }
 
 export function isValidTime(value) {
-  return /^\d{1,2}:\d{2}$/.test(String(value ?? '').trim());
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value ?? '').trim());
+  return Boolean(match) && Number(match[1]) <= 23 && Number(match[2]) <= 59;
 }
 
 export function minutesOfDay(value) {

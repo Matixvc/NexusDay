@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Icon } from '../Icon';
-import { getTutorialAgenda, TUTORIAL_CALENDAR_DAYS, TUTORIAL_HELP_ITEMS, TUTORIAL_NOTE_ITEMS, TUTORIAL_THEME_PREVIEWS, toggleTutorialChecklistItem } from '../../services/tutorialGuide';
+import { getTutorialAgenda, TUTORIAL_CALENDAR_DAYS, TUTORIAL_NOTE_ITEMS, TUTORIAL_THEME_PREVIEWS, toggleTutorialChecklistItem } from '../../services/tutorialGuide';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 
 const SAFE_LABEL = 'Prueba local · datos ficticios, no se guarda';
@@ -13,7 +13,6 @@ export function TutorialDemos({ demoId }) {
     case 'notes': return <NotesDemo />;
     case 'calendar': return <CalendarDemo />;
     case 'themes': return <ThemeDemo />;
-    case 'first-steps': return <FirstStepsGuide />;
     default: return null;
   }
 }
@@ -32,28 +31,20 @@ function DemoPanel({ title, children }) {
 }
 
 function WelcomeDemo() {
-  const [expanded, setExpanded] = useState(false);
   return (
-    <DemoPanel title="Día a Día reúne lo que viene">
+    <DemoPanel title="Una vista rápida de tu jornada">
       <View style={styles.previewRow}>
         <View style={styles.previewMark}><Icon name="clock" size={17} color={colors.accent} /></View>
         <View style={styles.flexCopy}>
           <Text style={typography.label}>Próxima clase</Text>
-          <Text style={typography.caption}>09:30 · Clase de ejemplo</Text>
+          <Text style={typography.caption}>09:30 · Diseño</Text>
         </View>
         <Text style={styles.previewTag}>HOY</Text>
       </View>
-      <Pressable
-        onPress={() => setExpanded((value) => !value)}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={expanded ? 'Ocultar qué incluye Día a Día' : 'Ver qué incluye Día a Día'}
-        style={({ pressed }) => [styles.inlineAction, pressed ? styles.pressed : null]}
-      >
-        <Text style={typography.label}>{expanded ? 'Ocultar resumen' : 'Ver qué incluye'}</Text>
-        <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={17} color={colors.accent} />
-      </Pressable>
-      {expanded ? <Text style={typography.small}>Clases · rutinas personales · eventos próximos</Text> : null}
+      <View style={styles.miniAgenda} accessible accessibilityLabel="Después: repasar apuntes a las 18 horas">
+        <View style={styles.miniLine} />
+        <Text style={typography.caption}>Después · Repasar apuntes · 18:00</Text>
+      </View>
     </DemoPanel>
   );
 }
@@ -200,36 +191,6 @@ function ThemeDemo() {
   );
 }
 
-function FirstStepsGuide() {
-  const [openIndex, setOpenIndex] = useState(null);
-  return (
-    <DemoPanel title="Tus primeros pasos, cuando quieras">
-      <View style={styles.helpList}>
-        {TUTORIAL_HELP_ITEMS.map((item, index) => {
-          const expanded = openIndex === index;
-          return (
-            <Pressable
-              key={item.title}
-              onPress={() => setOpenIndex((current) => current === index ? null : index)}
-              accessibilityRole="button"
-              accessibilityState={{ expanded }}
-              accessibilityLabel={item.title}
-              style={({ pressed }) => [styles.helpItem, pressed ? styles.pressed : null]}
-            >
-              <View style={styles.helpHeading}>
-                <Text style={[typography.label, styles.flexCopy]}>{item.title}</Text>
-                <Icon name={expanded ? 'minus' : 'plus'} size={17} color={colors.accent} />
-              </View>
-              {expanded ? <Text style={typography.caption}>{item.detail}</Text> : null}
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={typography.caption}>Estos consejos solo abren información. No exportan ni modifican nada.</Text>
-    </DemoPanel>
-  );
-}
-
 const styles = themedStyles({
   panel: { padding: spacing.md, gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   panelHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
@@ -239,10 +200,11 @@ const styles = themedStyles({
   completeMark: { backgroundColor: colors.accentSoft },
   flexCopy: { flex: 1, minWidth: 0 },
   previewTag: { color: colors.accent, fontFamily: typography.overline.fontFamily, fontSize: 10, fontWeight: '800' },
-  inlineAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.sm },
-  checkButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  miniAgenda: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm },
+  miniLine: { width: 3, height: 22, borderRadius: radius.pill, backgroundColor: colors.accent },
+  checkButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   demoList: { gap: spacing.xs },
-  checkRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm },
+  checkRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm },
   checkbox: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.borderStrong, borderRadius: 7 },
   checkboxDone: { borderColor: colors.accent, backgroundColor: colors.accent },
   completedText: { textDecorationLine: 'line-through', color: colors.textMuted },
@@ -267,8 +229,5 @@ const styles = themedStyles({
   themeSwatchAccent: { width: 10, height: 10, borderRadius: radius.pill },
   themePreview: { minHeight: 60, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.sm },
   themeAction: { minHeight: 28, justifyContent: 'center', borderRadius: radius.sm, paddingHorizontal: spacing.sm },
-  helpList: { gap: spacing.xs },
-  helpItem: { minHeight: 44, justifyContent: 'center', gap: spacing.xs, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
-  helpHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   pressed: { opacity: 0.75 },
 });

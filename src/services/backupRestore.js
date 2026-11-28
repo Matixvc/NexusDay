@@ -8,12 +8,12 @@ const RESTORE_KEYS = new Set([
 
 const RECORD_FIELDS = {
   activities: { day: 'number', title: 'string', start: 'string', end: 'string', location: 'string', color: 'string', leadMinutes: 'number', suspended: 'object', notificationId: 'nullableString' },
-  events: { dateKey: 'string', time: 'string', title: 'string', notes: 'string', color: 'string', leadMinutes: 'number', notificationId: 'nullableString' },
-  birthdays: { name: 'string', emoji: 'string', dateKey: 'string', time: 'string', color: 'string', daysBefore: 'number', notificationId: 'nullableString' },
-  notes: { kind: 'string', title: 'string', body: 'string', items: 'array', tags: 'stringArray', color: 'string', pinned: 'boolean', private: 'boolean', createdAt: 'number', updatedAt: 'number', attachment: 'nullableDescriptor', audio: 'nullableDescriptor' },
+  events: { dateKey: 'string', time: 'string', title: 'string', notes: 'string', color: 'string', leadMinutes: 'number', notificationId: 'nullableString', alarmLeadMinutes: 'nullableNumber', alarmNotificationId: 'nullableString', alarmTime: 'nullableString' },
+  birthdays: { name: 'string', emoji: 'string', dateKey: 'string', time: 'string', color: 'string', daysBefore: 'number', notificationId: 'nullableString', alarmLeadMinutes: 'nullableNumber', alarmNotificationId: 'nullableString', alarmTime: 'string' },
+  notes: { kind: 'string', title: 'string', body: 'string', items: 'array', tags: 'stringArray', color: 'string', pinned: 'boolean', private: 'boolean', createdAt: 'number', updatedAt: 'number', attachment: 'nullableDescriptor', audio: 'nullableDescriptor', alarmDateKey: 'nullableString', alarmTime: 'nullableString', alarmLeadMinutes: 'nullableNumber', alarmNotificationId: 'nullableString' },
   habits: { name: 'string', emoji: 'string', color: 'string', marks: 'stringArray', notificationId: 'nullableString' },
   expenses: { dateKey: 'string', amount: 'number', category: 'string', note: 'string', createdAt: 'number', private: 'boolean' },
-  routines: { name: 'string', description: 'string', icon: 'string', color: 'string', weekdays: 'numberArray', startTime: 'nullableString', endTime: 'nullableString', enabled: 'boolean', completedDates: 'stringArray' },
+  routines: { name: 'string', description: 'string', icon: 'string', color: 'string', weekdays: 'numberArray', startTime: 'nullableString', endTime: 'nullableString', enabled: 'boolean', completedDates: 'stringArray', alarmLeadMinutes: 'nullableNumber', alarmNotificationId: 'nullableString' },
 };
 const REQUIRED_FIELDS = {
   activities: ['day', 'title', 'start', 'end'],
@@ -25,6 +25,7 @@ const REQUIRED_FIELDS = {
   routines: ['name', 'weekdays'],
 };
 const SETTINGS_FIELDS = { displayName: 'string', career: 'string', privacyEnabled: 'boolean', reduceMotion: 'boolean', lastBackupAt: 'nullableNumber' };
+const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 function isJsonValue(value) {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -65,7 +66,32 @@ function validRecord(record, domain) {
       require('./routines').normalizeRoutine(record);
     } catch { return false; }
   }
+  if (domain === 'events' || domain === 'birthdays') {
+    if (record.alarmLeadMinutes != null && (!Number.isInteger(record.alarmLeadMinutes) || record.alarmLeadMinutes < 1 || record.alarmLeadMinutes > 10080)) return false;
+    if ('alarmTime' in record && record.alarmTime != null && !CLOCK_TIME.test(record.alarmTime)) return false;
+  }
+  if (domain === 'notes') {
+    if (record.alarmLeadMinutes != null && (!Number.isInteger(record.alarmLeadMinutes) || record.alarmLeadMinutes < 1 || record.alarmLeadMinutes > 10080)) return false;
+    if (record.alarmDateKey != null && !/^\d{4}-\d{2}-\d{2}$/.test(record.alarmDateKey)) return false;
+    if (record.alarmTime != null && !CLOCK_TIME.test(record.alarmTime)) return false;
+  }
   return Object.entries(RECORD_FIELDS[domain]).every(([key, type]) => !(key in record) || matchesType(record[key], type));
+}
+
+export function normalizeAlarmContractRecord(record, domain) {
+  if (domain === 'events') return {
+    ...record,
+    alarmLeadMinutes: Number.isInteger(record?.alarmLeadMinutes) && record.alarmLeadMinutes > 0 && record.alarmLeadMinutes <= 10080 ? record.alarmLeadMinutes : null,
+    alarmNotificationId: null,
+    alarmTime: record?.alarmTime == null ? null : (CLOCK_TIME.test(record.alarmTime) ? record.alarmTime : null),
+  };
+  if (domain === 'birthdays') return {
+    ...record,
+    alarmLeadMinutes: Number.isInteger(record?.alarmLeadMinutes) && record.alarmLeadMinutes > 0 && record.alarmLeadMinutes <= 10080 ? record.alarmLeadMinutes : null,
+    alarmNotificationId: null,
+    alarmTime: CLOCK_TIME.test(record?.alarmTime || '') ? record.alarmTime : '09:00',
+  };
+  return record;
 }
 
 /** Returns a stable error code; it never includes backup values or record content. */
@@ -155,7 +181,7 @@ export function completeBackupCollections(collections, currentCollections) {
   return Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [
     name,
     Array.isArray(collections?.[name])
-      ? (name === 'routines' ? collections[name].map((routine) => require('./routines').normalizeRoutine(routine)) : collections[name])
+      ? (name === 'routines' ? collections[name].map((routine) => require('./routines').normalizeRoutine(routine)) : (name === 'events' || name === 'birthdays' ? collections[name].map((record) => normalizeAlarmContractRecord(record, name)) : collections[name]))
       : (currentCollections[name] || []),
   ]));
 }
