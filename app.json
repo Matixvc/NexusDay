@@ -65,6 +65,34 @@
                 "resizeMode": "both",
                 "initialLayout": "./src/widgets/ScheduleWidget.js"
               }
+            },
+            {
+              "name": "DayWidget",
+              "displayName": "Mi día",
+              "description": "Resumen de clases, rutinas y eventos de hoy.",
+              "ios": null,
+              "android": {
+                "minWidth": 180,
+                "minHeight": 140,
+                "targetCellWidth": 3,
+                "targetCellHeight": 2,
+                "resizeMode": "both",
+                "initialLayout": "./src/widgets/DayWidget.js"
+              }
+            },
+            {
+              "name": "CalendarWidget",
+              "displayName": "Mi calendario",
+              "description": "Resumen de eventos y cumpleaños de hoy.",
+              "ios": null,
+              "android": {
+                "minWidth": 180,
+                "minHeight": 140,
+                "targetCellWidth": 3,
+                "targetCellHeight": 2,
+                "resizeMode": "both",
+                "initialLayout": "./src/widgets/CalendarWidget.js"
+              }
             }
           ]
         }

@@ -32,11 +32,15 @@ assert.equal(privateByDefault.classes[0].title, null);
 assert.deepEqual(Object.keys(privateByDefault.classes[0]), ['start', 'end', 'title']);
 assert.equal(privateByDefault.nextClass.start, '10:00');
 assert.equal(privateByDefault.updatedAt, now.getTime());
+assert.equal(privateByDefault.dateLabel, '25/11/2026');
+assert.equal(privateByDefault.currentClass, null);
+const inProgress = buildScheduleWidgetSnapshot({ activities: [{ ...schedule[0], start: '09:00', end: '10:00' }], now });
+assert.equal(inProgress.currentClass.start, '09:00');
 
 const optedIn = buildScheduleWidgetSnapshot({ activities: schedule, now, showDetails: true });
 assert.equal(optedIn.classes[0].title, 'Álgebra');
 assert.equal(optedIn.classes[0].location, undefined);
-assert.equal(buildScheduleWidgetSnapshot({ activities: [], now }).status, 'free');
+assert.equal(buildScheduleWidgetSnapshot({ activities: [], now }).status, 'empty');
 assert.equal(buildScheduleWidgetSnapshot({ activities: [{ ...schedule[0], suspended: { '2026-11-25': true } }], now }).status, 'suspended');
 const staleView = getScheduleWidgetSnapshotView(privateByDefault, new Date(2026, 10, 26, 8));
 assert.equal(staleView.status, 'stale');

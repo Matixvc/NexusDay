@@ -2,25 +2,52 @@ import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useAppData } from '../context/AppDataContext';
 import { buildScheduleWidgetSnapshot } from '../services/scheduleWidgetSnapshot';
+import { buildDayWidgetSnapshot } from '../services/dayWidgetSnapshot';
+import { buildCalendarWidgetSnapshot } from '../services/calendarWidgetSnapshot';
 
-function publish(activities, showDetails) {
+let publishing = false;
+const publishedSignatures = new Map();
+
+function safePublish(name, callback) {
+  try { callback(); return true; } catch { console.warn(`[widget:${name}] publication failed`); return false; }
+}
+
+export function getWidgetContentSignature(snapshot) {
+  const { updatedAt, ...content } = snapshot || {};
+  return JSON.stringify(content);
+}
+
+function publishIfChanged(name, widget, snapshot) {
+  const signature = getWidgetContentSignature(snapshot);
+  if (publishedSignatures.get(name) === signature) return false;
+  const published = safePublish(name, () => widget.updateSnapshot(snapshot));
+  if (published) publishedSignatures.set(name, signature);
+  return published;
+}
+
+export function publish(activities, routines, events, birthdays, showDetails, widgetModules) {
+  if (publishing) return false;
+  publishing = true;
   try {
-    const { scheduleWidget } = require('../widgets/ScheduleWidget');
-    scheduleWidget.updateSnapshot(buildScheduleWidgetSnapshot({ activities, showDetails }));
-  } catch {
-    // Expo Go and native builds without the widget module remain usable; a development build is required.
-  }
+    const scheduleWidget = widgetModules?.scheduleWidget || require('../widgets/ScheduleWidget').scheduleWidget;
+    const dayWidget = widgetModules?.dayWidget || require('../widgets/DayWidget').dayWidget;
+    const calendarWidget = widgetModules?.calendarWidget || require('../widgets/CalendarWidget').calendarWidget;
+    publishIfChanged('schedule', scheduleWidget, buildScheduleWidgetSnapshot({ activities, showDetails }));
+    publishIfChanged('day', dayWidget, buildDayWidgetSnapshot({ activities, routines, events }));
+    publishIfChanged('calendar', calendarWidget, buildCalendarWidgetSnapshot({ activities, events, birthdays }));
+  } finally { publishing = false; }
+  return true;
 }
 
 export default function ScheduleWidgetSync() {
-  const { activities, settings, hydrated } = useAppData();
+  const { activities, routines, events, birthdays, settings, hydrated } = useAppData();
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !hydrated) return undefined;
     const showDetails = settings?.scheduleWidgetShowDetails === true;
     let dayTimer;
     let disposed = false;
-    const update = () => publish(activities, showDetails);
+    const update = () => publish(activities, routines, events, birthdays, showDetails);
     const scheduleMidnightRefresh = () => {
       clearTimeout(dayTimer);
       const now = new Date();
@@ -48,7 +75,7 @@ export default function ScheduleWidgetSync() {
       clearTimeout(dayTimer);
       subscription.remove();
     };
-  }, [activities, hydrated, settings?.scheduleWidgetShowDetails]);
+  }, [activities, routines, events, birthdays, hydrated, settings?.scheduleWidgetShowDetails]);
 
   return null;
 }

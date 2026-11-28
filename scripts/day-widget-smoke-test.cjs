@@ -1,0 +1,14 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const babel = require('@babel/core');
+const root = path.resolve(__dirname, '..');
+const loader = require.extensions['.js'];
+require.extensions['.js'] = (module, filename) => { if (!filename.startsWith(`${root}${path.sep}src${path.sep}`)) return loader(module, filename); const result = babel.transformSync(fs.readFileSync(filename, 'utf8'), { filename, babelrc: false, configFile: false, presets: [require.resolve('babel-preset-expo')] }); module._compile(result.code, filename); };
+const { buildDayWidgetSnapshot, getDayWidgetSnapshotView } = require('../src/services/dayWidgetSnapshot');
+const now = new Date(2026, 10, 25, 9, 15);
+const snapshot = buildDayWidgetSnapshot({ now, activities: [{ day: 2, start: '10:00', end: '11:00', title: 'Privada' }], routines: [{ enabled: true, weekdays: [2], completedDates: [] }], events: [{ dateKey: '2026-11-25', time: '12:00', title: 'Secreto' }] });
+assert.equal(snapshot.dateKey, '2026-11-25'); assert.equal(snapshot.nextClass.start, '10:00'); assert.equal(snapshot.pendingRoutineCount, 1); assert.equal(snapshot.nextEvent.time, '12:00'); assert.equal(snapshot.nextClass.title, null); assert.equal(snapshot.nextEvent.title, null);
+assert.equal(buildDayWidgetSnapshot({ now }).status, 'empty'); assert.equal(getDayWidgetSnapshotView(snapshot, new Date(2026, 10, 26)).status, 'stale');
+assert.match(fs.readFileSync(path.join(root, 'app.json'), 'utf8'), /"name": "DayWidget"/);
+console.log('day-widget-smoke-test: 9 assertions passed');

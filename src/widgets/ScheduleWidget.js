@@ -13,6 +13,7 @@ function ScheduleWidget(props, environment) {
   const primary = dark ? '#F2F7F8' : '#172126';
   const muted = dark ? '#A8B7BC' : '#5C6A70';
   const accent = '#00C7D9';
+  const currentAccent = '#B8F2D0';
   const allClasses = stale ? [] : (props?.classes || []);
   const classes = allClasses
     .filter((item) => !props?.nextClass || item.start !== props.nextClass.start || item.end !== props.nextClass.end)
@@ -31,12 +32,15 @@ function ScheduleWidget(props, environment) {
         <Text color={accent} fontSize={12} fontWeight="700">NEXUSDAY</Text>
         <Text color={muted} fontSize={12}>MI HORARIO</Text>
       </Row>
+      <Text color={muted} fontSize={12}>{props?.dateLabel || localDateKey}</Text>
 
       {stale ? (
         <Column verticalArrangement="center">
           <Text color={primary} fontSize={17} fontWeight="700">Horario pendiente</Text>
           <Text color={muted} fontSize={13}>Abre NexusDay para actualizar el día.</Text>
         </Column>
+      ) : props?.status === 'empty' ? (
+        <Column verticalArrangement="center"><Text color={primary} fontSize={18} fontWeight="700">Sin horario</Text><Text color={muted} fontSize={13}>Añade clases en NexusDay.</Text></Column>
       ) : props?.status === 'free' ? (
         <Column verticalArrangement="center">
           <Text color={primary} fontSize={19} fontWeight="700">Día libre</Text>
@@ -49,10 +53,16 @@ function ScheduleWidget(props, environment) {
         </Column>
       ) : (
         <Column verticalArrangement="spaceBetween">
-          {props?.nextClass ? (
+          {props?.currentClass ? (
+            <Column>
+              <Text color={currentAccent} fontSize={12} fontWeight="700">EN CURSO</Text>
+              <Text color={primary} fontSize={18} fontWeight="700" maxLines={1} overflow="ellipsis">{props.currentClass.title || 'Clase actual'}</Text>
+              <Text color={muted} fontSize={13}>{props.currentClass.start} – {props.currentClass.end}</Text>
+            </Column>
+          ) : props?.nextClass ? (
             <Column>
               <Text color={muted} fontSize={12}>PRÓXIMA CLASE</Text>
-              <Text color={primary} fontSize={18} fontWeight="700">
+              <Text color={primary} fontSize={18} fontWeight="700" maxLines={1} overflow="ellipsis">
                 {props.nextClass.title || `${props.nextClass.start} – ${props.nextClass.end}`}
               </Text>
               {props.nextClass.title ? <Text color={muted} fontSize={13}>{props.nextClass.start} – {props.nextClass.end}</Text> : null}
