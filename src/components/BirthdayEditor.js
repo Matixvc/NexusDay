@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
-import { ALARM_LEAD_PRESETS, BIRTHDAY_LEADS, normalizeAlarmLead } from '../services/reminders';
+import { BIRTHDAY_LEADS } from '../services/reminders';
+import { ALARM_LEAD_PRESETS, normalizeAlarmLead } from '../services/notifications';
 import {
   BIRTHDAY_EMOJIS,
   birthdayLeadLabel,

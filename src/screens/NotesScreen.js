@@ -49,8 +49,8 @@ import { select as selectHaptic, success as successHaptic } from '../services/ha
 import { timeAgo } from '../utils/dates';
 import { DateField } from '../components/ui/DateField';
 import { TimeField } from '../components/ui/TimeField';
-import { ALARM_LEAD_PRESETS, normalizeAlarmLead, syncNoteAlarm } from '../services/reminders';
-import { cancelAlarm } from '../services/notifications';
+import { syncNoteAlarm } from '../services/reminders';
+import { ALARM_LEAD_PRESETS, cancelAlarm, normalizeAlarmLead } from '../services/notifications';
 import { selectNoteGroups } from './notesPresentation';
 
 /** Una nota nueva en blanco, con el modelo enriquecido (kind, items, tags). */

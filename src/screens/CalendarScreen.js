@@ -27,9 +27,9 @@ import { DateField } from '../components/ui/DateField';
 import { TimeField } from '../components/ui/TimeField';
 import { ConfirmSheet, OptionSheet, Sheet } from '../components/ui/Sheet';
 import { SwitchRow } from '../components/ui/Switch';
-import { ALARM_LEAD_PRESETS, normalizeAlarmLead, EVENT_REMINDERS, dropReminder, syncEventAlarm, syncEventReminder } from '../services/reminders';
+import { EVENT_REMINDERS, dropReminder, syncEventAlarm, syncEventReminder } from '../services/reminders';
 import { EVENT_CATEGORIES, categoryOf } from '../services/eventCategories';
-import { cancelAlarm } from '../services/notifications';
+import { ALARM_LEAD_PRESETS, cancelAlarm, normalizeAlarmLead } from '../services/notifications';
 import {
   blankBirthday,
   deleteBirthdayRecord,

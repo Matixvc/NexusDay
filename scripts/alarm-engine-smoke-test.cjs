@@ -62,6 +62,27 @@ stub('../src/theme/theme', { colors: { accent: '#8265F5' } });
 
 const alarms = require('../src/services/notifications');
 
+// Regression NEX-FIX1: these render paths execute normalizeAlarmLead as soon as the
+// alarm section becomes visible. Importing it from reminders leaves it undefined in
+// the production bundle and crashes React during render.
+for (const relativePath of [
+  '../src/screens/NotesScreen.js',
+  '../src/screens/CalendarScreen.js',
+  '../src/components/BirthdayEditor.js',
+]) {
+  const source = fs.readFileSync(path.resolve(__dirname, relativePath), 'utf8');
+  assert.doesNotMatch(
+    source,
+    /import\s*\{[^}]*\b(?:ALARM_LEAD_PRESETS|normalizeAlarmLead)\b[^}]*\}\s*from\s*['"]\.\.\/services\/reminders['"]/s,
+    `${relativePath} must not import alarm engine helpers from reminders`,
+  );
+  assert.match(
+    source,
+    /import\s*\{[^}]*\bnormalizeAlarmLead\b[^}]*\}\s*from\s*['"]\.\.\/services\/notifications['"]/s,
+    `${relativePath} must import normalizeAlarmLead from notifications`,
+  );
+}
+
 (async () => {
   assert.deepEqual(alarms.ALARM_LEAD_PRESETS, [15, 30, 60, 120]);
   assert.equal(alarms.normalizeAlarmLead('45'), 45);
