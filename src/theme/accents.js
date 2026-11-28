@@ -23,8 +23,8 @@ export const ACCENT_THEMES = [
     accentInk: '#00210F',
     alt: '#69F0AE',
     light: {
-      accent: '#00875A',
-      accentSoft: 'rgba(0, 135, 90, 0.12)',
+      accent: '#007A50',
+      accentSoft: 'rgba(0, 122, 80, 0.12)',
       accentInk: '#ECFFF5',
     },
   },
@@ -37,8 +37,8 @@ export const ACCENT_THEMES = [
     accentInk: '#00252B',
     alt: '#84FFFF',
     light: {
-      accent: '#007A99',
-      accentSoft: 'rgba(0, 122, 153, 0.12)',
+      accent: '#00728F',
+      accentSoft: 'rgba(0, 114, 143, 0.12)',
       accentInk: '#EBFAFF',
     },
   },
@@ -46,8 +46,8 @@ export const ACCENT_THEMES = [
     id: 'azul',
     label: 'Azul',
     hint: 'Azul intenso y confiable para el día a día.',
-    accent: '#2979FF',
-    accentSoft: 'rgba(41, 121, 255, 0.16)',
+    accent: '#5794FF',
+    accentSoft: 'rgba(87, 148, 255, 0.16)',
     accentInk: '#06122E',
     alt: '#82B1FF',
     light: {
@@ -60,13 +60,13 @@ export const ACCENT_THEMES = [
     id: 'rojo',
     label: 'Rojo',
     hint: 'Rojo vivo para urgente y por hacer.',
-    accent: '#FF1744',
-    accentSoft: 'rgba(255, 23, 68, 0.15)',
+    accent: '#FF758F',
+    accentSoft: 'rgba(255, 117, 143, 0.15)',
     accentInk: '#2A0007',
     alt: '#FF8A80',
     light: {
-      accent: '#C40024',
-      accentSoft: 'rgba(196, 0, 36, 0.12)',
+      accent: '#B91C3C',
+      accentSoft: 'rgba(185, 28, 60, 0.12)',
       accentInk: '#FFEDEF',
     },
   },
@@ -74,28 +74,28 @@ export const ACCENT_THEMES = [
     id: 'amarillo',
     label: 'Amarillo',
     hint: 'Amarillo cálido que destaca sin gritar.',
-    accent: '#FFC400',
-    accentSoft: 'rgba(255, 196, 0, 0.16)',
+    accent: '#FFD24A',
+    accentSoft: 'rgba(255, 210, 74, 0.16)',
     accentInk: '#2B1D00',
     alt: '#FFE57F',
     light: {
-      accent: '#8A6100',
-      accentSoft: 'rgba(138, 97, 0, 0.12)',
+      accent: '#7A5700',
+      accentSoft: 'rgba(122, 87, 0, 0.12)',
       accentInk: '#FFF8E6',
     },
   },
   {
     id: 'purpura',
-    label: 'Púrpura',
-    hint: 'Púrpura creativo para ideas y proyectos.',
-    accent: '#D500F9',
-    accentSoft: 'rgba(213, 0, 249, 0.16)',
-    accentInk: '#22002B',
-    alt: '#EA80FC',
+    label: 'Violeta',
+    hint: 'Violeta creativo y expresivo para ideas y proyectos.',
+    accent: '#A995FF',
+    accentSoft: 'rgba(169, 149, 255, 0.16)',
+    accentInk: '#171124',
+    alt: '#8265F5',
     light: {
-      accent: '#8E00A8',
-      accentSoft: 'rgba(142, 0, 168, 0.12)',
-      accentInk: '#FCE9FF',
+      accent: '#6848D8',
+      accentSoft: 'rgba(104, 72, 216, 0.12)',
+      accentInk: '#F7F4FF',
     },
   },
 ];
@@ -121,6 +121,15 @@ export function getAccentTheme(id) {
  * todas las opciones a la vez.
  */
 export function resolveAccent(theme, surfaceId) {
+  if (surfaceId === 'mono' || surfaceId === 'amoled') {
+    return {
+      accent: '#EFEFEF',
+      accentSoft: 'rgba(239, 239, 239, 0.14)',
+      accentInk: '#0E0E0E',
+      alt: '#B8B8B8',
+      swatch: '#EFEFEF',
+    };
+  }
   if (surfaceId === 'light') {
     return {
       accent: theme.light.accent,
@@ -137,5 +146,9 @@ export function resolveAccent(theme, surfaceId) {
     alt: theme.alt,
     swatch: theme.accent,
   };
+}
+
+export function resolvePreviewAccent(theme, previewSurfaceId, activeSurfaceId) {
+  return resolveAccent(theme, activeSurfaceId === 'mono' ? 'mono' : previewSurfaceId);
 }
 

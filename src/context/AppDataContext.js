@@ -1,26 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { KEYS, loadValue, saveValue } from '../services/storage';
+import { KEYS, loadJSON, mutateLockedCollection, withCollectionLock, loadValue, persistRestoreSnapshot, saveValue } from '../services/storage';
+import { completeBackupCollections, validateBackup } from '../services/backupRestore';
 import { usePersistentCollection } from '../hooks/usePersistentCollection';
+import { useRoutineCollection } from '../hooks/useRoutineCollection';
 import { DEFAULT_TAB_CONFIG, normalizeTabConfig } from '../services/tabs';
 import * as Notif from '../services/notifications';
-import { subscribeToNotificationActions } from '../services/notifications';
 import { resyncReminders } from '../services/reminders';
-import { todayKey } from '../utils/dates';
-import {
-  seedActivities,
-  seedBirthdays,
-  seedEvents,
-  seedExpenses,
-  seedHabits,
-  seedNotes,
-} from '../data/seeds';
 
 const AppDataContext = createContext(null);
 
 const UNKNOWN_PERMISSION = { status: 'unknown', granted: false, canAskAgain: true, checked: false };
 
-const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true };
+const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true, reduceMotion: false, lastBackupAt: null };
 
 /**
  * First-run tutorial.
@@ -32,17 +24,18 @@ const DEFAULT_SETTINGS = { displayName: '', career: '', privacyEnabled: true };
 const UNSEEN_TUTORIAL = { completed: null, replay: false };
 
 /**
- * Single source of truth for the six persisted collections, the user preferences
+ * Single source of truth for the seven persisted collections, the user preferences
  * (greeting name, preferred calendar) and the notification permission state.
  * Screens consume it through `useAppData()`.
  */
 export function AppDataProvider({ children }) {
-  const activities = usePersistentCollection(KEYS.activities, seedActivities());
-  const events = usePersistentCollection(KEYS.events, seedEvents());
-  const birthdays = usePersistentCollection(KEYS.birthdays, seedBirthdays());
-  const notes = usePersistentCollection(KEYS.notes, seedNotes());
-  const habits = usePersistentCollection(KEYS.habits, seedHabits());
-  const expenses = usePersistentCollection(KEYS.expenses, seedExpenses());
+  const activities = usePersistentCollection(KEYS.activities);
+  const events = usePersistentCollection(KEYS.events);
+  const birthdays = usePersistentCollection(KEYS.birthdays);
+  const notes = usePersistentCollection(KEYS.notes);
+  const habits = usePersistentCollection(KEYS.habits);
+  const expenses = usePersistentCollection(KEYS.expenses);
+  const routines = useRoutineCollection();
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -56,7 +49,7 @@ export function AppDataProvider({ children }) {
     loadValue(KEYS.onboarding, false).then((stored) => {
       if (!alive) return;
       setTutorial({ completed: Boolean(stored), replay: false });
-    });
+    }).catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -86,7 +79,7 @@ export function AppDataProvider({ children }) {
       }
 
       if (storedTabs) setTabConfigState(normalizeTabConfig(storedTabs));
-    })();
+    })().catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -134,24 +127,6 @@ export function AppDataProvider({ children }) {
       if (active) setPermission({ ...status, checked: true });
     });
 
-    // A "✓ Completar" from the notification shade is applied to the live collection, so
-    // the tick shows up in the UI without waiting for the next app start.
-    const unsubscribe = Notif.subscribeToNotificationActions((action) => {
-      if (action.type === 'habit-complete') {
-        habits.update(action.itemId, { marks: action.marks });
-        return;
-      }
-      if (action.type === 'reminder-id') {
-        if (events.items.some((item) => item.id === action.itemId)) {
-          events.update(action.itemId, { notificationId: action.notificationId });
-        } else if (habits.items.some((item) => item.id === action.itemId)) {
-          habits.update(action.itemId, { notificationId: action.notificationId });
-        } else {
-          birthdays.update(action.itemId, { notificationId: action.notificationId });
-        }
-      }
-    });
-
     // Permission is often flipped from the OS settings screen (the "Activa los
     // avisos" card sends people there), so re-read it whenever the app returns.
     const subscription = AppState.addEventListener('change', (state) => {
@@ -160,19 +135,18 @@ export function AppDataProvider({ children }) {
 
     return () => {
       active = false;
-      unsubscribe();
       subscription.remove();
     };
-  }, [refreshPermission, habits, events, birthdays]);
+  }, [refreshPermission]);
 
   // Re-arm reminders that Android may have dropped (reboot, app update) or that
   // were saved before permission was granted. Runs once per session, after
   // hydration, and retries when permission flips to granted.
   const resyncedOnce = useRef(false);
-  const pendingRef = useRef({ events: [], birthdays: [], activities: [] });
+  const pendingRef = useRef({ events: [], birthdays: [], notes: [], activities: [], routines: [] });
 
   useEffect(() => {
-    pendingRef.current = { events: events.items, birthdays: birthdays.items, activities: activities.items };
+    pendingRef.current = { events: events.items, birthdays: birthdays.items, notes: notes.items, activities: activities.items, routines: routines.items };
   });
 
   const allHydrated =
@@ -182,88 +156,155 @@ export function AppDataProvider({ children }) {
     notes.hydrated &&
     habits.hydrated &&
     expenses.hydrated;
+  const allCollectionsHydrated = allHydrated && routines.hydrated;
+  const storageRecoveryError = [activities, events, birthdays, notes, habits, expenses].some((collection) => collection.recoveryError) || routines.restoreRecoveryError;
 
-  /** Wipes every local collection (used by Ajustes › Borrar datos and the first-run wipe). */
-  const clearAllData = useCallback(() => {
-    activities.replaceAll([]);
-    events.replaceAll([]);
-    birthdays.replaceAll([]);
-    notes.replaceAll([]);
-    habits.replaceAll([]);
-    expenses.replaceAll([]);
-  }, [activities, events, birthdays, notes, habits, expenses]);
+  /** Wipes every local collection (used by Ajustes › Borrar datos). */
+  const clearAllData = useCallback(async () => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => withCollectionLock(async () => {
+    const empty = [];
+    const entries = [KEYS.activities, KEYS.events, KEYS.birthdays, KEYS.notes, KEYS.habits, KEYS.expenses, KEYS.routines]
+      .map((key) => ({ key, value: JSON.stringify(empty) }));
+    await persistRestoreSnapshot(entries);
+    await Promise.all(currentRoutines.map((item) => Notif.cancelAlarm(item.alarmNotificationId)));
+    activities.replaceAll(empty);
+    events.replaceAll(empty);
+    birthdays.replaceAll(empty);
+    notes.replaceAll(empty);
+    habits.replaceAll(empty);
+    expenses.replaceAll(empty);
+    setSnapshot(empty);
+    return { dataCleared: true };
+  })), [activities, events, birthdays, notes, habits, expenses, routines]);
 
-  /**
-   * Ajustes › "Importar copia de seguridad": reemplaza cada colección y los ajustes por los
-   * del archivo. Solo se llega acá tras validar el JSON y pasar el ConfirmSheet, porque aquí
-   * no hay vuelta atrás: lo anterior queda descartado (y persistido) en el mismo instante.
-   */
+  /** Persists a validated restore snapshot and updates memory only after verification. */
   const restoreBackup = useCallback(
-    async (backup = {}) => {
+    async (backup = {}) => routines.runExclusive(async ({ items: currentRoutines, setSnapshot }) => withCollectionLock(async () => {
+      if (routines.recoveryError && !Array.isArray(backup.routines)) {
+        throw new Error('RESTORE_ROUTINES_UNAVAILABLE');
+      }
+      if (validateBackup({ app: 'NexusDay', collections: backup }) !== null) {
+        throw new Error('RESTORE_INVALID_SNAPSHOT');
+      }
+      const sourceCollections = completeBackupCollections(backup, {
+        activities: backup.activities ?? await loadJSON(KEYS.activities),
+        events: backup.events ?? await loadJSON(KEYS.events),
+        birthdays: backup.birthdays ?? await loadJSON(KEYS.birthdays),
+        notes: backup.notes ?? await loadJSON(KEYS.notes),
+        habits: backup.habits ?? await loadJSON(KEYS.habits),
+        expenses: backup.expenses ?? await loadJSON(KEYS.expenses),
+        routines: currentRoutines,
+      });
       // Los arrays locales son la fuente de verdad: `events.items` (por ejemplo) sigue
       // apuntando al render anterior hasta que React procesa el `setItems` nuevo. Se
       // elimina `notificationId` explícitamente para que `resyncReminders` genere
       // recordatorios válidos sobre los datos restaurados en este mismo dispositivo.
-      const restoredActivities = (backup.activities || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredEvents = (backup.events || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredBirthdays = (backup.birthdays || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredNotes = (backup.notes || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredHabits = (backup.habits || []).map((item) => ({ ...item, notificationId: null }));
-      const restoredExpenses = (backup.expenses || []).map((item) => ({ ...item, notificationId: null }));
+      const restoredActivities = sourceCollections.activities.map((item) => ({ ...item, notificationId: null }));
+      const restoredEvents = sourceCollections.events.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null }));
+      const restoredBirthdays = sourceCollections.birthdays.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null, alarmTime: item.alarmTime || '09:00' }));
+      const restoredNotes = sourceCollections.notes.map((item) => ({ ...item, notificationId: null, alarmNotificationId: null }));
+      const restoredHabits = sourceCollections.habits.map((item) => ({ ...item, notificationId: null }));
+      const restoredExpenses = sourceCollections.expenses.map((item) => ({ ...item, notificationId: null }));
+      const restoredRoutines = sourceCollections.routines.map((item) => ({ ...item, alarmNotificationId: null }));
 
       // Un array puede estar vacío y el `Array.isArray` distingue un resultado válido de
       // una colección ausente: `replaceAll([])` limpia los registros anteriores.
-      if (Array.isArray(backup.activities)) activities.replaceAll(restoredActivities);
-      if (Array.isArray(backup.events)) events.replaceAll(restoredEvents);
-      if (Array.isArray(backup.birthdays)) birthdays.replaceAll(restoredBirthdays);
-      if (Array.isArray(backup.notes)) notes.replaceAll(restoredNotes);
-      if (Array.isArray(backup.habits)) habits.replaceAll(restoredHabits);
-      if (Array.isArray(backup.expenses)) expenses.replaceAll(restoredExpenses);
+      const nextSettings = backup.settings ? { ...settings, ...backup.settings } : null;
+      const nextUserName = typeof backup.userName === 'string' ? backup.userName.trim() : null;
+      const nextTabConfig = backup.tabConfig ? normalizeTabConfig(backup.tabConfig) : null;
+      const entries = [
+        [KEYS.activities, restoredActivities],
+        [KEYS.events, restoredEvents],
+        [KEYS.birthdays, restoredBirthdays],
+        [KEYS.notes, restoredNotes],
+        [KEYS.habits, restoredHabits],
+        [KEYS.expenses, restoredExpenses],
+        [KEYS.routines, restoredRoutines],
+      ].map(([key, value]) => ({ key, value: JSON.stringify(value) }));
+      if (nextSettings) entries.push({ key: KEYS.settings, value: JSON.stringify(nextSettings) });
+      if (nextUserName !== null) entries.push({ key: KEYS.userName, value: JSON.stringify(nextUserName) });
+      if (nextTabConfig) entries.push({ key: KEYS.tabConfig, value: JSON.stringify(nextTabConfig) });
 
-      if (backup.settings && typeof backup.settings === 'object') updateSettings(backup.settings);
-      if (typeof backup.userName === 'string') setUserName(backup.userName);
-      if (backup.tabConfig) setTabConfig(backup.tabConfig);
+      await persistRestoreSnapshot(entries);
+      await Promise.all(currentRoutines.map((item) => Notif.cancelAlarm(item.alarmNotificationId)));
+
+      activities.replaceAll(restoredActivities);
+      events.replaceAll(restoredEvents);
+      birthdays.replaceAll(restoredBirthdays);
+      notes.replaceAll(restoredNotes);
+      habits.replaceAll(restoredHabits);
+      expenses.replaceAll(restoredExpenses);
+      setSnapshot(restoredRoutines);
+      if (nextSettings) setSettings(nextSettings);
+      if (nextUserName !== null) setUserNameState(nextUserName);
+      if (nextTabConfig) setTabConfigState(nextTabConfig);
 
       // `resyncReminders` se ejecuta sobre los datos reales restaurados. Un fallo aquí no
       // revierte la restauración de datos.
+      let scheduledRoutineAlarmIds = [];
       try {
         const patches = await resyncReminders({
           events: restoredEvents,
           birthdays: restoredBirthdays,
+          notes: restoredNotes,
           habits: restoredHabits,
           activities: restoredActivities,
+          routines: restoredRoutines,
         });
-        patches.eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
-        patches.birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
-        patches.habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
-        patches.activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
-        return { dataRestored: true, notificationsRecreated: true };
+        scheduledRoutineAlarmIds = patches.routinePatches?.map((patch) => patch.alarmNotificationId).filter(Boolean) || [];
+        for (const [key, updates] of [
+          [KEYS.events, patches.eventPatches], [KEYS.birthdays, patches.birthdayPatches],
+          [KEYS.habits, patches.habitPatches], [KEYS.activities, patches.activityPatches],
+        ]) {
+          if (!updates.length) continue;
+          const ids = new Map(updates.map(patch => [patch.id, patch.notificationId]));
+          await mutateLockedCollection(key, items => items.map(item =>
+            ids.has(item.id) ? { ...item, notificationId: ids.get(item.id) } : item
+          ));
+        }
+        for (const [key, updates] of [[KEYS.events, patches.eventAlarmPatches], [KEYS.birthdays, patches.birthdayAlarmPatches], [KEYS.notes, patches.noteAlarmPatches]]) {
+          if (!updates?.length) continue;
+          const ids = new Map(updates.map((patch) => [patch.id, patch.alarmNotificationId]));
+          const source = key === KEYS.events ? restoredEvents : key === KEYS.birthdays ? restoredBirthdays : restoredNotes;
+          const next = source.map((item) => ids.has(item.id) ? { ...item, alarmNotificationId: ids.get(item.id) } : item);
+          const committed = await mutateLockedCollection(key, () => next);
+          if (!committed) throw new Error('RESTORE_ALARM_PATCH_FAILED');
+          // The storage listener normally publishes this too; explicitly publish the exact
+          // committed snapshot so React cannot lag behind when a restore is already hydrated.
+          if (key === KEYS.events) events.replaceAll(next);
+          else if (key === KEYS.birthdays) birthdays.replaceAll(next);
+          else notes.replaceAll(next);
+        }
+        if (patches.routinePatches?.length) {
+          const alarmIds = new Map(patches.routinePatches.map((patch) => [patch.id, patch.alarmNotificationId]));
+          const patchedRoutines = restoredRoutines.map((item) => (
+            alarmIds.has(item.id) ? { ...item, alarmNotificationId: alarmIds.get(item.id) } : item
+          ));
+          await mutateLockedCollection(KEYS.routines, () => patchedRoutines);
+          setSnapshot(patchedRoutines);
+        }
+        return { dataRestored: true, notificationsRecreated: patches.failures.length === 0 };
       } catch (error) {
-        console.warn('[restoreBackup] could not resync reminders', error);
+        void error;
+        await Promise.all(scheduledRoutineAlarmIds.map((id) => Notif.cancelAlarm(id)));
         return { dataRestored: true, notificationsRecreated: false };
       }
-    },
-    [activities, events, birthdays, notes, habits, expenses, updateSettings, setUserName, setTabConfig],
+    })),
+    [activities, events, birthdays, notes, habits, expenses, settings, routines],
   );
 
-  /**
-   * Tutorial finished. On the first run this also wipes the sample data, so the user
-   * starts from a completely blank app instead of inheriting somebody else's schedule.
-   */
-  const finishTutorial = useCallback(() => {
-    if (!tutorial.replay) clearAllData();
-    saveValue(KEYS.onboarding, true);
+  // The guide only changes its own completion flag.
+  const finishTutorial = useCallback(async () => {
+    await saveValue(KEYS.onboarding, true);
     setTutorial({ completed: true, replay: false });
-  }, [tutorial.replay, clearAllData]);
+  }, []);
 
   /** Ajustes › "Ver el tutorial otra vez": show the slides again, keeping the data. */
   const replayTutorial = useCallback(() => {
-    saveValue(KEYS.onboarding, false);
     setTutorial({ completed: false, replay: true });
   }, []);
 
   useEffect(() => {
-    if (!allHydrated) return;
+    if (!allCollectionsHydrated) return;
     if (!permission.granted) {
       // Permission revoked mid-session cancels everything, so allow one more
       // pass if it is granted again before the app closes.
@@ -279,12 +320,19 @@ export function AppDataProvider({ children }) {
     // El cleanup cancela el timer si el contexto cambia antes de tiempo.
     const timer = setTimeout(() => {
       resyncReminders({ ...pendingRef.current, habits: habits.items }).then(
-        ({ eventPatches, birthdayPatches, habitPatches, activityPatches = [] }) => {
+        async ({ eventPatches, birthdayPatches, eventAlarmPatches = [], birthdayAlarmPatches = [], noteAlarmPatches = [], habitPatches, activityPatches = [], routinePatches = [] }) => {
           if (!active) return;
           eventPatches.forEach(({ id, notificationId }) => events.update(id, { notificationId }));
           birthdayPatches.forEach(({ id, notificationId }) => birthdays.update(id, { notificationId }));
           habitPatches.forEach(({ id, notificationId }) => habits.update(id, { notificationId }));
           activityPatches.forEach(({ id, notificationId }) => activities.update(id, { notificationId }));
+          eventAlarmPatches.forEach(({ id, alarmNotificationId }) => events.update(id, { alarmNotificationId }));
+          birthdayAlarmPatches.forEach(({ id, alarmNotificationId }) => birthdays.update(id, { alarmNotificationId }));
+          noteAlarmPatches.forEach(({ id, alarmNotificationId }) => notes.update(id, { alarmNotificationId }));
+          for (const { id, alarmNotificationId } of routinePatches) {
+            const linked = await routines.update(id, { alarmNotificationId });
+            if (!linked?.ok && alarmNotificationId) await Notif.cancelAlarm(alarmNotificationId);
+          }
         },
       );
     }, 350);
@@ -293,45 +341,12 @@ export function AppDataProvider({ children }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [allHydrated, permission.granted, events, birthdays, habits, activities]);
-
-  /** Mantiene el estado en memoria sincronizado cuando el usuario actúa desde una notificación
-   * (✓ Completar / ⏱ Posponer). `notifications.js` ya escribe a AsyncStorage; este effect se
-   * encarga de que lo que se ve en pantalla se actualice al instante sin reiniciar la app.
-   * No procesa acciones hasta que todas las colecciones estén hidratadas, para no escribir
-   * sobre datos de semilla en lugar de los datos reales del usuario. */
-  useEffect(() => {
-    if (!allHydrated) return;
-    const unsubscribe = subscribeToNotificationActions((action) => {
-      if (action.type === 'habit-complete') {
-        const today = todayKey();
-        habits.update(action.itemId, {
-          marks: (() => {
-            const current = habits.items.find((h) => h.id === action.itemId);
-            const marks = Array.isArray(current?.marks) ? current.marks : [];
-            if (marks.includes(today)) return marks;
-            return [...marks, today].sort();
-          })(),
-          notificationId: null,
-        });
-      } else if (action.type === 'reminder-id') {
-        // Actualizar el notificationId en la colección correspondiente
-        const collections = [events, birthdays, habits];
-        for (const collection of collections) {
-          const item = collection.items.find((i) => i.id === action.itemId);
-          if (item) {
-            collection.update(action.itemId, { notificationId: action.notificationId });
-            break;
-          }
-        }
-      }
-    });
-    return unsubscribe;
-  }, [allHydrated, events, birthdays, habits]);
+  }, [allCollectionsHydrated, permission.granted, events, birthdays, notes, habits, activities, routines]);
 
   const value = useMemo(
     () => ({
-      hydrated: allHydrated,
+      hydrated: allCollectionsHydrated && settingsLoaded,
+      storageRecoveryError,
 
       onboardingCompleted: tutorial.completed,
       tutorialReplay: tutorial.replay,
@@ -373,6 +388,15 @@ export function AppDataProvider({ children }) {
       updateExpense: expenses.update,
       removeExpense: expenses.remove,
 
+      routines: routines.items,
+      routinesHydrated: routines.hydrated,
+      routinesRecoveryError: routines.recoveryError,
+      routinesBusy: routines.busy,
+      createRoutine: routines.create,
+      updateRoutine: routines.update,
+      removeRoutine: routines.remove,
+      toggleRoutineCompletion: routines.toggleCompletion,
+
       settings,
       settingsLoaded,
       updateSettings,
@@ -385,13 +409,15 @@ export function AppDataProvider({ children }) {
       notificationsSupported: Notif.isSupported(),
     }),
     [
-      allHydrated,
+      allCollectionsHydrated,
+      storageRecoveryError,
       activities,
       events,
       birthdays,
       notes,
       habits,
       expenses,
+      routines,
       settings,
       settingsLoaded,
       updateSettings,

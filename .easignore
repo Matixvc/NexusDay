@@ -1,0 +1,67 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+.git
+build/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.apk
+*.aab
+*.orig.*
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+credentials.json
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+.env*.local
+
+# Local exports and app data; never include user backups in a build archive
+/backups/
+/respaldos/
+*.backup.json
+*.respaldo.json
+nexusday-backup*.json
+nexusday-respaldo*.json
+*.sqlite
+*.sqlite3
+*.db
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Workspace-only materials excluded from Expo build archive
+.agents/
+design/
+tsconfig.json
+.claude/
+.superpowers/

@@ -97,12 +97,12 @@ export default function HabitsScreen() {
 
   const canSave = Boolean(sheet) && Boolean(sheet.values.name.trim());
 
-  const save = () => {
+  const save = async () => {
     if (!canSave) return;
     const { mode, id, values } = sheet;
     const payload = { name: values.name.trim(), emoji: values.emoji, color: values.color };
-    if (mode === 'edit') updateHabit(id, payload);
-    else addHabit({ ...payload, marks: [] });
+    const saved = mode === 'edit' ? await updateHabit(id, payload) : await addHabit({ ...payload, marks: [] });
+    if (!saved) { setNotice('No se pudo guardar el hábito.'); return; }
     setSheet(null);
   };
 

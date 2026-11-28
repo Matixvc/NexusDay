@@ -3,6 +3,7 @@ import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { useSwipeLockActions } from '../../context/SwipeLockContext';
 import { swipe as swipeHaptic } from '../../services/haptics';
+import { getSwipeActionSide, SWIPE_ACTION_THRESHOLD } from './swipeDirection';
 
 /**
  * Swipe-to-action row.
@@ -30,8 +31,8 @@ import { swipe as swipeHaptic } from '../../services/haptics';
 
 const ACTIVE_OFFSET_X = 8; // px of horizontal travel that arms the row
 const FAIL_OFFSET_Y = 12; // px of vertical travel that hands the gesture to the list
-const ACTION_WIDTH = 96; // px that must be travelled to fire the action
-const MAX_TRAVEL = 108;
+const ACTION_WIDTH = SWIPE_ACTION_THRESHOLD;
+const MAX_TRAVEL = SWIPE_ACTION_THRESHOLD;
 /** px of travel over which an action strip fades in — it is invisible while the row is shut. */
 const ACTION_FADE = 48;
 
@@ -116,11 +117,10 @@ function SwipeRow({ leftAction, rightAction, children, style, disabled, onAction
         const dx = move.dx;
         let fired = false;
 
-        if (dx > ACTION_WIDTH && leftAction?.onPress) {
-          leftAction.onPress();
-          fired = true;
-        } else if (dx < -ACTION_WIDTH && rightAction?.onPress) {
-          rightAction.onPress();
+        const side = getSwipeActionSide(dx);
+        const action = side === 'left' ? leftAction : side === 'right' ? rightAction : null;
+        if (action?.onPress) {
+          action.onPress();
           fired = true;
         }
 

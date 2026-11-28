@@ -6,13 +6,14 @@ import { habitStreak } from './dashboard';
 /**
  * Global search behind the field in the dashboard.
  *
- * One pass over the four collections the dashboard can reach (notes, events, habits and
- * expenses), scored so the most obvious match comes first: a title that starts with the
+ * One pass over the collections the dashboard can reach, scored so the most obvious match
+ * comes first: a title that starts with the
  * query beats one that merely contains it, and newer items win ties.
  */
 export const SEARCH_SOURCES = {
   note: { route: 'Notas', label: 'Nota', icon: '📝' },
   event: { route: 'Agenda', label: 'Evento', icon: '🗓️' },
+  activity: { route: 'Horario', label: 'Clase', icon: '🎓' },
   habit: { route: 'Hábitos', label: 'Hábito', icon: '💪' },
   expense: { route: 'Gastos', label: 'Gasto', icon: '💰' },
 };
@@ -35,7 +36,7 @@ function score(haystacks, needle) {
 /** Everything the dashboard can find, already ordered and capped. */
 export function searchEverything(
   query,
-  { notes = [], events = [], habits = [], expenses = [], limit = 8 } = {},
+  { notes = [], events = [], activities = [], habits = [], expenses = [], limit = 8 } = {},
 ) {
   const needle = normalizeText(query);
   if (!needle) return { query: '', items: [], total: 0, byType: {} };
@@ -98,6 +99,30 @@ export function searchEverything(
       subtitle: `${formatDateShort(event.dateKey)} · ${event.time || 'sin hora'}${event.category ? ` · ${event.category}` : ''}`,
       color: event.color,
       recency: event.dateKey || '',
+      score: match.score,
+    });
+  });
+
+  activities.forEach((activity) => {
+    const match = score(
+      [
+        { text: activity.title, weight: 0 },
+        { text: activity.location, weight: 1 },
+        { text: activity.start, weight: 2 },
+      ],
+      needle,
+    );
+    if (!match) return;
+    candidates.push({
+      type: 'activity',
+      id: activity.id,
+      route: SEARCH_SOURCES.activity.route,
+      typeLabel: SEARCH_SOURCES.activity.label,
+      icon: SEARCH_SOURCES.activity.icon,
+      title: activity.title,
+      subtitle: `${activity.start || 'sin hora'}${activity.location ? ` · ${activity.location}` : ''}`,
+      color: activity.color,
+      recency: '',
       score: match.score,
     });
   });

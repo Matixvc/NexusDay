@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,10 +9,22 @@ import { ThemeProvider, useAccentTheme } from './src/context/ThemeContext';
 import { SwipeLockProvider } from './src/context/SwipeLockContext';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import RootNavigator from './src/navigation/RootNavigator';
-import { HOME_TAB } from './src/navigation/tabs';
-import { setTabHidden, tabOrderSignature } from './src/services/tabs';
+import { HOME_TAB, PRIMARY_TAB_NAMES } from './src/navigation/tabs';
+import { tabOrderSignature } from './src/services/tabs';
 import { configureNotifications } from './src/services/notifications';
 import { themedStyles, colors, spacing, typography } from './src/theme/theme';
+import { useFonts } from './src/hooks/useFonts';
+import ScheduleWidgetSync from './src/components/ScheduleWidgetSync';
+
+// Expo Widgets is intentionally unavailable in Expo Go. Loading it behind a guard preserves
+// the regular app preview while a native development build registers the Android provider.
+if (Platform.OS === 'android') {
+  try {
+    require('./src/widgets/ScheduleWidget');
+  } catch {
+    // The widget becomes available after installing a build that includes the config plugin.
+  }
+}
 
 enableScreens();
 
@@ -23,10 +35,25 @@ configureNotifications();
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
 
 export default function App() {
+  const { fontsLoaded } = useFonts();
+
+  // Mientras las fuentes no cargan, se muestra una pantalla de carga mínima
+  // para evitar que el texto parpadee entre la fuente del sistema y Manrope.
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.fontLoading}>
+          <Text style={styles.fontLoadingText}>{APP_NAME.slice(0, 1)}</Text>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <AppDataProvider>
+          <ScheduleWidgetSync />
           <SwipeLockProvider>
             <AppStatusBar />
             <AppShell />
@@ -55,20 +82,18 @@ function AppStatusBar() {
  * the navigator (fresh styles) while `lastRoute` puts the user back on the tab they left.
  */
 function AppShell() {
-  const { onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, setTabConfig } = useAppData();
-  // Remembered so a remount (tab layout change) lands on the same section.
+  const { hydrated, onboardingCompleted, tutorialReplay, finishTutorial, tabConfig, storageRecoveryError } = useAppData();
+  // Remembered so any navigator remount lands on the same registered route.
   const [lastRoute, setLastRoute] = useState(HOME_TAB);
+  const [lastPrimaryRoute, setLastPrimaryRoute] = useState(HOME_TAB);
 
   const onRouteChange = useCallback((name) => {
     setLastRoute((previous) => (previous === name ? previous : name));
+    if (PRIMARY_TAB_NAMES.includes(name)) setLastPrimaryRoute((previous) => (previous === name ? previous : name));
   }, []);
 
-  const onRevealTab = useCallback(
-    (name) => setTabConfig(setTabHidden(tabConfig, name, false)),
-    [setTabConfig, tabConfig],
-  );
-
-  if (onboardingCompleted === null) return <BootScreen />;
+  if (storageRecoveryError) return <BootScreen message="No pudimos recuperar el almacenamiento anterior. Cierra y vuelve a abrir NexusDay para reintentar." />;
+  if (!hydrated || onboardingCompleted === null) return <BootScreen />;
 
   if (!onboardingCompleted) {
     return <OnboardingScreen firstRun={!tutorialReplay} onFinish={finishTutorial} />;
@@ -76,25 +101,22 @@ function AppShell() {
 
   return (
     <RootNavigator
-      // Only the *order* of tabs remounts the navigator. Changing the accent or surface
-      // repaints styles in place through the theme system and must not unmount the
-      // navigator, otherwise the user is thrown back to Inicio.
+      // The normalized legacy signature is stable for the fixed four-section layout.
       key={tabOrderSignature(tabConfig)}
       initialRouteName={lastRoute}
+      initialPrimaryRouteName={lastPrimaryRoute}
       onRouteChange={onRouteChange}
-      tabConfig={tabConfig}
-      onRevealTab={onRevealTab}
     />
   );
 }
 
 /** Shown for the few milliseconds it takes to read the tutorial flag from AsyncStorage. */
-function BootScreen() {
+function BootScreen({ message = 'Preparando tu d\u00eda\u2026' }) {
   return (
     <View style={styles.boot}>
       <Text style={styles.bootMark}>{APP_NAME.slice(0, 1)}</Text>
       <Text style={styles.bootName}>{APP_NAME}</Text>
-      <Text style={typography.caption}>Preparando tu día…</Text>
+      <Text style={typography.caption}>{message}</Text>
     </View>
   );
 }
@@ -103,5 +125,7 @@ const styles = themedStyles({
   boot: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   bootMark: { fontSize: 40, fontWeight: '800', color: colors.accent },
   bootName: { ...typography.title, color: colors.text },
+  fontLoading: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  fontLoadingText: { fontSize: 40, fontWeight: '800', color: colors.accent },
 });
 

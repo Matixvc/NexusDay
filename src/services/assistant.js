@@ -3,6 +3,7 @@ import { WEEKDAYS, formatDateShort, formatTime } from '../utils/dates';
 import { fuzzyFind, normalizeText, plural } from '../utils/text';
 import { buildDashboard, habitStreak, isActivitySuspended } from './dashboard';
 import { checklistSummary, collectTags } from './notes';
+import { filterDiscoverableRecords } from './privacyPolicy';
 
 /**
  * Nexus AI — local, offline assistant.
@@ -343,16 +344,21 @@ export function answerQuestion(question, data = {}) {
   if (!text) return null;
 
   try {
+    const safeData = {
+      ...data,
+      notes: filterDiscoverableRecords(data.notes),
+      expenses: filterDiscoverableRecords(data.expenses),
+    };
     // "¿Qué notas tengo en #Estudio?" — la etiqueta decide antes que cualquier otro intent.
     const hashtag = String(question).match(/#([\p{L}\p{N}_-]+)/u);
-    if (hashtag && Array.isArray(data.notes)) {
-      return { question: String(question), ...answerByTag(hashtag[1], data.notes) };
+    if (hashtag && Array.isArray(safeData.notes)) {
+      return { question: String(question), ...answerByTag(hashtag[1], safeData.notes) };
     }
 
-    const dashboard = buildDashboard(data);
+    const dashboard = buildDashboard(safeData);
     const intent = INTENTS.find((item) => item.match(text));
     if (intent) {
-      return { id: intent.id, question: String(question), ...intent.answer({ ...data, dashboard, text }) };
+      return { id: intent.id, question: String(question), ...intent.answer({ ...safeData, dashboard, text }) };
     }
 
     // Out of scope: no internet, no general knowledge. Answer with what the device can do.

@@ -6,7 +6,7 @@ export function TestLog({ entries = [] }) {
   if (!entries.length) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyText}>Sin pruebas ejecutadas todavÃ­a.</Text>
+        <Text style={styles.emptyText}>Sin pruebas ejecutadas todavía.</Text>
       </View>
     );
   }

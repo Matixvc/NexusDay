@@ -1,0 +1,13 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const time = fs.readFileSync(path.join(root, 'src/services/timeInput.js'), 'utf8');
+const notifications = fs.readFileSync(path.join(root, 'src/services/notifications.js'), 'utf8');
+const screens = ['RoutinesScreen.js', 'CalendarScreen.js', 'NotesScreen.js'].map((file) => fs.readFileSync(path.join(root, 'src/screens', file), 'utf8')).join('\n');
+assert.match(time, /timeInputError\(value\)/);
+assert.match(time, /Usa una hora entre 00:00 y 23:59/);
+assert.match(notifications, /MAX_CUSTOM_ALARM_LEAD_MINUTES/);
+assert.match(screens, /accessibilityRole="alert"/);
+assert.match(screens, /disabled=\{formInvalid\}|disabled=\{!canSave\}/);
+console.log('form-validation-smoke-test: horas y anticipaciones verificadas');

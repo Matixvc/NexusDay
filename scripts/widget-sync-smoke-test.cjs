@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = fs.readFileSync(path.resolve(__dirname, '../src/components/ScheduleWidgetSync.js'), 'utf8');
+for (const name of ['schedule', 'day', 'calendar']) assert.match(source, new RegExp(`publishIfChanged\\('${name}'`));
+assert.match(source, /publishing = false/);
+assert.match(source, /if \(publishing\) return false/);
+assert.match(source, /console\.warn\(`\[widget:\$\{name\}\]/);
+assert.match(source, /getWidgetContentSignature/);
+assert.match(source, /const \{ updatedAt, \.\.\.content \} = snapshot/);
+const signature = (snapshot) => { const { updatedAt, ...content } = snapshot; return JSON.stringify(content); };
+assert.equal(signature({ dateKey: '2026-01-01', value: 1, updatedAt: 1 }), signature({ dateKey: '2026-01-01', value: 1, updatedAt: 2 }));
+assert.notEqual(signature({ dateKey: '2026-01-01', value: 1, updatedAt: 1 }), signature({ dateKey: '2026-01-01', value: 2, updatedAt: 2 }));
+assert.match(source, /publishedSignatures\.set\(name, signature\)/);
+assert.match(source, /if \(published\) publishedSignatures/);
+console.log('widget-sync-smoke-test: publicaciones aisladas y errores sanitizados');

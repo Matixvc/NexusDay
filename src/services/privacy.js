@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { createPrivacyAuthorizer } from './privacyPolicy';
 
 /**
  * Privacy lock for private notes and expenses (SDK 57 `expo-local-authentication`).
@@ -69,6 +70,7 @@ const REASONS = {
   'not-enrolled': 'No hay huella o rostro configurado: se usará el PIN del teléfono.',
   'missing-native-module': 'expo-local-authentication necesita una versión de desarrollo de la app.',
   cancelled: 'Autenticación cancelada.',
+  busy: 'Ya hay una autenticación en curso.',
   fallback: 'No se pudo autenticar. Prueba de nuevo.',
   error: 'Error de autenticación: intenta otra vez.',
 };
@@ -99,6 +101,11 @@ export async function authenticate({ promptMessage = 'Desbloquea para ver el con
     return { ok: false, reason: 'error' };
   }
 }
+
+const privacyAuthorizer = createPrivacyAuthorizer(authenticate);
+
+export const authorizePrivateAction = privacyAuthorizer.authorizePrivateAction;
+export const authorizeGlobalPrivacyChange = privacyAuthorizer.authorizeGlobalPrivacyChange;
 
 /** Human readable explanation for a failed attempt. */
 export function describePrivacyFailure(reason) {

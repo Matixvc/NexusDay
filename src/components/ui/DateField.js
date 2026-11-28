@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import {
   MONTHS,
@@ -12,7 +12,8 @@ import {
 import { Chip, ChipScroller } from './primitives';
 
 const HEADERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-const CELL = 40;
+const CELL = 48;
+const GRID_WIDTH = CELL * HEADERS.length;
 
 function monthMatrix(year, month) {
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first
@@ -29,7 +30,7 @@ function monthMatrix(year, month) {
  * Also avoids `@react-native-community/datetimepicker` so everything keeps
  * running in Expo Go — a plain month grid is enough for these forms.
  */
-export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
+export function DateField({ label = 'Fecha', value, onChange, quick = true, hint }) {
   const [anchor, setAnchor] = useState(() => {
     const d = fromDateKey(value || todayKey());
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -118,6 +119,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
         </ChipScroller>
       ) : null}
 
+      {hint ? <Text style={styles.hint} accessibilityRole="alert">{hint}</Text> : null}
+
       {open ? (
         <View style={styles.calendar}>
           <View style={styles.monthRow}>
@@ -144,50 +147,62 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
             </Pressable>
           </View>
 
-          <View style={styles.weekRow}>
-            {HEADERS.map((header, index) => (
-              <Text key={`${header}-${index}`} style={styles.weekHeader}>
-                {header}
-              </Text>
-            ))}
-          </View>
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            directionalLockEnabled
+            showsHorizontalScrollIndicator
+            contentContainerStyle={styles.gridScrollContent}
+            accessibilityLabel="Calendario mensual desplazable horizontalmente"
+            accessibilityHint="Desliza a izquierda o derecha para ver los siete días"
+          >
+            <View style={styles.grid}>
+              <View style={styles.weekRow}>
+                {HEADERS.map((header, index) => (
+                  <Text key={`${header}-${index}`} style={styles.weekHeader}>
+                    {header}
+                  </Text>
+                ))}
+              </View>
 
-          {rows.map((row, rowIndex) => (
-            <View key={`row-${rowIndex}`} style={styles.weekRow}>
-              {row.map((day, colIndex) => {
-                if (day == null) return <View key={`empty-${colIndex}`} style={styles.cell} />;
-                const key = `${anchor.year}-${pad2(anchor.month + 1)}-${pad2(day)}`;
-                const selected = key === value;
-                const isToday = key === today;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => pick(key)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${day} de ${MONTHS[anchor.month]} de ${anchor.year}`}
-                    accessibilityState={{ selected }}
-                    style={({ pressed }) => [
-                      styles.cell,
-                      selected ? styles.cellSelected : null,
-                      isToday && !selected ? styles.cellToday : null,
-                      pressed ? styles.pressed : null,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.cellText,
-                        typography.tabular,
-                        selected ? styles.cellTextSelected : null,
-                        isToday && !selected ? styles.cellTextToday : null,
-                      ]}
-                    >
-                      {day}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              {rows.map((row, rowIndex) => (
+                <View key={`row-${rowIndex}`} style={styles.weekRow}>
+                  {row.map((day, colIndex) => {
+                    if (day == null) return <View key={`empty-${colIndex}`} style={styles.cell} />;
+                    const key = `${anchor.year}-${pad2(anchor.month + 1)}-${pad2(day)}`;
+                    const selected = key === value;
+                    const isToday = key === today;
+                    return (
+                      <Pressable
+                        key={key}
+                        onPress={() => pick(key)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${day} de ${MONTHS[anchor.month]} de ${anchor.year}`}
+                        accessibilityState={{ selected }}
+                        style={({ pressed }) => [
+                          styles.cell,
+                          selected ? styles.cellSelected : null,
+                          isToday && !selected ? styles.cellToday : null,
+                          pressed ? styles.pressed : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.cellText,
+                            typography.tabular,
+                            selected ? styles.cellTextSelected : null,
+                            isToday && !selected ? styles.cellTextToday : null,
+                          ]}
+                        >
+                          {day}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
-          ))}
+          </ScrollView>
         </View>
       ) : null}
     </View>
@@ -197,8 +212,8 @@ export function DateField({ label = 'Fecha', value, onChange, quick = true }) {
 const styles = themedStyles({
   wrap: { gap: spacing.sm },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
-  toggle: { fontSize: 12.5, fontWeight: '700', color: colors.accent },
+  toggleButton: { minHeight: 48, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  toggle: { ...typography.label, fontSize: 12.5, color: colors.accent },
   display: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,18 +225,19 @@ const styles = themedStyles({
     padding: spacing.md,
   },
   dayBadge: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: radius.sm,
     backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeDay: { fontSize: 17, fontWeight: '800', color: colors.accent, lineHeight: 20 },
-  badgeMonth: { fontSize: 9.5, fontWeight: '700', letterSpacing: 0.8, color: colors.accent, textTransform: 'uppercase' },
+  badgeDay: { ...typography.title, fontWeight: '800', color: colors.accent, lineHeight: 20 },
+  badgeMonth: { ...typography.overline, fontSize: 9.5, letterSpacing: 0.8, color: colors.accent, textTransform: 'uppercase' },
   displayText: { ...typography.body, flex: 1 },
-  chevron: { color: colors.textMuted, fontSize: 14 },
+  chevron: { fontFamily: typography.body.fontFamily, color: colors.textMuted, fontSize: 14 },
   quickRow: { paddingTop: spacing.xs },
+  hint: { ...typography.caption, color: colors.danger, marginTop: spacing.xs },
   calendar: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -229,17 +245,20 @@ const styles = themedStyles({
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.xs,
+    overflow: 'hidden',
   },
   monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: spacing.sm },
-  monthLabel: { fontSize: 14.5, textTransform: 'capitalize' },
-  nav: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  navLabel: { color: colors.accent, fontSize: 24, lineHeight: 26, fontWeight: '600' },
-  weekRow: { flexDirection: 'row' },
+  monthLabel: { ...typography.bodyStrong, fontSize: 14.5, textTransform: 'capitalize' },
+  nav: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  navLabel: { fontFamily: typography.body.fontFamily, color: colors.accent, fontSize: 24, lineHeight: 26, fontWeight: '600' },
+  gridScrollContent: { minWidth: GRID_WIDTH },
+  grid: { width: GRID_WIDTH },
+  weekRow: { flexDirection: 'row', width: GRID_WIDTH },
   weekHeader: {
     width: CELL,
     textAlign: 'center',
+    ...typography.overline,
     fontSize: 10.5,
-    fontWeight: '700',
     color: colors.textMuted,
     paddingBottom: spacing.xs,
   },
@@ -252,7 +271,7 @@ const styles = themedStyles({
   },
   cellSelected: { backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent },
   cellToday: { borderWidth: 1, borderColor: colors.borderStrong },
-  cellText: { fontSize: 14, fontWeight: '500', color: colors.text },
+  cellText: { ...typography.body, fontSize: 14, color: colors.text },
   cellTextSelected: { color: colors.accent, fontWeight: '800' },
   cellTextToday: { color: colors.accent, fontWeight: '700' },
   pressed: { opacity: 0.65 },

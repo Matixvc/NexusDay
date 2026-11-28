@@ -21,12 +21,24 @@ import { DateField } from '../components/ui/DateField';
 import { ConfirmSheet, Sheet } from '../components/ui/Sheet';
 import SwipeRow from '../components/ui/SwipeRow';
 import { Switch } from '../components/ui/Switch';
-import { authenticate, describePrivacyFailure } from '../services/privacy';
+import { authorizePrivateAction, describePrivacyFailure } from '../services/privacy';
+import {
+  PRIVATE_ACTIONS,
+  canExposeInList,
+  filterDiscoverableRecords,
+  redactPrivateRecord,
+} from '../services/privacyPolicy';
 import { EXPENSE_CATEGORIES, categoryOf, formatMoney, parseAmount, sumAmounts } from '../utils/money';
 import { relativeDayLabel, todayKey } from '../utils/dates';
 import { plural } from '../utils/text';
 
 const MAX_ROWS = 8;
+const PRIVATE_EXPENSE_PLACEHOLDER = Object.freeze({
+  note: 'Gasto privado',
+  amount: null,
+  category: null,
+  dateKey: null,
+});
 
 export default function ExpensesScreen() {
   const { expenses, addExpense, updateExpense, removeExpense, settings } = useAppData();
@@ -48,16 +60,23 @@ export default function ExpensesScreen() {
   const monthPrefix = today.slice(0, 7);
 
   const sorted = useMemo(
-    () =>
-      expenses
+    () => {
+      const publicRows = filterDiscoverableRecords(expenses)
         .slice()
-        .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || (b.createdAt || 0) - (a.createdAt || 0)),
+        .sort((a, b) => String(b.dateKey || '').localeCompare(String(a.dateKey || '')) || (b.createdAt || 0) - (a.createdAt || 0));
+      const privateRows = expenses
+        .filter((expense) => !canExposeInList(expense))
+        .slice()
+        .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      return [...publicRows, ...privateRows];
+    },
     [expenses],
   );
 
+  const publicExpenses = useMemo(() => filterDiscoverableRecords(expenses), [expenses]);
   const monthExpenses = useMemo(
-    () => expenses.filter((item) => String(item.dateKey || '').startsWith(monthPrefix)),
-    [expenses, monthPrefix],
+    () => publicExpenses.filter((item) => String(item.dateKey || '').startsWith(monthPrefix)),
+    [monthPrefix, publicExpenses],
   );
 
   const byCategory = useMemo(() => {
@@ -71,13 +90,14 @@ export default function ExpensesScreen() {
   const topTotal = byCategory[0]?.total || 1;
   const visible = showAll ? sorted : sorted.slice(0, MAX_ROWS);
 
-  const submit = () => {
+  const submit = async () => {
     const value = parseAmount(amount);
     if (value <= 0) {
       setError('Escribe un monto mayor a 0.');
       return;
     }
-    addExpense({ dateKey: today, amount: value, category, note: note.trim(), createdAt: Date.now() });
+    const saved = await addExpense({ dateKey: today, amount: value, category, note: note.trim(), createdAt: Date.now() });
+    if (!saved) { setError('No se pudo guardar el gasto.'); return; }
     setAmount('');
     setNote('');
     setError(null);
@@ -88,6 +108,7 @@ export default function ExpensesScreen() {
       setSheet({
         mode: 'edit',
         id: expense.id,
+        original: expense,
         values: {
           amount: String(expense.amount ?? ''),
           category: expense.category || EXPENSE_CATEGORIES[0].id,
@@ -99,45 +120,81 @@ export default function ExpensesScreen() {
     [today],
   );
 
+  const runExpenseAction = useCallback(async (expense, action, promptMessage, onAuthorized) => {
+    const result = await authorizePrivateAction({
+      record: expense,
+      action,
+      privacyEnabled,
+      promptMessage,
+      onAuthorized,
+    });
+    setUnlockError(result.ok ? null : describePrivacyFailure(result.reason));
+    return result.ok;
+  }, [privacyEnabled]);
+
   /** A private expense only opens after the phone authenticates the user. */
   const openExpense = useCallback(
-    async (expense) => {
-      if (!expense.private || privacyEnabled === false) {
-        setUnlockError(null);
-        openEdit(expense);
-        return;
-      }
-      const result = await authenticate({ promptMessage: 'Desbloquea el gasto privado' });
-      if (result.ok) {
-        setUnlockError(null);
-        openEdit(expense);
-        return;
-      }
-      setUnlockError(describePrivacyFailure(result.reason));
-    },
-    [openEdit, privacyEnabled],
+    (expense) => runExpenseAction(
+      expense,
+      PRIVATE_ACTIONS.open,
+      'Desbloquea el gasto privado',
+      () => openEdit(expense),
+    ),
+    [openEdit, runExpenseAction],
   );
 
   const togglePrivate = useCallback(
-    (expense) => updateExpense(expense.id, { private: !expense.private }),
-    [updateExpense],
+    (expense) => runExpenseAction(
+      expense,
+      expense.private ? PRIVATE_ACTIONS.removePrivacy : PRIVATE_ACTIONS.mutate,
+      'Autoriza quitar la privacidad del gasto',
+      () => updateExpense(expense.id, { private: !expense.private }),
+    ),
+    [runExpenseAction, updateExpense],
   );
 
-  const requestDelete = useCallback((id) => setConfirmId(id), []);
+  const requestDelete = useCallback(
+    (expense) => runExpenseAction(
+      expense,
+      PRIVATE_ACTIONS.delete,
+      'Autoriza eliminar el gasto privado',
+      () => {
+        setConfirmId(expense.id);
+        setSheet(null);
+      },
+    ),
+    [runExpenseAction],
+  );
 
   const setValue = (patch) => setSheet((prev) => ({ ...prev, values: { ...prev.values, ...patch } }));
 
-  const saveEdit = () => {
+  const changeSheetPrivacy = (value) => {
+    if (!sheet || value === Boolean(sheet.values.private)) return;
+    const original = sheet.original;
+    if (!original?.private || value !== false) {
+      setValue({ private: value });
+      return;
+    }
+    void runExpenseAction(
+      original,
+      PRIVATE_ACTIONS.removePrivacy,
+      'Autoriza quitar la privacidad del gasto',
+      () => setValue({ private: false }),
+    );
+  };
+
+  const saveEdit = async () => {
     if (!sheet) return;
     const value = parseAmount(sheet.values.amount);
     if (value <= 0) return;
-    updateExpense(sheet.id, {
+    const saved = await updateExpense(sheet.id, {
       amount: value,
       category: sheet.values.category,
       note: sheet.values.note.trim(),
       dateKey: sheet.values.dateKey,
       private: Boolean(sheet.values.private),
     });
+    if (!saved) { setError('No se pudo guardar el gasto.'); return; }
     setSheet(null);
   };
 
@@ -146,7 +203,7 @@ export default function ExpensesScreen() {
       <Screen
         title="Gastos"
         subtitle="Registra lo que gastas en dos toques."
-        headerRight={<Pill label={plural(expenses.length, 'movimiento')} />}
+        headerRight={<Pill label={plural(publicExpenses.length, 'movimiento')} />}
       >
         {unlockError ? <Notice text={unlockError} tone="danger" /> : null}
 
@@ -189,9 +246,9 @@ export default function ExpensesScreen() {
         </Card>
 
         <View style={styles.statsRow}>
-          <Stat value={formatMoney(sumAmounts(expenses.filter((item) => item.dateKey === today)))} label="Hoy" accent={colors.accent} />
+          <Stat value={formatMoney(sumAmounts(publicExpenses.filter((item) => item.dateKey === today)))} label="Hoy" accent={colors.accent} />
           <Stat value={formatMoney(sumAmounts(monthExpenses))} label="Este mes" />
-          <Stat value={expenses.length} label="En total" />
+          <Stat value={publicExpenses.length} label="En total" />
         </View>
         {byCategory.length ? (
           <>
@@ -236,7 +293,7 @@ export default function ExpensesScreen() {
             <ExpenseRow
               key={expense.id}
               expense={expense}
-              focused={focusId === expense.id}
+              focused={canExposeInList(expense) && focusId === expense.id}
               onOpen={openExpense}
               onTogglePrivate={togglePrivate}
               onDelete={requestDelete}
@@ -255,10 +312,7 @@ export default function ExpensesScreen() {
             <TextButton
               label="Eliminar"
               tone="danger"
-              onPress={() => {
-                setConfirmId(sheet?.id);
-                setSheet(null);
-              }}
+              onPress={() => sheet?.original && requestDelete(sheet.original)}
             />
             <PrimaryButton label="Guardar" onPress={saveEdit} />
           </>
@@ -299,7 +353,7 @@ export default function ExpensesScreen() {
               </View>
               <Switch
                 value={Boolean(sheet.values.private)}
-                onValueChange={(value) => setValue({ private: value })}
+                onValueChange={changeSheetPrivacy}
                 label="Gasto privado"
               />
             </View>
@@ -327,42 +381,50 @@ export default function ExpensesScreen() {
  * pan responder instead of rebuilding it on every render.
  */
 const ExpenseRow = memo(function ExpenseRow({ expense, focused, onOpen, onTogglePrivate, onDelete }) {
-  const item = categoryOf(expense.category);
-
-  const leftAction = useMemo(
-    () => ({
-      label: expense.private ? '🔓 Abrir' : '🔒 Privado',
-      color: item.color,
-      onPress: () => onTogglePrivate(expense),
-    }),
-    [expense, item.color, onTogglePrivate],
-  );
-
-  const rightAction = useMemo(
-    () => ({ label: '🗑 Borrar', color: colors.danger, onPress: () => onDelete(expense.id) }),
-    [expense.id, onDelete],
-  );
-
+  const exposed = canExposeInList(expense);
+  const displayExpense = redactPrivateRecord(expense, PRIVATE_EXPENSE_PLACEHOLDER);
+  const item = categoryOf(displayExpense.category || EXPENSE_CATEGORIES[0].id);
   const open = useCallback(() => onOpen(expense), [expense, onOpen]);
+  const askDelete = useCallback(() => onDelete(expense), [expense, onDelete]);
+
+  const leftAction = {
+    label: exposed ? '🔒 Privado' : '🔓 Abrir',
+    color: exposed ? item.color : colors.accent,
+    onPress: exposed ? () => onTogglePrivate(expense) : open,
+  };
+
+  const rightAction = { label: '🗑 Borrar', color: colors.danger, onPress: askDelete };
 
   return (
     <SwipeRow style={styles.swipeRow} leftAction={leftAction} rightAction={rightAction}>
-      <Card accent={item.color} onPress={open} style={[styles.row, focused ? styles.focused : null]}>
+      <Card
+        accent={exposed ? item.color : colors.accent}
+        onPress={open}
+        accessibilityLabel={exposed ? undefined : 'Gasto privado. Desbloquea para ver el contenido'}
+        style={[styles.row, focused && exposed ? styles.focused : null]}
+      >
         <View style={styles.rowInner}>
-          <View style={[styles.rowIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
-            <Text style={styles.rowEmoji}>{item.emoji}</Text>
+          <View
+            style={[
+              styles.rowIcon,
+              {
+                backgroundColor: `${exposed ? item.color : colors.accent}22`,
+                borderColor: exposed ? item.color : colors.accent,
+              },
+            ]}
+          >
+            <Text style={styles.rowEmoji}>{exposed ? item.emoji : '🔒'}</Text>
           </View>
           <View style={styles.rowBody}>
             <Text style={typography.bodyStrong} numberOfLines={1}>
-              {expense.private ? '🔒 ' : ''}
-              {expense.note || item.id}
+              {exposed ? displayExpense.note || item.id : displayExpense.note}
             </Text>
             <Text style={typography.caption} numberOfLines={1}>
-              {`${relativeDayLabel(expense.dateKey)} · ${item.id}`}
+              {exposed ? `${relativeDayLabel(displayExpense.dateKey)} · ${item.id}` : 'Desbloquea para ver el contenido'}
             </Text>
           </View>
           <Text style={[styles.rowAmount, typography.tabular]}>
-            {expense.private ? '•••' : formatMoney(expense.amount)}
+            {exposed ? formatMoney(displayExpense.amount) : '•••'}
           </Text>
         </View>
       </Card>

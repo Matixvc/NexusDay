@@ -1,0 +1,11 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const notes = fs.readFileSync(path.join(root, 'src/screens/NotesScreen.js'), 'utf8');
+const calendar = fs.readFileSync(path.join(root, 'src/screens/CalendarScreen.js'), 'utf8');
+assert.match(notes, /label="Crear nota" onPress=\{openCreate\}/);
+assert.match(notes, /hasFilters \? \([\s\S]*?Limpiar filtros[\s\S]*?Crear nota/);
+assert.match(calendar, /label="Crear evento" onPress=\{openCreate\}/);
+assert.match(calendar, /filter === 'birthdays' \|\| filter === 'classes' \? null/);
+console.log('empty-state-actions-smoke-test: CTA contextuales verificados');

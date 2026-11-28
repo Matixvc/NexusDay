@@ -1,201 +1,75 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  ImageBackground,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { BackHandler, FlatList, Image, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { themedStyles, colors, layout, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton, TextButton } from '../components/ui/primitives';
+import { TutorialDemos } from '../components/onboarding/TutorialDemos';
 import { useAppData } from '../context/AppDataContext';
-import { plural } from '../utils/text';
+import { TUTORIAL_STEPS, tutorialStepIndex } from '../services/tutorialGuide';
 
-/** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
+const TUTORIAL_ART = {
+  welcome: require('../../assets/nex/u11/ai/nex-orb-curious.jpg'),
+  day: require('../../assets/nex/u11/tutorial/tutorial-day.jpg'),
+  notes: require('../../assets/nex/u11/tutorial/tutorial-notes.jpg'),
+  calendar: require('../../assets/nex/u11/tutorial/tutorial-calendar.jpg'),
+  themes: require('../../assets/nex/u11/tutorial/tutorial-themes.jpg'),
+};
+const SLIDES = TUTORIAL_STEPS.map((step) => ({ ...step, image: TUTORIAL_ART[step.imageKey] }));
 
-/** Decorative hero, the same asset the dashboard uses. */
-const WELCOME_BG = require('../../assets/welcome-bg.jpg');
-
-/** Tab names of the demo bar, in the same order as the real one. */
-const DEMO_TABS = ['Inicio', 'Horario', 'Agenda', 'Cumple', 'Notas', 'Hábitos', 'Gastos', 'AI', 'Ajustes'];
-const DEMO_ICONS = ['🏠', '🗓️', '📆', '🎂', '📝', '💪', '💰', '🤖', '⚙️'];
-
-/**
- * Copy of the tutorial.
- *
- * `demo` renders a small, *touchable* mock of the real screen: in a first run the user
- * pokes at the app before trusting it with real data. Slide 1 also carries the name field
- * (`field: true`), the only thing the tutorial asks for.
- */
-const SLIDES = [
-  {
-    key: 'hub',
-    emoji: '🏠',
-    title: 'Todo arranca en Inicio',
-    body: 'Inicio es tu hub central: en una sola pantalla ves cómo viene el día.',
-    points: [
-      'Saludo, gastado del día y hábitos pendientes.',
-      'Las próximas actividades, ordenadas por hora.',
-      'Tarjetas de acceso directo a cada sección.',
-    ],
-    tip: 'Prueba el buscador de la demo: filtra notas, eventos, hábitos y gastos mientras escribes.',
-    demo: 'search',
-    field: true,
-  },
-  {
-    key: 'nav',
-    emoji: '👆',
-    title: 'Todo abajo, y desliza para ir',
-    body: 'Las nueve secciones viven en la barra inferior. No hay menús escondidos.',
-    points: [
-      'Inicio · Horario · Agenda · Cumpleaños.',
-      'Notas · Hábitos · Gastos · Nexus AI · Ajustes.',
-      'Desliza el dedo a los costados para cambiar de sección.',
-    ],
-    tip: 'Toca una solapa de la demo. En Ajustes puedes reordenarlas u ocultarlas cuando quieras.',
-    demo: 'tabs',
-  },
-  {
-    key: 'notes',
-    emoji: '🎙️',
-    title: 'Notas con voz y adjuntos',
-    body: 'Las notas aceptan audio y documentos, con listas y etiquetas; y toda la app se respalda en un archivo .json.',
-    points: [
-      'Graba una nota de voz y guárdala junto al texto.',
-      'Adjunta un documento sin salir de la app.',
-      'La copia .json de Ajustes guarda todo lo tuyo para restaurarlo cuando quieras.',
-    ],
-    tip: 'Toca el micrófono de la demo: la grabación se guarda dentro de la app, nunca sube a la nube.',
-    demo: 'note',
-  },
-  {
-    key: 'habits',
-    emoji: '💪',
-    title: 'Hábitos y gastos bajo control',
-    body: 'Marca el día con un toque y registra un gasto en dos: monto y categoría.',
-    points: [
-      'Un toque por día: la racha se arma sola.',
-      'Avisos con “✓ Completar” directo en la notificación.',
-      'Resumen por categoría del mes en pantalla.',
-    ],
-    tip: 'Toca el ✓ de la demo para ver cómo crece la racha, y el + para sumar un gasto.',
-    demo: 'habits',
-  },
-  {
-    key: 'ai',
-    emoji: '🤖',
-    title: 'Nexus AI, sin internet',
-    body: 'El asistente vive en el teléfono: lee tus datos y responde al instante.',
-    points: [
-      'Resume el día, los gastos y las rachas.',
-      'Busca en tus notas, eventos, hábitos y cumpleaños.',
-      'Si le preguntas algo ajeno a la app, te reorienta.',
-    ],
-    tip: 'Toca una sugerencia de la demo. El botón de papelera de la barra superior borra la conversación.',
-    demo: 'ai',
-  },
-];
-
-/**
- * First-run tutorial (also the replay Ajustes can trigger).
- *
- * Everything scales with `useWindowDimensions`: the copy, the ring, the demo and the
- * controls are derived from one `scale` factor, so a 5" phone and a tablet both get a
- * comfortable layout instead of a stretched one.
- */
+/** Five local-only visual lessons. Demos own ephemeral state and never touch AppData. */
 export default function OnboardingScreen({ firstRun = true, onFinish }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const { userName, setUserName } = useAppData();
+  const { settings } = useAppData();
+  const reduceMotion = settings?.reduceMotion === true;
   const [index, setIndex] = useState(0);
-  const [openTip, setOpenTip] = useState(null);
-  const [draft, setDraft] = useState(userName);
-
-  // 390 x 780 is the reference layout; anything bigger/smaller is scaled and clamped so the
-  // text never turns unreadable on a very small screen nor huge on a tablet.
-  const scale = useMemo(
-    () => Math.min(1.12, Math.max(0.82, Math.min(width / 390, height / 780))),
-    [height, width],
-  );
-  const unit = (value) => Math.round(value * scale);
-
-  const last = index === SLIDES.length - 1;
-
-  const goTo = (next) => {
-    const target = Math.min(Math.max(next, 0), SLIDES.length - 1);
-    setIndex(target);
-    setOpenTip(null);
-  };
-
-  // ── Pager ────────────────────────────────────────────────────────────────────────────────
   const pagerRef = useRef(null);
-  /** Last offset the list reported, so the effect below never fights the finger. */
   const lastOffset = useRef(0);
+  const last = index === SLIDES.length - 1;
+  const compact = height < 700;
 
-  /** One page == one window. Stated up front so `scrollToOffset` always lands on a boundary. */
-  const itemLayout = useCallback(
-    (unusedData, itemIndex) => ({ length: width, offset: width * itemIndex, index: itemIndex }),
-    [width],
-  );
+  const goTo = useCallback((next) => {
+    setIndex(Math.min(Math.max(next, 0), SLIDES.length - 1));
+  }, []);
 
-  // `pagingEnabled` only ever moves on a finger: the dots and the "Siguiente" button change
-  // `index`, and this is what drags the list along with them.
   useEffect(() => {
     const target = index * width;
     if (Math.abs(target - lastOffset.current) < 2) return;
     lastOffset.current = target;
-    pagerRef.current?.scrollToOffset({ offset: target, animated: true });
-  }, [index, width]);
+    pagerRef.current?.scrollToOffset({ offset: target, animated: !reduceMotion });
+  }, [index, reduceMotion, width]);
 
-  const toggleTip = (pointIndex) => setOpenTip((current) => (current === pointIndex ? null : pointIndex));
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (index > 0) {
+        goTo(tutorialStepIndex(index, -1));
+        return true;
+      }
+      if (!firstRun) onFinish();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [firstRun, goTo, index, onFinish]);
 
-  /** The name is stored as soon as the user confirms it, not on the last slide. */
-  const saveName = () => {
-    const next = draft.trim();
-    if (next) setUserName(next);
-  };
+  const itemLayout = useCallback(
+    (unusedData, itemIndex) => ({ length: width, offset: width * itemIndex, index: itemIndex }),
+    [width],
+  );
+  const artHeight = useMemo(() => Math.max(150, Math.min(compact ? 190 : 245, width * 0.56)), [compact, width]);
 
   return (
-    <ImageBackground source={WELCOME_BG} style={styles.root} imageStyle={styles.rootImage} resizeMode="cover">
-      {/* Two scrims: a flat one that kills the brightness of the photo and a bottom-heavy
-          one that guarantees contrast for the text block. */}
-      <View style={styles.scrim} />
-      <View style={styles.scrimBottom} />
-
-      <View
-        style={[
-          styles.body,
-          { paddingTop: insets.top + unit(12), paddingBottom: insets.bottom + unit(10) },
-        ]}
-      >
-        <View style={styles.topRow}>
+    <View style={styles.root}>
+      <View style={[styles.body, { paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.sm }]}>
+        <View style={styles.topRow} accessibilityRole="header">
           <View style={styles.brand}>
-            <Text style={[styles.brandMark, { fontSize: unit(19) }]}>{APP_NAME.slice(0, 1)}</Text>
-            <Text style={[styles.brandName, { fontSize: unit(15) }]} numberOfLines={1}>
-              {APP_NAME}
-            </Text>
+            <View style={styles.brandMark}><Text style={styles.brandLetter}>{APP_NAME.slice(0, 1)}</Text></View>
+            <Text style={styles.brandName}>{APP_NAME}</Text>
           </View>
-          <Text style={[typography.overline, styles.step]}>{`PASO ${index + 1} DE ${SLIDES.length}`}</Text>
+          <Text style={styles.step}>{`${index + 1} / ${SLIDES.length}`}</Text>
         </View>
 
-        {/*
-          Horizontal pager.
-
-          Each page is exactly `width` wide and the list itself carries **no** horizontal padding
-          and no negative margin: `pagingEnabled` snaps by the width of the list, so padding here
-          (or pulling the list out of the screen with a negative margin) makes the snap points
-          drift and clips the right edge of every slide — which is what this rewrite fixes. The
-          gutter lives *inside* each slide instead, and `getItemLayout` states the page geometry
-          up front so `scrollToOffset` from the dots and the "Siguiente" button always lands on a
-          page boundary.
-        */}
         <FlatList
           ref={pagerRef}
           style={styles.pager}
@@ -204,42 +78,39 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
           horizontal
           pagingEnabled
           bounces={false}
-          scrollEnabled
           showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
           getItemLayout={itemLayout}
-          initialScrollIndex={0}
-          contentContainerStyle={styles.pagerContent}
-          // Five slides is nothing: render them all. Windowing would recycle pages mid-swipe and
-          // the tallest slide would keep resizing the list under the footer.
           initialNumToRender={SLIDES.length}
-          extraData={{ openTip, draft }}
+          windowSize={SLIDES.length}
           onMomentumScrollEnd={(event) => {
             const offset = event.nativeEvent.contentOffset.x;
             lastOffset.current = offset;
-            const next = Math.round(offset / width);
-            if (next !== index) goTo(next);
+            goTo(Math.round(offset / width));
           }}
           renderItem={({ item }) => (
             <View style={[styles.slidePage, { width }]}>
-              {/* Each page scrolls on its own axis: a slide that does not fit a small screen
-                  reads to the end instead of losing its last lines behind the footer. */}
               <ScrollView
                 style={styles.slideScroll}
                 contentContainerStyle={styles.slide}
                 showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
+                bounces={false}
               >
-                <Slide
-                  slide={item}
-                  scale={scale}
-                  unit={unit}
-                  openTip={openTip}
-                  onToggleTip={toggleTip}
-                  nameDraft={item.field ? draft : ''}
-                  onChangeName={item.field ? setDraft : null}
-                  onSaveName={item.field ? saveName : null}
-                />
+                <View style={[styles.artFrame, { height: artHeight }]}>
+                  <Image
+                    source={item.image}
+                    style={styles.art}
+                    resizeMode="cover"
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={item.imageAlt}
+                  />
+                  <View style={styles.artBadge}><Text style={styles.artBadgeText}>{item.eyebrow}</Text></View>
+                </View>
+                <View style={styles.copy}>
+                  <Text style={styles.title} accessibilityRole="header">{item.title}</Text>
+                  <Text style={styles.subtitle}>{item.body}</Text>
+                </View>
+                <TutorialDemos demoId={item.demoId} />
               </ScrollView>
             </View>
           )}
@@ -247,577 +118,73 @@ export default function OnboardingScreen({ firstRun = true, onFinish }) {
 
         <View style={styles.footer}>
           <View
-            style={styles.dots}
+            style={styles.progress}
             accessibilityRole="progressbar"
             accessibilityLabel={`Paso ${index + 1} de ${SLIDES.length}`}
+            accessibilityValue={{ min: 1, max: SLIDES.length, now: index + 1 }}
           >
-            {SLIDES.map((item, dotIndex) => (
+            {SLIDES.map((slide, dotIndex) => (
               <Pressable
-                key={item.key}
+                key={slide.key}
                 onPress={() => goTo(dotIndex)}
-                hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`Ir al paso ${dotIndex + 1}`}
+                accessibilityLabel={`Ir al paso ${dotIndex + 1}: ${slide.title}`}
+                accessibilityState={{ selected: dotIndex === index }}
+                style={styles.progressTarget}
               >
-                <View
-                  style={[
-                    styles.dot,
-                    dotIndex === index ? { backgroundColor: colors.accent, width: unit(22) } : null,
-                  ]}
-                />
+                <View style={[styles.progressBar, dotIndex === index ? styles.progressBarActive : null]} />
               </Pressable>
             ))}
           </View>
-
           <View style={styles.actions}>
-            <TextButton label={firstRun ? 'Omitir' : 'Cerrar'} tone="ghost" onPress={onFinish} style={styles.skip} />
+            <TextButton
+              label={index > 0 ? 'Atrás' : (firstRun ? 'Omitir' : 'Cerrar')}
+              tone="ghost"
+              onPress={() => (index > 0 ? goTo(tutorialStepIndex(index, -1)) : onFinish())}
+              style={styles.secondaryAction}
+            />
+            {index > 0 ? (
+              <TextButton label={firstRun ? 'Omitir' : 'Cerrar'} tone="ghost" onPress={onFinish} style={styles.skipAction} />
+            ) : null}
             <PrimaryButton
-              label={last ? (firstRun ? 'Comenzar a usar NexusDay' : 'Volver a NexusDay') : 'Siguiente'}
-              onPress={() => (last ? onFinish() : goTo(index + 1))}
-              style={styles.next}
+              label={last ? (firstRun ? 'Comenzar' : 'Listo') : 'Continuar'}
+              onPress={() => (last ? onFinish() : goTo(tutorialStepIndex(index, 1)))}
+              style={styles.primaryAction}
             />
           </View>
-
-          {last && firstRun ? (
-            <Text style={[typography.caption, styles.wipeNote]}>
-              Al empezar borramos los datos de ejemplo: la app queda en blanco para que registres lo tuyo.
-            </Text>
-          ) : null}
         </View>
-      </View>
-    </ImageBackground>
-  );
-}
-
-/** One page: the headline, the name field (slide 1), a live mini-demo and the points. */
-function Slide({ slide, unit, openTip, onToggleTip, nameDraft, onChangeName, onSaveName }) {
-  return (
-    <View style={styles.slideBody}>
-      <View style={styles.emojiRow}>
-        <View style={[styles.emojiRing, { width: unit(62), height: unit(62), borderRadius: unit(31) }]}>
-          <Text style={{ fontSize: unit(28) }}>{slide.emoji}</Text>
-        </View>
-        <View style={styles.headline}>
-          <Text style={[typography.display, { fontSize: unit(25), lineHeight: unit(30) }]}>{slide.title}</Text>
-          <Text style={[typography.subtitle, { lineHeight: unit(19) }]}>{slide.body}</Text>
-        </View>
-      </View>
-
-      {slide.field ? <NameField unit={unit} value={nameDraft} onChange={onChangeName} onSave={onSaveName} /> : null}
-
-      <Demo kind={slide.demo} unit={unit} />
-
-      <View style={styles.points}>
-        {slide.points.map((point, pointIndex) => {
-          const open = openTip === pointIndex;
-          return (
-            <Pressable
-              key={point}
-              onPress={() => onToggleTip(pointIndex)}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: open }}
-              accessibilityLabel={point}
-              style={({ pressed }) => [styles.point, pressed ? styles.pointPressed : null]}
-            >
-              <Text style={[styles.pointMark, { color: colors.accent }]}>✓</Text>
-              <View style={styles.pointBody}>
-                <Text style={[typography.small, styles.pointText]}>{point}</Text>
-                {open ? <Text style={styles.pointTip}>{slide.tip}</Text> : null}
-              </View>
-              <Text style={[styles.pointHint, { color: colors.accent }]}>{open ? '−' : '+'}</Text>
-            </Pressable>
-          );
-        })}
       </View>
     </View>
-  );
-}
-
-/** "¿Cómo quieres que te llamemos?" — stored in `@nexusday/v1/user_name`. */
-function NameField({ unit, value, onChange, onSave }) {
-  return (
-    <View style={styles.nameBlock}>
-      <Text style={[typography.overline, { fontSize: unit(10) }]}>¿Cómo quieres que te llamemos?</Text>
-      <View style={styles.nameRow}>
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          onSubmitEditing={onSave}
-          placeholder="Tu nombre"
-          placeholderTextColor={colors.textMuted}
-          style={[styles.nameInput, { fontSize: unit(15) }]}
-          selectionColor={colors.accent}
-          cursorColor={colors.accent}
-          returnKeyType="done"
-          maxLength={20}
-          autoCapitalize="words"
-          autoCorrect={false}
-          accessibilityLabel="¿Cómo quieres que te llamemos?"
-        />
-        <Pressable
-          onPress={onSave}
-          accessibilityRole="button"
-          accessibilityLabel="Guardar el nombre"
-          style={({ pressed }) => [styles.nameSave, pressed ? styles.pointPressed : null]}
-        >
-          <Text style={[styles.nameSaveLabel, { fontSize: unit(12) }]}>Guardar</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.nameHint}>
-        Se usa solo para el saludo del dashboard (“¡Hola, {value.trim() || 'Nombre'}! 👋”). Puedes cambiarlo en
-        Ajustes.
-      </Text>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Mini demos: small, touchable mocks of the real screens.
- * ------------------------------------------------------------------ */
-
-/** Wraps every demo: same frame the app uses, so the shape is recognisable. */
-function DemoFrame({ children, caption }) {
-  return (
-    <View style={styles.demo}>
-      <View style={styles.demoTop}>
-        <View style={styles.demoDot} />
-        <View style={styles.demoDot} />
-        <View style={styles.demoDot} />
-        <Text style={styles.demoCaption} numberOfLines={1}>
-          {caption}
-        </Text>
-      </View>
-      <View style={styles.demoBody}>{children}</View>
-    </View>
-  );
-}
-
-function Demo({ kind, unit }) {
-  if (kind === 'search') return <SearchDemo unit={unit} />;
-  if (kind === 'tabs') return <TabsDemo unit={unit} />;
-  if (kind === 'note') return <NoteDemo unit={unit} />;
-  if (kind === 'habits') return <HabitsDemo unit={unit} />;
-  return <AiDemo unit={unit} />;
-}
-
-/** Dashboard: a working search that filters four fake collections. */
-function SearchDemo({ unit }) {
-  const [query, setQuery] = useState('');
-  const pool = [
-    { icon: '📝', label: 'Nota · Pendientes de la semana' },
-    { icon: '🗓️', label: 'Evento · Entrega del proyecto' },
-    { icon: '💧', label: 'Hábito · Tomar 2 L de agua' },
-    { icon: '💰', label: 'Gasto · Almuerzo en la facultad' },
-  ];
-  const needle = query.trim().toLowerCase();
-  const hits = pool.filter((item) => item.label.toLowerCase().includes(needle));
-
-  return (
-    <DemoFrame caption="Inicio · búsqueda global">
-      <View style={styles.demoField}>
-        <Text style={{ fontSize: unit(13) }}>🔍</Text>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Buscar…"
-          placeholderTextColor={colors.textMuted}
-          style={[styles.demoInput, { fontSize: unit(13) }]}
-          selectionColor={colors.accent}
-          autoCorrect={false}
-          accessibilityLabel="Demo del buscador global"
-        />
-        <Text style={[styles.demoCount, { fontSize: unit(11) }]}>{hits.length}</Text>
-      </View>
-      <View style={styles.demoRows}>
-        {hits.length === 0 ? (
-          <Text style={styles.demoEmpty}>Sin coincidencias</Text>
-        ) : (
-          hits.map((item) => (
-            <View key={item.label} style={styles.demoRow}>
-              <Text style={{ fontSize: unit(13) }}>{item.icon}</Text>
-              <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-                {item.label}
-              </Text>
-            </View>
-          ))
-        )}
-      </View>
-    </DemoFrame>
-  );
-}
-
-/** Bottom bar: nine slots, the tapped one lights up. */
-function TabsDemo({ unit }) {
-  const [active, setActive] = useState(0);
-  return (
-    <DemoFrame caption="Barra inferior · 9 secciones">
-      <Text style={styles.demoEmpty}>
-        {`Estás en ${DEMO_TABS[active]}. Desliza el dedo o toca otra solapa.`}
-      </Text>
-      <View style={styles.demoTabs}>
-        {DEMO_TABS.map((label, index) => (
-          <Pressable
-            key={label}
-            onPress={() => setActive(index)}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: index === active }}
-            accessibilityLabel={label}
-            style={({ pressed }) => [
-              styles.demoTab,
-              index === active ? { backgroundColor: colors.accentSoft, borderColor: colors.accent } : null,
-              pressed ? styles.pointPressed : null,
-            ]}
-          >
-            <Text style={{ fontSize: unit(11) }}>{DEMO_ICONS[index]}</Text>
-            <Text
-              style={[
-                styles.demoTabLabel,
-                index === active ? { color: colors.accent } : null,
-                { fontSize: unit(8) },
-              ]}
-              numberOfLines={1}
-            >
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </DemoFrame>
-  );
-}
-
-/** Note editor: record / stop, then the resulting chip. */
-function NoteDemo({ unit }) {
-  const [recording, setRecording] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  return (
-    <DemoFrame caption="Nota · audio local">
-      <View style={styles.demoRow}>
-        <Pressable
-          onPress={() => {
-            if (recording) setSaved(true);
-            setRecording((value) => !value);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={recording ? 'Detener la grabación' : 'Grabar nota de voz'}
-          style={({ pressed }) => [
-            styles.demoRecButton,
-            recording ? { backgroundColor: colors.dangerSoft, borderColor: colors.danger } : null,
-            pressed ? styles.pointPressed : null,
-          ]}
-        >
-          <Text style={{ fontSize: unit(15) }}>{recording ? '■' : '🎙'}</Text>
-        </Pressable>
-        <View style={styles.demoRowBody}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            {recording ? 'Grabando… 0:03' : saved ? 'nota-de-voz-1.m4a' : 'Toca para grabar'}
-          </Text>
-          <Text style={typography.caption} numberOfLines={1}>
-            {saved ? '4 KB · dentro de la app' : 'Se guarda en el dispositivo'}
-          </Text>
-        </View>
-        {saved ? <Text style={{ fontSize: unit(14) }}>▶️</Text> : null}
-      </View>
-      <View style={styles.demoActions}>
-        <View style={[styles.demoChip, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-          <Text style={[styles.demoChipLabel, { color: colors.accent, fontSize: unit(10) }]}>📅 Al calendario</Text>
-        </View>
-        <View style={styles.demoChip}>
-          <Text style={[styles.demoChipLabel, { fontSize: unit(10) }]}>📎 Adjuntar</Text>
-        </View>
-      </View>
-    </DemoFrame>
-  );
-}
-
-/** Habit tick with a live streak plus a quick expense. */
-function HabitsDemo({ unit }) {
-  const [days, setDays] = useState(3);
-  const [spent, setSpent] = useState(0);
-
-  return (
-    <DemoFrame caption="Hábitos y gastos">
-      <View style={styles.demoRow}>
-        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-          <Text style={{ fontSize: unit(14) }}>💧</Text>
-        </View>
-        <View style={styles.demoRowBody}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            Tomar 2 L de agua
-          </Text>
-          <Text style={typography.caption}>{`Racha: ${plural(days, 'día')}`}</Text>
-        </View>
-        <Pressable
-          onPress={() => setDays((value) => value + 1)}
-          accessibilityRole="button"
-          accessibilityLabel="Marcar el hábito de hoy"
-          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
-        >
-          <Text style={{ fontSize: unit(14) }}>✓</Text>
-        </Pressable>
-      </View>
-      <View style={styles.demoRow}>
-        <View style={[styles.demoBadge, { backgroundColor: colors.accentSoft, borderColor: colors.accent }]}>
-          <Text style={{ fontSize: unit(14) }}>💰</Text>
-        </View>
-        <View style={styles.demoRowBody}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={1}>
-            {`Gastado hoy: $${spent}`}
-          </Text>
-          <Text style={typography.caption}>Un toque y queda cargado</Text>
-        </View>
-        <Pressable
-          onPress={() => setSpent((value) => value + 500)}
-          accessibilityRole="button"
-          accessibilityLabel="Agregar un gasto"
-          style={({ pressed }) => [styles.demoCheck, pressed ? styles.pointPressed : null]}
-        >
-          <Text style={{ fontSize: unit(15) }}>+</Text>
-        </Pressable>
-      </View>
-    </DemoFrame>
-  );
-}
-
-/** Assistant: tap a suggestion, get the answer bubble. */
-function AiDemo({ unit }) {
-  const [answer, setAnswer] = useState(null);
-  const suggestions = ['¿Qué tengo hoy?', '¿Cuánto gasté?', '¿Qué hábitos me faltan?'];
-
-  return (
-    <DemoFrame caption="Nexus AI · 100% offline">
-      <View style={styles.demoActions}>
-        {suggestions.map((item) => (
-          <Pressable
-            key={item}
-            onPress={() => setAnswer(item)}
-            accessibilityRole="button"
-            accessibilityLabel={item}
-            style={({ pressed }) => [
-              styles.demoChip,
-              answer === item ? { backgroundColor: colors.accentSoft, borderColor: colors.accent } : null,
-              pressed ? styles.pointPressed : null,
-            ]}
-          >
-            <Text style={[styles.demoChipLabel, { fontSize: unit(9.5) }]}>{item}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {answer ? (
-        <View style={styles.demoBubble}>
-          <Text style={[typography.small, styles.demoRowLabel]} numberOfLines={2}>
-            {answer === '¿Cuánto gasté?'
-              ? 'Hoy llevas $1.850 en 1 movimiento.'
-              : answer === '¿Qué hábitos me faltan?'
-                ? 'Te falta 1 hábito hoy: Tomar 2 L de agua.'
-                : 'Tienes 1 cosa por delante: 18:30 Entrega del proyecto.'}
-          </Text>
-        </View>
-      ) : (
-        <Text style={styles.demoEmpty}>Toca una sugerencia para ver una respuesta.</Text>
-      )}
-    </DemoFrame>
   );
 }
 
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
-  // The photo is decoration only: dropping its opacity is what keeps the white text readable.
-  rootImage: { opacity: 0.38 },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: `${colors.background}b8` },
-  scrimBottom: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    top: '30%',
-    backgroundColor: `${colors.background}ee`,
-  },
-
-  body: { flex: 1, gap: spacing.md },
-  // The pager is the only full-bleed element of the screen: it is a direct child of a body that
-  // has *no* horizontal padding, so its own width is exactly the window width and each page can
-  // be `width` wide. A padding here (or a negative margin on the list) would make
-  // `pagingEnabled` snap off-centre and clip the slides — the bug this layout avoids.
-  // It does grow, so the footer stays pinned to the bottom whatever the slide heights are.
-  pager: { flexGrow: 1 },
-  // Stretch, not centre: pages take the full height of the list so the scroll inside them has a
-  // bounded box to work with.
-  pagerContent: { alignItems: 'stretch' },
-  // Each page is exactly `width` wide; the gutter lives in here.
+  body: { flex: 1 },
+  topRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingHorizontal: layout.gutter },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  brandMark: { width: 34, height: 34, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
+  brandLetter: { ...typography.title, color: colors.accentInk },
+  brandName: { ...typography.bodyStrong, color: colors.text },
+  step: { ...typography.overline, color: colors.textMuted },
+  pager: { flex: 1 },
   slidePage: { flexGrow: 0, flexShrink: 0, height: '100%' },
   slideScroll: { flex: 1 },
-  slide: {
-    paddingHorizontal: layout.gutter,
-    gap: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-  },
-  slideBody: { gap: spacing.md },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: layout.gutter,
-  },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-  brandMark: { ...typography.title, color: colors.accent },
-  brandName: { ...typography.bodyStrong, color: colors.text },
-  step: { color: colors.textMuted },
-
-  // (pager, slidePage and slide are declared above, next to `body`.)
-
-  emojiRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  emojiRing: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headline: { flex: 1, gap: 4 },
-
-  nameBlock: { gap: spacing.xs },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  nameInput: {
-    flex: 1,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    color: colors.text,
-    minHeight: 44,
-  },
-  nameSave: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-  },
-  nameSaveLabel: { fontWeight: '800', color: colors.accentInk },
-  nameHint: { ...typography.caption, lineHeight: 16 },
-
-  points: { gap: spacing.sm, marginTop: spacing.xs },
-  point: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    backgroundColor: `${colors.surface}f2`,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  pointPressed: { opacity: 0.75 },
-  pointMark: { fontSize: 14, fontWeight: '800', marginTop: 1 },
-  pointBody: { flex: 1, gap: spacing.xs },
-  pointText: { ...typography.small, color: colors.text, lineHeight: 18 },
-  pointTip: { ...typography.caption, color: colors.textSecondary, lineHeight: 17 },
-  pointHint: { fontSize: 16, fontWeight: '800', lineHeight: 18 },
-
-  // The pager grows, so the controls already sit at the bottom of the screen; the padding here is
-  // the gutter the body deliberately does not carry.
-  footer: { gap: spacing.md, paddingHorizontal: layout.gutter },
-  dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  dot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.surfacePlus },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  skip: { flex: 0, paddingHorizontal: spacing.lg },
-  next: { flex: 1, paddingHorizontal: spacing.lg },
-  wipeNote: { textAlign: 'center', lineHeight: 16 },
-
-  // Demos
-  demo: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: `${colors.surface}cc`,
-    overflow: 'hidden',
-  },
-  demoTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surfaceAlt,
-  },
-  demoDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
-  demoCaption: { ...typography.caption, marginLeft: spacing.xs, flex: 1 },
-  demoBody: { padding: spacing.md, gap: spacing.sm },
-  demoField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-  },
-  demoInput: { flex: 1, color: colors.text, paddingVertical: spacing.sm, minHeight: 34 },
-  demoCount: { ...typography.caption, color: colors.accent, fontWeight: '800' },
-  demoRows: { gap: spacing.xs },
-  demoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  demoRowBody: { flex: 1, gap: 1 },
-  demoRowLabel: { color: colors.text },
-  demoEmpty: { ...typography.caption, lineHeight: 16, paddingVertical: spacing.xs },
-  demoTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'center' },
-  demoTab: {
-    width: 56,
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: spacing.xs + 1,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  demoTabLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
-  demoRecButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfacePlus,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  demoChip: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-  },
-  demoChipLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
-  demoBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoCheck: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfacePlus,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoBubble: {
-    backgroundColor: colors.accentSoft,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
+  slide: { gap: spacing.md, paddingHorizontal: layout.gutter, paddingTop: spacing.sm, paddingBottom: spacing.lg },
+  artFrame: { position: 'relative', overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated },
+  art: { width: '100%', height: '100%' },
+  artBadge: { position: 'absolute', left: spacing.md, bottom: spacing.md, minHeight: 32, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: `${colors.background}e8`, borderWidth: 1, borderColor: colors.border },
+  artBadgeText: { ...typography.overline, color: colors.accent },
+  copy: { gap: spacing.xs },
+  title: { ...typography.display, fontSize: 30, lineHeight: 36, color: colors.text },
+  subtitle: { ...typography.subtitle, lineHeight: 21, color: colors.textSecondary },
+  footer: { gap: spacing.sm, paddingHorizontal: layout.gutter },
+  progress: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.xs },
+  progressTarget: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  progressBar: { width: 24, height: 5, borderRadius: radius.pill, backgroundColor: colors.surfacePlus },
+  progressBarActive: { width: 38, backgroundColor: colors.accent },
+  actions: { minHeight: 52, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },
+  secondaryAction: { minHeight: 48, flex: 0, paddingHorizontal: spacing.sm },
+  skipAction: { minHeight: 48, flex: 0, paddingHorizontal: spacing.xs },
+  primaryAction: { minHeight: 48, flex: 1 },
 });
-
-

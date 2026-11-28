@@ -1,22 +1,14 @@
-import { Pressable, Text, View } from 'react-native';
+import { Keyboard, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { themedStyles, colors, radius, spacing } from '../theme/theme';
+import { Icon } from '../components/Icon';
+import { select as selectHaptic } from '../services/haptics';
+import { themedStyles, colors, radius, spacing, typography } from '../theme/theme';
+import { PRIMARY_TABS } from './primaryTabs';
 
-/**
- * Bottom bar for the swipeable navigator.
- *
- * `react-native-tab-view` renders the pager and this bar side by side, so the screens
- * never sit under it; the bar is the only place that has to know about the system bars:
- * it grows by `insets.bottom` so the Android 3-button bar / iOS home indicator never
- * covers the labels.
- *
- * Every section of the app gets a slot here — nine tabs, none hidden behind a "more"
- * menu — so the bar is built for that count: each item is a flexible column with a small
- * glyph and a label that shrinks to fit instead of truncating.
- */
+/** Content height before the device navigation inset is added. */
+export const TAB_BAR_BASE_HEIGHT = 68;
 
-export const TAB_BAR_BASE_HEIGHT = 60;
-
+/** Kept for secondary route metadata that still exposes a count. */
 export function TabBadge({ count }) {
   const label = typeof count === 'number' && count > 9 ? '9+' : count;
   return (
@@ -28,101 +20,65 @@ export function TabBadge({ count }) {
   );
 }
 
-export function BottomTabBar({ state, descriptors, navigation, hidden = [], onRevealTab }) {
+/**
+ * Fixed four-destination bar.
+ *
+ * Buttons come from `PRIMARY_TABS`, not from persisted configuration or the pager's current
+ * route subset. The navigator state is only used to identify the active route and emit the
+ * standard React Navigation tab events.
+ */
+export function BottomTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
-
-  const routes = state.routes.map((route, index) => ({
-    route,
-    index,
-    options: descriptors[route.key]?.options || {},
-  }));
-
-  const isHidden = (name) => hidden.includes(name);
-  const visible = routes.filter((item) => !isHidden(item.route.name));
-  const activeRoute = routes[state.index]?.route.name;
-  // Landing on a hidden tab (the global search can do that) shows a dimmed "pin" slot:
-  // one tap brings it back to the bar.
-  const orphan = isHidden(activeRoute) ? routes.find((item) => item.route.name === activeRoute) : null;
+  const currentName = state.routes[state.index]?.name;
+  const activeName = currentName === 'Horario' ? 'Inicio' : currentName;
 
   return (
     <View
-      style={[styles.bar, { height: TAB_BAR_BASE_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
+      style={[styles.bar, { minHeight: TAB_BAR_BASE_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
       accessibilityRole="tablist"
     >
-      {visible.map(({ route, index, options }) => (
+      {PRIMARY_TABS.map((tab) => (
         <TabButton
-          key={route.key}
-          route={route}
-          index={index}
-          options={options}
+          key={tab.name}
+          tab={tab}
+          routeKey={state.routes.find((route) => route.name === tab.name)?.key}
           navigation={navigation}
-          active={index === state.index}
+          active={tab.name === activeName}
         />
       ))}
-
-      {orphan ? (
-        <Pressable
-          onPress={() => onRevealTab?.(orphan.route.name)}
-          accessibilityRole="button"
-          accessibilityLabel={`${orphan.options.tabBarLabel || orphan.route.name} está oculta. Tocar para mostrar de nuevo.`}
-          style={({ pressed }) => [styles.item, styles.orphanItem, pressed ? styles.pressed : null]}
-        >
-          <View style={styles.orphanWrap}>
-            {typeof orphan.options.tabBarIcon === 'function'
-              ? orphan.options.tabBarIcon({ focused: true, color: colors.accent })
-              : null}
-          </View>
-          <Text
-            style={[styles.label, styles.labelActive]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-          >
-            {orphan.options.tabBarLabel || orphan.route.name}
-          </Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
 
-/** One tab: glyph, label, the active indicator and the press/long-press contract. */
-function TabButton({ route, index, options, navigation, active }) {
-  const color = active ? colors.accent : colors.textMuted;
-  const badgeOption = options.tabBarBadge;
-  const badge =
-    typeof badgeOption === 'function'
-      ? badgeOption()
-      : badgeOption
-        ? <TabBadge count={badgeOption} />
-        : null;
-  const label = options.tabBarLabel ?? options.title ?? route.name;
+function TabButton({ tab, routeKey, navigation, active }) {
+  const color = active ? colors.accent : colors.textSecondary;
+
+  const open = () => {
+    const event = navigation.emit({ type: 'tabPress', target: routeKey, canPreventDefault: true });
+    if (event.defaultPrevented) return;
+    selectHaptic();
+    Keyboard.dismiss();
+    navigation.navigate(tab.name);
+  };
 
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
-      accessibilityLabel={options.tabBarAccessibilityLabel || String(label)}
-      onPress={() => {
-        const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-        if (!event.defaultPrevented) navigation.navigate(route.name);
-      }}
-      onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
+      accessibilityLabel={tab.label}
+      accessibilityHint={`Abrir ${tab.label}`}
+      hitSlop={4}
+      android_ripple={{ color: colors.accentSoft }}
+      onPress={open}
+      onLongPress={() => navigation.emit({ type: 'tabLongPress', target: routeKey })}
       style={({ pressed }) => [styles.item, pressed ? styles.pressed : null]}
     >
-      <View style={[styles.iconWrap, active ? { backgroundColor: colors.accentSoft } : null]}>
-        {typeof options.tabBarIcon === 'function' ? options.tabBarIcon({ focused: active, color }) : null}
-        {badge}
+      <View style={[styles.iconWrap, active ? styles.iconWrapActive : null]}>
+        <Icon name={tab.glyph} size={22} color={color} strokeWidth={active ? 2.4 : 2} />
       </View>
-      <Text
-        style={[styles.label, active ? styles.labelActive : null]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.7}
-      >
-        {label}
+      <Text style={[styles.label, active ? styles.labelActive : null]} numberOfLines={2} maxFontSizeMultiplier={2}>
+        {tab.label}
       </Text>
-      {active ? <View style={styles.indicator} /> : null}
     </Pressable>
   );
 }
@@ -135,51 +91,41 @@ const styles = themedStyles({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.xs,
   },
-  item: { flex: 1, alignItems: 'center', gap: 2, paddingTop: 3, paddingHorizontal: 1 },
-  // The "pin" slot shown when the current tab is hidden.
-  orphanItem: { opacity: 0.85 },
-  orphanWrap: {
-    height: 24,
-    minWidth: 26,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
+  item: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderStyle: 'dashed',
+    gap: 2,
+    paddingHorizontal: spacing.xs,
   },
-  pressed: { opacity: 0.6 },
-  iconWrap: {
-    height: 24,
-    minWidth: 26,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
+  pressed: { opacity: 0.72, transform: [{ scale: 0.98 }] },
+  iconWrap: { width: 48, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  iconWrapActive: { backgroundColor: colors.accentSoft },
+  label: {
+    ...typography.tab,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
-  label: { fontSize: 8.5, fontWeight: '700', letterSpacing: 0.1, color: colors.textMuted, textAlign: 'center' },
   labelActive: { color: colors.accent },
-  indicator: {
-    position: 'absolute',
-    top: -spacing.xs,
-    height: 2,
-    width: 16,
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
-
   badge: {
-    position: 'absolute',
-    top: -5,
-    right: -10,
-    minWidth: 16,
-    height: 16,
+    minWidth: 18,
+    height: 18,
     borderRadius: radius.pill,
     paddingHorizontal: 4,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeLabel: { fontSize: 10, fontWeight: '800', color: colors.accentInk },
+  badgeLabel: {
+    fontFamily: typography.tab.fontFamily,
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.accentInk,
+  },
 });

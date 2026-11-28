@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const babel = require('@babel/core');
+const root = path.resolve(__dirname, '..'); const loader = require.extensions['.js'];
+require.extensions['.js'] = (module, filename) => { if (!filename.startsWith(`${root}${path.sep}src${path.sep}`)) return loader(module, filename); const result = babel.transformSync(fs.readFileSync(filename, 'utf8'), { filename, babelrc: false, configFile: false, presets: [require.resolve('babel-preset-expo')] }); module._compile(result.code, filename); };
+const { buildCalendarWidgetSnapshot, getCalendarWidgetSnapshotView } = require('../src/services/calendarWidgetSnapshot');
+const now = new Date(2026, 10, 25, 9, 15);
+const value = buildCalendarWidgetSnapshot({ now, activities: [{ day: 2, start: '08:00', end: '09:00', suspended: {} }, { day: 2, start: '10:00', end: '11:00', suspended: { '2026-11-25': true } }], events: [{ dateKey: '2026-11-25', time: '12:00', title: 'Privado' }], birthdays: [{ dateKey: '2000-11-25', time: '09:00', name: 'Privado' }] });
+assert.equal(value.dateKey, '2026-11-25'); assert.equal(value.nextEvent.time, '12:00'); assert.equal(value.activityCount, 2); assert.equal(value.birthdayPresent, true); assert.equal(value.nextEvent.title, null);
+assert.equal(buildCalendarWidgetSnapshot({ now }).status, 'empty'); assert.equal(getCalendarWidgetSnapshotView(value, new Date(2026, 10, 26)).status, 'stale'); assert.match(fs.readFileSync(path.join(root, 'app.json'), 'utf8'), /"name": "CalendarWidget"/);
+console.log('calendar-widget-smoke-test: calendario, privacidad y stale verificados');

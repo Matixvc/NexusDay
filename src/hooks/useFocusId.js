@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRoute } from '@react-navigation/native';
+import { focusIdForParams } from '../services/focusRequest';
 
 /**
  * Id of the item another screen asked us to reveal (the global search navigates here with
@@ -9,19 +10,22 @@ import { useRoute } from '@react-navigation/native';
  * the value is derived while rendering (no setState inside an effect). Navigating again with
  * the same id creates a new params object, so the item lights up once more.
  */
-export function useFocusId(timeout = 4000) {
+export function useFocusRequest(timeout = 4000) {
   const route = useRoute();
   const params = route.params;
-  const incoming = params?.focusId ?? null;
   const [expired, setExpired] = useState(null);
 
-  const focusId = incoming && incoming !== expired ? incoming : null;
+  const focusId = focusIdForParams(params, expired);
 
   useEffect(() => {
-    if (!focusId) return undefined;
+    if (!focusId || timeout == null) return undefined;
     const timer = setTimeout(() => setExpired(params), timeout);
     return () => clearTimeout(timer);
   }, [focusId, params, timeout]);
 
-  return focusId;
+  return { focusId, request: params };
+}
+
+export function useFocusId(timeout = 4000) {
+  return useFocusRequest(timeout).focusId;
 }

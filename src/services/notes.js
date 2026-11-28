@@ -44,6 +44,20 @@ export function blankNote(color) {
   };
 }
 
+/** A draft is saveable when it contains text, a checklist item, or a saved local media file. */
+export function hasNoteContent(note) {
+  if (!note) return false;
+  const hasText = note.kind === NOTE_KINDS.checklist
+    ? Array.isArray(note.items) && note.items.some((item) => String(item.text || '').trim())
+    : Boolean(String(note.body || '').trim());
+  return Boolean(
+    String(note.title || '').trim()
+    || hasText
+    || note.audio?.uri
+    || note.attachment?.uri,
+  );
+}
+
 /** Un ítem de checklist con id propio (la tecla estable de React al reordenar o borrar). */
 export function makeCheckItem(text) {
   return { id: uid('chk'), text: String(text ?? '').trim(), done: false };

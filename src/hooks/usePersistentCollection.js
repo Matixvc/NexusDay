@@ -1,66 +1,53 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadJSON, saveJSON } from '../services/storage';
+import { useCallback, useEffect, useState } from 'react';
+import { loadJSON, mutateCollection, subscribeCollection, withCollectionLock } from '../services/storage';
 import { uid } from '../utils/dates';
 
-/**
- * A JSON array persisted to AsyncStorage under `key`.
- *
- * - Hydrates once on mount, then mirrors every change back to storage.
- * - Writes are skipped until hydration finishes, so the initial value can
- *   never overwrite data already on the device.
- *
- * Returns CRUD helpers operating on `{ id }` shaped objects.
- */
-export function usePersistentCollection(key, initialValue = []) {
-  const [items, setItems] = useState(initialValue);
+export function usePersistentCollection(key) {
+  const [items, setItems] = useState([]);
   const [hydrated, setHydrated] = useState(false);
-  const initialRef = useRef(initialValue);
-  // Set by `replaceAll`, which the app only uses to wipe everything (first run, Ajustes).
-  // A wipe that lands before the read resolves must win, otherwise the sample data the
-  // read is still returning would be written back on the next persist.
-  const wipedRef = useRef(false);
+  const [recoveryError, setRecoveryError] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const stored = await loadJSON(key, initialRef.current);
-      if (!alive) return;
-      if (wipedRef.current) {
-        setHydrated(true);
-        return;
+    const unsubscribe = subscribeCollection(key, setItems);
+    withCollectionLock(async () => {
+      try {
+        const stored = await loadJSON(key, null);
+        if (alive) {
+          setItems(stored ?? []);
+          setHydrated(true);
+        }
+      } catch (error) {
+        if (alive) setRecoveryError(error.code || 'COLLECTION_READ_FAILED');
       }
-      setItems(stored);
-      setHydrated(true);
-    })();
-    return () => {
-      alive = false;
-    };
+    });
+    return () => { alive = false; unsubscribe(); };
   }, [key]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    saveJSON(key, items);
-  }, [key, items, hydrated]);
+  const commit = useCallback(async (transform) => {
+    if (!hydrated || recoveryError) return false;
+    try { return await mutateCollection(key, transform); }
+    catch { return false; }
+  }, [key, hydrated, recoveryError]);
 
-  const create = useCallback((data) => {
+  const create = useCallback(async (data) => {
     const item = { id: uid(data?.idPrefix || 'x'), ...data };
     delete item.idPrefix;
-    setItems((prev) => [item, ...prev]);
-    return item;
-  }, []);
+    return await commit(prev => [item, ...prev]) ? item : null;
+  }, [commit]);
 
-  const update = useCallback((id, patch) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-  }, []);
+  const update = useCallback((id, patch) => commit(prev => {
+    if (!prev.some(item => item.id === id)) return null;
+    return prev.map(item => item.id === id
+      ? { ...item, ...(typeof patch === 'function' ? patch(item) : patch) }
+      : item);
+  }), [commit]);
 
-  const remove = useCallback((id) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const remove = useCallback(id => commit(prev => {
+    const next = prev.filter(item => item.id !== id);
+    return next.length !== prev.length ? next : null;
+  }), [commit]);
 
-  const replaceAll = useCallback((next) => {
-    wipedRef.current = true;
-    setItems(next);
-  }, []);
-
-  return { items, setItems, create, update, remove, replaceAll, hydrated };
+  // Used only after ND-02 has committed and verified all keys.
+  return { items, create, update, remove, replaceAll: setItems, hydrated, recoveryError };
 }

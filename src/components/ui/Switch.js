@@ -74,7 +74,7 @@ export { Switch, SwitchRow };
 export default memo(Switch);
 
 const styles = themedStyles({
-  hit: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  hit: { minWidth: 48, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
   track: { width: 44, height: 26, borderRadius: radius.pill, justifyContent: 'center' },

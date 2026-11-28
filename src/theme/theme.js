@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { DarkTheme } from '@react-navigation/native';
 import { DEFAULT_ACCENT_ID, getAccentTheme, isAccentId, resolveAccent } from './accents';
-import { DEFAULT_SURFACE_ID, findTokenCollisions, getSurfaceMode, isSurfaceId } from './surfaces';
+import { DEFAULT_SURFACE_ID, findTokenCollisions, getSurfaceMode, isSurfaceId, normalizeSurfaceId } from './surfaces';
 
 /**
  * Which theme is painted right now, and how to repaint it.
@@ -57,32 +57,47 @@ export const palette = [
   '#94a3b8',
 ];
 
+/** Brand colours do not change with the selected surface, so they stay outside repaint. */
+export const brand = {
+  violet: '#8265F5',
+  mint: '#27C6BB',
+  amber: '#FFB45E',
+  coral: '#FF719B',
+  primaryAction: '#6546D7',
+  // Kept visually white but unique: pure #FFFFFF is the light elevated token and would be
+  // mistaken for that surface by the value-based repaint engine.
+  onPrimaryAction: '#FFFEFF',
+};
+
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32 };
 
 export const radius = { sm: 10, md: 14, lg: 18, xl: 22, sheet: 28, pill: 999 };
 
 export const layout = { gutter: 20, listGap: 10, fabInset: 24 };
 
-const fontFamily = Platform.select({ ios: 'System', android: 'sans-serif', default: undefined });
+export const manropeFontFamily = 'Manrope';
 
 export const typography = {
-  display: { fontFamily, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
-  title: { fontFamily, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3, color: colors.text },
-  subtitle: { fontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
-  body: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.text },
-  bodyStrong: { fontFamily, fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.text },
-  small: { fontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
-  caption: { fontFamily, fontSize: 11.5, lineHeight: 15, fontWeight: '600', color: colors.textMuted },
-  overline: {
-    fontFamily,
-    fontSize: 10.5,
-    lineHeight: 14,
+  display: { fontFamily: manropeFontFamily, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.7, color: colors.text },
+  h1: { fontFamily: manropeFontFamily, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, color: colors.text },
+  h2: { fontFamily: manropeFontFamily, fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.2, color: colors.text },
+  title: { fontFamily: manropeFontFamily, fontSize: 17, lineHeight: 23, fontWeight: '700', letterSpacing: -0.2, color: colors.text },
+  subtitle: { fontFamily: manropeFontFamily, fontSize: 13.5, lineHeight: 19, fontWeight: '400', color: colors.textSecondary },
+  body: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 22, fontWeight: '500', color: colors.text },
+  bodyStrong: { fontFamily: manropeFontFamily, fontSize: 15, lineHeight: 22, fontWeight: '700', color: colors.text },
+  label: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.text },
+  small: { fontFamily: manropeFontFamily, fontSize: 13, lineHeight: 18, fontWeight: '500', color: colors.textSecondary },
+  caption: { fontFamily: manropeFontFamily, fontSize: 12, lineHeight: 17, fontWeight: '500', color: colors.textSecondary },
+  tab: { fontFamily: manropeFontFamily, fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.textSecondary },
+  overline: { fontFamily: manropeFontFamily, fontSize: 11, lineHeight: 16, fontWeight: '700', letterSpacing: 0.5, color: colors.textSecondary },
+  tabular: {
+    fontFamily: manropeFontFamily,
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textMuted,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
-  tabular: { fontVariant: ['tabular-nums'] },
 };
 
 export const shadow = {
@@ -126,28 +141,26 @@ export const calendarTheme = {
   indicatorColor: colors.accent,
   dotColor: colors.accent,
   selectedDotColor: colors.accent,
-  textDayFontFamily: fontFamily,
-  textMonthFontFamily: fontFamily,
-  textDayHeaderFontFamily: fontFamily,
+  textDayFontFamily: manropeFontFamily,
+  textMonthFontFamily: manropeFontFamily,
+  textDayHeaderFontFamily: manropeFontFamily,
   textDayFontWeight: '500',
   textMonthFontWeight: '700',
   textDayHeaderFontWeight: '600',
-  textDayFontSize: 15,
-  textMonthFontSize: 15.5,
+  textDayFontSize: 16,
+  textMonthFontSize: 17,
   textDayHeaderFontSize: 10.5,
   'stylesheet.calendar.header': {
     week: { marginTop: spacing.md, flexDirection: 'row', justifyContent: 'space-between' },
-    month: { paddingTop: spacing.sm, alignItems: 'center' },
   },
   'stylesheet.calendar.main': {
     container: { paddingHorizontal: 0, paddingTop: spacing.sm, paddingBottom: 0 },
-    week: { marginVertical: 1, flexDirection: 'row', justifyContent: 'space-between' },
+    week: { marginVertical: 3, flexDirection: 'row', justifyContent: 'space-between' },
   },
   'stylesheet.day.basic': {
-    base: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    base: { flex: 1, minWidth: 0, minHeight: 44, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
     selected: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent },
     today: { borderColor: 'transparent', borderRadius: radius.pill },
-    text: { color: colors.text, fontWeight: '500' },
     selectedText: { color: colors.accent, fontWeight: '700' },
   },
 };
@@ -190,17 +203,24 @@ styleRegistry.add(calendarTheme);
 function repaint(node, mapping, depth = 0) {
   if (!node || typeof node !== 'object' || depth > 5) return node;
   if (Array.isArray(node)) {
-    return node.map((child) => repaint(child, mapping, depth + 1));
+    let changed = false;
+    const result = node.map((child) => {
+      const repainted = repaint(child, mapping, depth + 1);
+      if (repainted !== child) changed = true;
+      return repainted;
+    });
+    return changed ? result : node;
   }
-  const frozen = Object.isFrozen(node);
-  const target = frozen ? { ...node } : node;
   let changed = false;
+  const target = { ...node };
   Object.keys(node).forEach((key) => {
     const value = node[key];
     if (typeof value === 'string') {
       if (mapping[value]) {
         target[key] = mapping[value];
         changed = true;
+      } else {
+        target[key] = value;
       }
       return;
     }
@@ -208,6 +228,8 @@ function repaint(node, mapping, depth = 0) {
     if (repainted !== value) {
       target[key] = repainted;
       changed = true;
+    } else {
+      target[key] = value;
     }
   });
   return changed ? target : node;
@@ -242,7 +264,7 @@ function buildRepaintMap(resolved) {
 export function applyTheme(patch = {}) {
   const next = {
     accentId: isAccentId(patch.accentId) ? patch.accentId : applied.accentId,
-    surfaceId: isSurfaceId(patch.surfaceId) ? patch.surfaceId : applied.surfaceId,
+    surfaceId: isSurfaceId(patch.surfaceId) ? normalizeSurfaceId(patch.surfaceId) : applied.surfaceId,
   };
   const resolved = resolveTokens(next);
   const { changes, clashes } = buildRepaintMap(resolved);
@@ -252,15 +274,18 @@ export function applyTheme(patch = {}) {
 
   Object.assign(colors, resolved);
 
-  // Repaint every registered style. `repaint` returns the same reference when it mutated
-  // in place, or a new mutable clone when it hit a frozen object. Replace registry entries
-  // for clones so future repaints keep working on mutable objects.
+  // Repaint every registered style. `repaint` now returns a new object reference whenever a
+  // colour changed (even for previously-mutable sheets), so React can detect the change and
+  // update the native views. We copy the repainted keys back into the original sheet object
+  // to keep the module-level `styles` reference stable for `React.memo` comparisons.
   const registrySnapshot = Array.from(styleRegistry);
   registrySnapshot.forEach((styles) => {
     const repainted = repaint(styles, changes);
     if (repainted !== styles) {
-      styleRegistry.delete(styles);
-      styleRegistry.add(repainted);
+      Object.keys(styles).forEach((key) => {
+        delete styles[key];
+      });
+      Object.assign(styles, repainted);
     }
   });
 

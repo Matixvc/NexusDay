@@ -8,36 +8,48 @@ import { EmptyState, Pill } from './primitives';
  *
  * Filtering happens on every keystroke (the caller owns the state), so the field stays a
  * dumb input plus a clear button; results are rendered by `SearchResults`.
+ *
+ * Accepts optional `error` and `helper` strings that render below the field. When `error`
+ * is set it takes precedence over `helper`. Both are retrocompatible: omitting them keeps
+ * the previous layout unchanged.
  */
-export function SearchField({ value, onChangeText, placeholder = 'Buscar…' }) {
+export function SearchField({ value, onChangeText, placeholder = 'Buscar…', error, helper }) {
   return (
-    <View style={styles.field}>
-      <View style={styles.leading}>
-        <Glyph name="search" color={colors.textMuted} />
+    <View style={styles.wrapper}>
+      <View style={styles.field}>
+        <View style={styles.leading}>
+          <Glyph name="search" color={colors.textMuted} />
+        </View>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          selectionColor={colors.accent}
+          cursorColor={colors.accent}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          accessibilityLabel={placeholder}
+          accessibilityHint={error || helper}
+        />
+        {value ? (
+          <Pressable
+            onPress={() => onChangeText('')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Limpiar búsqueda"
+            style={({ pressed }) => [styles.clear, pressed ? styles.pressed : null]}
+          >
+            <Glyph name="close" color={colors.textSecondary} />
+          </Pressable>
+        ) : null}
       </View>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textMuted}
-        style={styles.input}
-        selectionColor={colors.accent}
-        cursorColor={colors.accent}
-        autoCorrect={false}
-        autoCapitalize="none"
-        returnKeyType="search"
-        accessibilityLabel={placeholder}
-      />
-      {value ? (
-        <Pressable
-          onPress={() => onChangeText('')}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Limpiar búsqueda"
-          style={({ pressed }) => [styles.clear, pressed ? styles.pressed : null]}
-        >
-          <Glyph name="close" color={colors.textSecondary} />
-        </Pressable>
+      {error ? (
+        <Text style={styles.errorText}>{error}</Text>
+      ) : helper ? (
+        <Text style={styles.helperText}>{helper}</Text>
       ) : null}
     </View>
   );
@@ -73,7 +85,7 @@ export function SearchResults({ items, total, query, onSelect }) {
           accessibilityLabel={`${item.typeLabel}: ${item.title}. ${item.subtitle}`}
           style={({ pressed }) => [styles.result, pressed ? styles.pressed : null]}
         >
-          <View style={[styles.resultIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
+          <View style={[styles.resultIcon, { backgroundColor: colors.surfaceAlt, borderColor: item.color }]}>
             <Text style={styles.resultEmoji}>{item.icon}</Text>
           </View>
           <View style={styles.resultBody}>
@@ -92,23 +104,26 @@ export function SearchResults({ items, total, query, onSelect }) {
 }
 
 const styles = themedStyles({
+  wrapper: { gap: spacing.xs },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   // The leading slot is a fixed square that centres the glyph on both axes. A fixed width
   // alone left the magnifier riding high (it carries a negative offset in TabGlyphs), which
   // read as a stray dot detached from the field; centring the box removes any drift.
-  leading: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
-  input: { flex: 1, fontSize: 15, color: colors.text, minHeight: 48, paddingVertical: spacing.md },
-  clear: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  leading: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  input: { ...typography.body, flex: 1, color: colors.text, minHeight: 52, paddingVertical: spacing.md },
+  clear: { width: 48, height: 48, marginRight: -spacing.md, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.65 },
+  errorText: { color: colors.danger, ...typography.caption, marginTop: spacing.xs },
+  helperText: { color: colors.textMuted, ...typography.caption, marginTop: spacing.xs },
 
   results: { gap: spacing.sm },
   result: {
@@ -130,6 +145,6 @@ const styles = themedStyles({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resultEmoji: { fontSize: 16 },
+  resultEmoji: { fontFamily: typography.body.fontFamily, fontSize: 16 },
   resultBody: { flex: 1, gap: 2 },
 });

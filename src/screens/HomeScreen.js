@@ -1,110 +1,106 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { AccessibilityInfo, AppState, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { themedStyles, colors, layout, radius, shadow, spacing, typography } from '../theme/theme';
+import { themedStyles, colors, layout, spacing, typography } from '../theme/theme';
 import { useAppData } from '../context/AppDataContext';
 import {
   Card,
-  EmptyState,
-  Notice,
-  Pill,
+  Button,
   PrimaryButton,
-  SectionTitle,
-  Stat,
   TextButton,
 } from '../components/ui/primitives';
 import { SearchField, SearchResults } from '../components/ui/SearchField';
-import { buildDashboard } from '../services/dashboard';
+import { buildDashboard, millisecondsToNextMinute } from '../services/dashboard';
 import { searchEverything } from '../services/search';
-import { tap as tapHaptic } from '../services/haptics';
-import { formatMoney } from '../utils/money';
-import { plural } from '../utils/text';
-
-/** `assets/welcome-bg.jpg` is the decorative hero of the dashboard. */
-const WELCOME_BG = require('../../assets/welcome-bg.jpg');
+import { HeaderIconButton } from '../components/ui/HeaderIconButton';
+import { AppHeader } from '../components/ui/AppHeader';
+import { useAccentTheme } from '../context/ThemeContext';
+import { createRoutineToggleGuard, eventDestination } from '../services/homeActions';
+import { success as successHaptic } from '../services/haptics';
+import { AnytimeSection, CurrentActivitySection, TimedAgendaSection } from './home/DaySections';
 
 /** Nombre configurado en app.json, para que los textos sigan un rename sin tocar código. */
 const APP_NAME = Constants.expoConfig?.name || 'NexusDay';
-
-/**
- * La línea resumen del banner. Se resuelve con tres frases completas en lugar de un
- * `1 cosa(s)`: así el número y el sustantivo siempre concuerdan.
- */
-function commitmentSummary(count) {
-  if (!count) return 'No tienes eventos o tareas pendientes para hoy.';
-  return `Tienes ${plural(count, 'evento pendiente', 'eventos pendientes')} para hoy.`;
-}
-
-/** Quick access cards: one tap opens the matching section of the swipeable pager. */
-function buildQuickAccess(data) {
-  return [
-    { route: 'Horario', emoji: '📅', title: 'Horario semanal', hint: `${data.todayActivities.length} hoy`, color: colors.accent },
-    { route: 'Notas', emoji: '📝', title: 'Bloc de notas', hint: plural(data.notesCount, 'nota guardada', 'notas guardadas'), color: '#a3e635' },
-    {
-      route: 'Agenda',
-      emoji: '🗓️',
-      title: 'Calendario',
-      hint: plural(data.upcomingEvents.length, 'próximo', 'próximos'),
-      color: '#8b5cf6',
-    },
-    {
-      route: 'Cumpleaños',
-      emoji: '🎂',
-      title: 'Cumpleaños',
-      hint: data.upcomingBirthdays.length ? `${data.upcomingBirthdays.length} próximos` : 'Sin avisos',
-      color: '#ec4899',
-    },
-    {
-      route: 'Hábitos',
-      emoji: '💪',
-      title: 'Hábitos',
-      hint: data.pendingHabits.length ? plural(data.pendingHabits.length, 'pendiente', 'pendientes') : 'Todo al día',
-      color: '#f59e0b',
-    },
-    { route: 'Gastos', emoji: '💰', title: 'Gastos rápidos', hint: formatMoney(data.spentToday), color: '#38bdf8' },
-    { route: 'Nexus AI', emoji: '🤖', title: 'Nexus AI', hint: 'Asistente local', color: '#4fd1c5' },
-    { route: 'Ajustes', emoji: '⚙️', title: 'Ajustes', hint: 'Permisos y datos', color: '#94a3b8' },
-  ];
-}
+const SCHEDULE_ART = require('../../assets/nex/schedule/nex-schedule-compact.jpg');
+const FREE_DAY_ART = require('../../assets/nex/schedule/nex-schedule-free-day.jpg');
+const NEX_HOME_ART = require('../../assets/nex/u11/backgrounds/nex-flow.jpg');
 
 export default function HomeScreen({ navigation }) {
   const {
     activities,
     events,
+    routines,
     birthdays,
     notes,
-    habits,
-    expenses,
     settings,
     userName,
     permission,
     requestNotifications,
     notificationsSupported,
+    toggleRoutineCompletion,
   } = useAppData();
 
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { fontScale } = useWindowDimensions();
+  const { surfaceId } = useAccentTheme();
   const [query, setQuery] = useState('');
+  const [clockTimestamp, setClockTimestamp] = useState(() => Date.now());
+  const [pendingRoutineIds, setPendingRoutineIds] = useState(() => new Set());
+  const [routineFeedback, setRoutineFeedback] = useState(null);
 
-  const data = useMemo(
-    () => buildDashboard({ activities, events, birthdays, notes, habits, expenses }),
-    [activities, events, birthdays, notes, habits, expenses],
+  useFocusEffect(
+    useCallback(() => {
+      let timer;
+      let disposed = false;
+      const refreshClock = () => {
+        if (disposed) return;
+        const now = Date.now();
+        setClockTimestamp(now);
+        timer = setTimeout(refreshClock, millisecondsToNextMinute(now) + 20);
+      };
+
+      refreshClock();
+      const subscription = AppState.addEventListener('change', (state) => {
+        if (state !== 'active' || disposed) return;
+        clearTimeout(timer);
+        refreshClock();
+      });
+
+      return () => {
+        disposed = true;
+        clearTimeout(timer);
+        subscription.remove();
+      };
+    }, []),
   );
 
-  // Real-time: the four collections the dashboard can reach, ranked by relevance.
+  const data = useMemo(
+    () => buildDashboard({ activities, events, birthdays, notes, routines, now: new Date(clockTimestamp) }),
+    [activities, events, birthdays, notes, routines, clockTimestamp],
+  );
+
+  // Real-time: the three primary domains reachable from the dashboard, ranked by relevance.
   const search = useMemo(
-    () => searchEverything(query, { notes, events, habits, expenses }),
-    [query, notes, events, habits, expenses],
+    () => searchEverything(query, { notes, events, activities }),
+    [query, notes, events, activities],
   );
   const searching = query.trim().length > 0;
 
-  const quickAccess = useMemo(() => buildQuickAccess(data), [data]);
-  const cardWidth = (width - layout.gutter * 2 - spacing.md) / 2;
   const showPermissionCard = notificationsSupported && permission.checked && !permission.granted;
   // v1.1 name (written by the tutorial) wins; the v1.0 profile field stays as a fallback.
   const name = (userName || settings?.displayName || '').trim();
-  const title = name ? `¡Hola, ${name}! 👋` : data.greeting;
+  const greeting = name ? `¡Hola, ${name}!` : data.greeting;
+  const routineGuard = useMemo(() => createRoutineToggleGuard({
+    toggleRoutineCompletion,
+    onPendingChange: (id, pending) => setPendingRoutineIds((current) => {
+      const next = new Set(current);
+      if (pending) next.add(id);
+      else next.delete(id);
+      return next;
+    }),
+  }), [toggleRoutineCompletion]);
 
   /** One tap: jump to the section and let it highlight the exact item. */
   const openResult = useCallback(
@@ -118,8 +114,32 @@ export default function HomeScreen({ navigation }) {
   // Stable navigators for the one-off buttons below. The access grid does not use a callback
   // at all: `QuickCard` navigates by itself, so a fresh arrow on every render would only
   // defeat its memoisation.
-  const goToAgenda = useCallback(() => navigation.navigate('Agenda'), [navigation]);
   const goToSettings = useCallback(() => navigation.navigate('Ajustes'), [navigation]);
+  const goToSchedule = useCallback(() => navigation.navigate('Horario'), [navigation]);
+  const goToRoutines = useCallback(() => navigation.navigate('Mi rutina'), [navigation]);
+  const openDayItem = useCallback((item) => {
+    if (item.kind === 'event') {
+      const destination = eventDestination({ id: item.sourceId, dateKey: item.dateKey });
+      navigation.navigate(destination.route, destination.params);
+      return;
+    }
+    navigation.navigate('Horario', { focusId: item.sourceId });
+  }, [navigation]);
+  const toggleRoutineFromHome = useCallback(async (item) => {
+    setRoutineFeedback(null);
+    const result = await routineGuard.toggle(item.sourceId, data.today);
+    if (result.status === 'busy') return;
+    if (!result.ok) {
+      const message = 'No se pudo guardar el cambio de rutina.';
+      setRoutineFeedback(message);
+      AccessibilityInfo.announceForAccessibility(message);
+      return;
+    }
+    const message = result.status === 'completed' ? 'Rutina completada.' : 'Rutina pendiente otra vez.';
+    setRoutineFeedback(message);
+    successHaptic();
+    AccessibilityInfo.announceForAccessibility(message);
+  }, [data.today, routineGuard]);
 
   return (
     <View style={styles.root}>
@@ -132,43 +152,18 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* The hero only exists while browsing. Searching hides the photo, its scrim and every
-            shadow below it, so the results start at the top of the screen instead of competing
-            with a picture. */}
-        {searching ? null : (
-          <ImageBackground source={WELCOME_BG} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
-            {/* Dark filter over the photo: the banner is the brightest element of a #0a0a0a
-                app, so the picture is dimmed and then scrimmed twice under the text block. */}
-            <View style={styles.heroOverlay} />
-            <View style={styles.heroOverlayBottom} />
-            <View style={styles.heroBody}>
-              <Text style={[typography.overline, styles.heroDate]} numberOfLines={1}>
-                {data.dateLabel}
-              </Text>
-              <Text style={typography.display} numberOfLines={2}>
-                {title}
-              </Text>
-              <Text style={[typography.small, styles.heroHint]} numberOfLines={3}>
-                {name ? `${data.greeting}. ` : ''}
-                {commitmentSummary(data.todayCommitments)}
-              </Text>
-              <View style={styles.heroPills}>
-                <Pill label={`${data.todayActivities.length} en el horario`} tone="accent" />
-                <Pill label={`${data.todayEvents.length} en la agenda`} tone="accent" />
-                {data.pendingHabits.length ? (
-                  <Pill label={plural(data.pendingHabits.length, 'hábito pendiente', 'hábitos pendientes')} />
-                ) : (
-                  <Pill label="Hábitos al día" />
-                )}
-              </View>
-            </View>
-          </ImageBackground>
-        )}
+        <AppHeader
+          title={greeting}
+          subtitle={data.dateLabel}
+          variant="large"
+          headerRight={<HeaderIconButton icon="settings" label="Abrir Ajustes" onPress={goToSettings} />}
+        />
+        {searching ? null : <Text style={[typography.overline, styles.eyebrow]}>DÍA A DÍA</Text>}
 
         <SearchField
           value={query}
           onChangeText={setQuery}
-          placeholder="Buscar notas, asignaturas, eventos o gastos..."
+          placeholder="Buscar notas, clases o eventos..."
         />
 
         {searching ? (
@@ -180,66 +175,45 @@ export default function HomeScreen({ navigation }) {
           />
         ) : (
           <>
-          {/* Orden del dashboard (pedido explícito):
-              1º Barra de búsqueda global (arriba, ya renderizada)
-              2º Accesos rápidos
-              3º Próximas actividades / eventos
-              4º Bloques de resumen: Gastado Hoy · Notas Fijas · Pendientes
-            Lo que se usa todos los días queda arriba; las cifras, al final del scroll. */}
-          <SectionTitle title="Accesos rápidos" count={quickAccess.length} right={<Pill label="1 toque" />} />
-
-          <View style={styles.grid}>
-            {quickAccess.map((item) => (
-              <MemoQuickCard key={item.route} item={item} width={cardWidth} navigation={navigation} />
-            ))}
-          </View>
-
-          <SectionTitle
-            title="Próximas actividades"
-            count={data.nextUp.length}
-            right={<TextButton label="Ver agenda" onPress={goToAgenda} />}
+          <Card variant="featured" style={styles.organizeCard} accessibilityLabel="Organizar mi día">
+            <Text style={[typography.title, styles.organizeTitle]}>Organizar mi día</Text>
+            <Text style={[typography.small, styles.organizeHint]}>Ajusta tu semana o tus rutinas desde un mismo lugar.</Text>
+            <View style={styles.organizeActions}>
+              <Button label="Mi horario semanal" icon="schedule" onPress={goToSchedule} style={styles.organizeButton} />
+              <Button label="Mis rutinas" icon="checkCircle" variant="secondary" onPress={goToRoutines} style={styles.organizeButton} />
+            </View>
+          </Card>
+          <CurrentActivitySection
+            current={data.currentActivity}
+            concurrent={data.concurrentActivities}
+            dayState={data.dayState}
+            weekdayLabel={data.weekdayLabel}
+            todayCommitments={data.todayCommitments}
+            artwork={surfaceId === 'nex'
+              ? data.dayState === 'free' ? FREE_DAY_ART : data.currentActivity ? NEX_HOME_ART : SCHEDULE_ART
+              : null}
+            onOpenSchedule={goToSchedule}
+            onManageRoutines={goToRoutines}
           />
 
-          {data.nextUp.length === 0 ? (
-            <EmptyState
-              emoji="☕"
-              title="Nada por delante"
-              hint="Agenda un evento o registra una actividad en el horario y va a aparecer aquí."
-            />
-          ) : (
-            data.nextUp.map((item) => (
-              <Card
-                key={item.id}
-                accent={item.color}
-                onPress={() => navigation.navigate(item.kind === 'event' ? 'Agenda' : 'Horario')}
-                style={styles.nextCard}
-              >
-                <View style={styles.nextRow}>
-                  <Text style={[styles.nextTime, typography.tabular]}>{item.time}</Text>
-                  <View style={styles.nextBody}>
-                    <Text style={typography.bodyStrong} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={typography.caption} numberOfLines={1}>
-                      {item.detail}
-                    </Text>
-                  </View>
-                  <Pill
-                    label={item.kind === 'event' ? 'Agenda' : 'Horario'}
-                    tone={item.kind === 'event' ? 'accent' : 'neutral'}
-                  />
-                </View>
-              </Card>
-            ))
-          )}
+          <TimedAgendaSection
+            items={data.nextTimedItems}
+            today={data.today}
+            onOpenItem={openDayItem}
+            timeColumnWidth={Math.ceil(66 * Math.max(1, Math.min(fontScale, 1.5)))}
+          />
 
-          <SectionTitle title="Resumen de hoy" />
+          <AnytimeSection
+            items={data.anytimeItems}
+            pendingIds={pendingRoutineIds}
+            reduceMotion={settings?.reduceMotion === true}
+            onToggleRoutine={toggleRoutineFromHome}
+            onOpenSchedule={goToSchedule}
+          />
 
-          <View style={styles.statsRow}>
-            <Stat value={formatMoney(data.spentToday)} label="Gastado hoy" accent={colors.accent} />
-            <Stat value={data.pinnedNotes} label="Notas fijadas" />
-            <Stat value={data.pendingHabits.length} label="Pendientes" />
-          </View>
+          {routineFeedback ? (
+            <Text style={[typography.caption, styles.routineFeedback]}>{routineFeedback}</Text>
+          ) : null}
 
           {showPermissionCard ? (
             <Card accent={colors.warning}>
@@ -258,7 +232,6 @@ export default function HomeScreen({ navigation }) {
             </Card>
           ) : null}
 
-          <Notice text="Desliza a los costados para cambiar de sección, o toca una tarjeta para ir directo." />
           </>
         )}
       </ScrollView>
@@ -266,96 +239,22 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-/**
- * One tile of the access grid.
- *
- * It receives the `navigation` object instead of an `onPress` callback on purpose: an
- * inline arrow would be a new function on every render and `memo` could never hit. With
- * `navigation` being stable, the eight tiles only reconcile when `item` or `width` changes.
- */
-function QuickCard({ item, width, navigation }) {
-  const handlePress = useCallback(() => {
-    tapHaptic();
-    navigation.navigate(item.route);
-  }, [item.route, navigation]);
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.title}. ${item.hint}`}
-      style={({ pressed }) => [styles.quickCard, { width }, pressed ? styles.pressed : null]}
-    >
-      <View style={[styles.quickIcon, { backgroundColor: `${item.color}22`, borderColor: item.color }]}>
-        <Text style={styles.quickEmoji}>{item.emoji}</Text>
-      </View>
-      <Text style={typography.bodyStrong} numberOfLines={1}>
-        {item.title}
-      </Text>
-      <Text style={typography.caption} numberOfLines={1}>
-        {item.hint}
-      </Text>
-    </Pressable>
-  );
-}
-
-const MemoQuickCard = memo(QuickCard);
-
 const styles = themedStyles({
   root: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: spacing.xxxl, gap: spacing.lg },
-
-  hero: {
-    minHeight: 200,
-    justifyContent: 'flex-end',
-    borderRadius: radius.xl,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
+  content: {
+    paddingHorizontal: layout.gutter,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.lg,
   },
-  heroImage: { borderRadius: radius.xl, opacity: 0.55 },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: `${colors.background}b0` },
-  heroOverlayBottom: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    top: '38%',
-    backgroundColor: `${colors.background}d9`,
-  },
-  heroBody: { padding: spacing.lg, gap: spacing.sm },
-  heroDate: { color: colors.accent },
-  heroHint: { color: colors.textSecondary },
-  heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
-
-  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  eyebrow: { color: colors.accent, letterSpacing: 1.2, marginTop: -spacing.sm },
+  routineFeedback: { color: colors.textSecondary, paddingHorizontal: spacing.xs },
   bannerText: { marginTop: 4, lineHeight: 18 },
-  bannerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  bannerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
-
-  nextCard: { paddingVertical: spacing.md },
-  nextRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  nextTime: { fontSize: 15.5, fontWeight: '700', color: colors.text, width: 54 },
-  nextBody: { flex: 1, gap: 2 },
-
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  quickCard: {
-    ...shadow.card,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  pressed: { opacity: 0.7 },
-  quickIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickEmoji: { fontSize: 20 },
+  organizeCard: { borderColor: colors.violet, paddingVertical: spacing.lg, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  organizeTitle: { color: colors.text },
+  organizeHint: { marginTop: spacing.xs, maxWidth: 360 },
+  organizeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  organizeButton: { flexGrow: 1, flexBasis: 150 },
 });
