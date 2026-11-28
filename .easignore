@@ -60,6 +60,7 @@ nexusday-respaldo*.json
 /android
 
 # Workspace-only materials excluded from Expo build archive
+.agents/
 design/
 tsconfig.json
 .claude/
