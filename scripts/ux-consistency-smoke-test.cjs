@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const routines = fs.readFileSync(path.join(root, 'src/screens/RoutinesScreen.js'), 'utf8');
+const notes = fs.readFileSync(path.join(root, 'src/screens/NotesScreen.js'), 'utf8');
+const calendar = fs.readFileSync(path.join(root, 'src/screens/CalendarScreen.js'), 'utf8');
+assert.match(routines, /requestClose/);
+assert.match(routines, /title="¿Descartar cambios\?"/);
+assert.match(notes, /label="Crear nota" onPress=\{openCreate\}/);
+assert.match(calendar, /label="Crear evento" onPress=\{openCreate\}/);
+console.log('ux-consistency-smoke-test: acciones principales coherentes');

@@ -252,7 +252,7 @@ const styles = themedStyles({
   bannerText: { marginTop: 4, lineHeight: 18 },
   bannerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
-  organizeCard: { borderColor: colors.violet, paddingVertical: spacing.lg },
+  organizeCard: { borderColor: colors.violet, paddingVertical: spacing.lg, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
   organizeTitle: { color: colors.text },
   organizeHint: { marginTop: spacing.xs, maxWidth: 360 },
   organizeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },

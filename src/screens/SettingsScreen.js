@@ -533,6 +533,7 @@ export default function SettingsScreen({ navigation }) {
               style={styles.identityHalo}
             />
           ) : null}
+          <View style={styles.identityAccentBar} accessible={false} />
           <View style={styles.identityEyebrow}>
             <Icon name="settings" size={14} color={colors.accent} />
             <Text style={styles.identityEyebrowText}>TU ESPACIO PERSONAL</Text>
@@ -989,7 +990,7 @@ export default function SettingsScreen({ navigation }) {
 
 const styles = themedStyles({
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  card: { gap: spacing.md },
+  card: { gap: spacing.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
   sectionIcon: {
     width: 34,
@@ -1013,7 +1014,13 @@ const styles = themedStyles({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.elevated,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
+  identityAccentBar: { position: 'absolute', top: 0, left: spacing.xl, right: spacing.xl, height: 4, borderBottomLeftRadius: radius.pill, borderBottomRightRadius: radius.pill, backgroundColor: colors.accent },
   identityHalo: { position: 'absolute', width: 240, height: 120, top: -8, right: -35, opacity: 0.72 },
   identityEyebrow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   identityEyebrowText: { ...typography.overline, color: colors.accent, letterSpacing: 1.1 },
@@ -1033,7 +1040,7 @@ const styles = themedStyles({
   },
   identityAccentDot: { width: 9, height: 9, borderRadius: radius.pill },
   identitySummaryText: { ...typography.label, color: colors.text },
-  appearanceCard: { gap: spacing.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.elevated },
+  appearanceCard: { gap: spacing.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.elevated, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
   appearanceIntro: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   appearanceIntroCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
   appearanceKicker: { ...typography.overline, color: colors.accent, letterSpacing: 0.9 },

@@ -35,7 +35,7 @@ import {
   deleteBirthdayRecord,
   saveBirthdayRecord,
 } from '../services/birthdays';
-import { buildCalendarMarks, buildDayAgenda, calendarEmptyState, CALENDAR_FILTERS, dateKeyInMonth, shiftCalendarMonth } from '../services/calendar';
+import { applyCalendarSelection, buildCalendarMarkDots, buildDayAgenda, calendarEmptyState, CALENDAR_FILTERS, dateKeyInMonth, shiftCalendarMonth } from '../services/calendar';
 import { timeInputError, timeRangeError } from '../services/timeInput';
 import {
   formatDateLong,
@@ -125,21 +125,21 @@ export default function CalendarScreen({ navigation }) {
   const { focusId, request: focusRequest } = useFocusRequest();
   const handledFocusRequest = useRef(null);
 
-  const marks = useMemo(
+  const markDots = useMemo(
     () =>
-      buildCalendarMarks({
+      buildCalendarMarkDots({
         events,
         birthdays,
         year: Number(visibleMonth.slice(0, 4)),
-        selectedKey: selected,
         filter,
         colors: { event: colors.violet, birthday: colors.amber },
       }),
-    [birthdays, events, filter, selected, visibleMonth],
+    [birthdays, events, filter, visibleMonth],
   );
+  const marks = useMemo(() => applyCalendarSelection(markDots, selected), [markDots, selected]);
 
   const calendarDisplayTheme = useMemo(() => {
-    const scale = Math.max(1, Math.min(fontScale, 1.5));
+    const scale = Math.max(1, Math.min(fontScale, 2));
     const dayStyles = calendarTheme['stylesheet.day.basic'];
     const surface = surfaceMode.tokens;
     return {
@@ -162,7 +162,7 @@ export default function CalendarScreen({ navigation }) {
       textDayHeaderFontSize: Math.round(11 * scale),
       'stylesheet.day.basic': {
         ...dayStyles,
-        base: { ...dayStyles.base, minHeight: Math.round(44 * scale), aspectRatio: undefined },
+        base: { ...dayStyles.base, minHeight: Math.max(48, Math.round(44 * scale)), aspectRatio: undefined },
         today: { ...dayStyles.today, borderWidth: 1, borderColor: activeAccent.accent },
         todayText: { color: activeAccent.accent, fontWeight: '700' },
         selected: { ...dayStyles.selected, backgroundColor: activeAccent.accent, borderRadius: radius.md, borderColor: activeAccent.accent },
@@ -535,6 +535,9 @@ export default function CalendarScreen({ navigation }) {
             icon="calendar"
             title={emptyAgenda.title}
             hint={emptyAgenda.hint}
+            action={filter === 'birthdays' || filter === 'classes' ? null : (
+              <TextButton label="Crear evento" onPress={openCreate} />
+            )}
           />
         ) : (
           <View style={styles.timeline}>
@@ -814,19 +817,19 @@ const styles = themedStyles({
   bannerActions: { marginTop: spacing.md, flexDirection: 'row' },
   bannerButton: { flex: 0, alignSelf: 'flex-start', paddingHorizontal: spacing.xl },
   noticeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  filterBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, padding: spacing.xs, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   filters: { flex: 1, minWidth: 0 },
   filterContent: { gap: spacing.xs, paddingRight: spacing.sm },
   calendarCard: { paddingVertical: spacing.md, marginBottom: 0 },
   calendarCardCompact: { marginHorizontal: -spacing.md, paddingHorizontal: 0, borderRadius: radius.lg },
   calendarTouchArea: { gap: spacing.sm },
-  monthFocus: { minHeight: 88, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  monthFocus: { minHeight: 88, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.editorialSurface, borderWidth: 1, borderColor: colors.borderStrong },
   monthFocusCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
   monthFocusKicker: { ...typography.overline, color: colors.accent, letterSpacing: 1 },
   monthFocusDate: { ...typography.h2, color: colors.text, textTransform: 'capitalize' },
   monthArtwork: { width: 92, height: 72, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   monthToolbar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
-  monthButton: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
+  monthButton: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   monthTitle: { flex: 1, textAlign: 'center', ...typography.h2, textTransform: 'capitalize' },
   calendar: { width: '100%', backgroundColor: 'transparent' },
   legend: { minHeight: 32, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.lg, paddingTop: spacing.xs },

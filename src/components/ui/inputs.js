@@ -101,7 +101,7 @@ export function ColorPicker({ label = 'Color', value, onChange, options = palett
 }
 
 /** Small +/- control. Avoids an icon-font dependency entirely. */
-export function StepButton({ sign = '+', onPress, disabled, size = 40, accessibilityLabel }) {
+export function StepButton({ sign = '+', onPress, disabled, size = 48, accessibilityLabel }) {
   return (
     <Pressable
       onPress={onPress}

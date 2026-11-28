@@ -98,7 +98,7 @@ export function buildDayAgenda({ dateKey, events = [], activities = [], birthday
   return rows.sort((a, b) => String(a.time).localeCompare(String(b.time)) || a.title.localeCompare(b.title));
 }
 
-export function buildCalendarMarks({ events = [], birthdays = [], year, selectedKey, filter = 'all', colors }) {
+export function buildCalendarMarkDots({ events = [], birthdays = [], year, filter = 'all', colors }) {
   const marks = {};
   const addDot = (dateKey, dot) => {
     if (!dateKey) return;
@@ -122,9 +122,16 @@ export function buildCalendarMarks({ events = [], birthdays = [], year, selected
     });
   }
 
-  Object.keys(marks).forEach((key) => {
-    marks[key] = { ...marks[key], selected: key === selectedKey, disableTouchEvent: false };
-  });
-  if (selectedKey && !marks[selectedKey]) marks[selectedKey] = { selected: true, dots: [] };
   return marks;
+}
+
+export function applyCalendarSelection(marks, selectedKey) {
+  const selectedMarks = { ...marks };
+  Object.keys(selectedMarks).forEach((key) => { selectedMarks[key] = { ...selectedMarks[key], selected: key === selectedKey, disableTouchEvent: false }; });
+  if (selectedKey && !selectedMarks[selectedKey]) selectedMarks[selectedKey] = { selected: true, dots: [] };
+  return selectedMarks;
+}
+
+export function buildCalendarMarks({ events = [], birthdays = [], year, selectedKey, filter = 'all', colors }) {
+  return applyCalendarSelection(buildCalendarMarkDots({ events, birthdays, year, filter, colors }), selectedKey);
 }

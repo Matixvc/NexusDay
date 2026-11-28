@@ -21,17 +21,25 @@ require.extensions['.js'] = (module, filename) => {
 };
 
 const { birthdayDateKeyForYear, birthdayOccursOn } = require('../src/services/birthdayDates');
-const { buildCalendarMarks, buildDayAgenda, calendarEmptyState, dateKeyInMonth, shiftCalendarMonth } = require('../src/services/calendar');
+const { applyCalendarSelection, buildCalendarMarkDots, buildCalendarMarks, buildDayAgenda, calendarEmptyState, dateKeyInMonth, shiftCalendarMonth } = require('../src/services/calendar');
 const { formatTimeInput, timeInputError, timeRangeError } = require('../src/services/timeInput');
 const calendarScreen = fs.readFileSync(path.resolve(__dirname, '../src/screens/CalendarScreen.js'), 'utf8');
 const timeField = fs.readFileSync(path.resolve(__dirname, '../src/components/ui/TimeField.js'), 'utf8');
 const birthdayEditor = fs.readFileSync(path.resolve(__dirname, '../src/components/BirthdayEditor.js'), 'utf8');
 const rootNavigator = fs.readFileSync(path.resolve(__dirname, '../src/navigation/RootNavigator.js'), 'utf8');
+const synthetic = Array.from({ length: 500 }, (_, index) => ({ dateKey: `2026-11-${String((index % 28) + 1).padStart(2, '0')}`, id: String(index) }));
+const dots = buildCalendarMarkDots({ events: synthetic, birthdays: [], year: 2026, filter: 'events', colors: { event: '#f00', birthday: '#ff0' } });
+assert.equal(Object.keys(dots).length, 28);
+assert.equal(applyCalendarSelection(dots, '2026-11-29')['2026-11-29'].selected, true);
+const selectedMarks = buildCalendarMarks({ events: synthetic, birthdays: [], year: 2026, selectedKey: '2026-11-01', filter: 'events', colors: { event: '#f00', birthday: '#ff0' } });
+assert.equal(selectedMarks['2026-11-01'].selected, true);
 assert.match(calendarScreen, /LocaleConfig\.defaultLocale = 'nexusEs'/);
 assert.match(calendarScreen, /'Domingo', 'Lunes', 'Martes', 'Miércoles'/);
 assert.match(calendarScreen, /accessibilityLabel="Mes anterior"[\s\S]*?accessibilityLabel="Mes siguiente"/);
 assert.match(calendarScreen, /hideExtraDays[\s\S]*?enableSwipeMonths/);
 assert.match(calendarScreen, /enableSwipeMonths=\{false\}/, 'El calendario debe dejar el cambio de mes exclusivamente en las flechas para que sus gestos no compitan con el pager principal.');
+assert.match(calendarScreen, /Math\.min\(fontScale, 2\)/);
+assert.match(calendarScreen, /Math\.max\(48, Math\.round\(44 \* scale\)\)/);
 assert.match(calendarScreen, /onTouchStart=\{beginCalendarTouch\}[\s\S]*?onTouchEnd=\{endCalendarTouch\}/);
 assert.match(calendarScreen, /const beginCalendarTouch = useCallback\(\(\) => \{[\s\S]*?acquireSwipe\(\)/, 'Al tocar la cuadrícula el pager principal debe quedar bloqueado hasta finalizar el gesto.');
 assert.match(rootNavigator, /swipeEnabled:\s*!locked/, 'El swipe entre secciones principales debe seguir disponible fuera de la región del calendario.');

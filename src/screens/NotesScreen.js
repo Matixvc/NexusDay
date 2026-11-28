@@ -579,7 +579,9 @@ export default function NotesScreen({ navigation }) {
                   setActiveFilter('all');
                 }}
               />
-            ) : null}
+            ) : (
+              <TextButton label="Crear nota" onPress={openCreate} />
+            )}
           />
         ) : (
           <>
@@ -1150,7 +1152,7 @@ const styles = themedStyles({
   pressed: { opacity: 0.68 },
 
   swipeRow: { marginBottom: spacing.md },
-  noteCard: { gap: spacing.md, borderRadius: radius.xl, paddingVertical: spacing.lg },
+  noteCard: { gap: spacing.md, borderRadius: radius.xl, paddingVertical: spacing.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.elevated, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
   noteCardPinned: { borderWidth: 1.5, borderColor: colors.accent },
   noteHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   noteTitle: { flex: 1, fontSize: 16, lineHeight: 22 },

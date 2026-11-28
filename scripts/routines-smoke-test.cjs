@@ -22,6 +22,12 @@ const {
 const { buildDashboard } = require('../src/services/dashboard');
 const { todayKey, weekdayIndex } = require('../src/utils/dates');
 const { buildScheduleWidgetSnapshot } = require('../src/services/scheduleWidgetSnapshot');
+const routinesScreen = fs.readFileSync(path.resolve(__dirname, '../src/screens/RoutinesScreen.js'), 'utf8');
+const inputs = fs.readFileSync(path.resolve(__dirname, '../src/components/ui/inputs.js'), 'utf8');
+assert.match(routinesScreen, /iconChoice: \{ width: 48, height: 48/);
+assert.match(routinesScreen, /swatch: \{ width: 48, height: 48/);
+assert.match(inputs, /size = 48/);
+assert.match(inputs, /Math\.max\(size, 48\)/);
 const routinesScreenSource = fs.readFileSync(path.join(__dirname, '../src/screens/RoutinesScreen.js'), 'utf8');
 assert.match(routinesScreenSource, /cancelAlarm\(selectedRoutine\?\.alarmNotificationId\)/, 'Deleting a routine cancels its alarm.');
 assert.match(routinesScreenSource, /toggleRoutineEnabled/, 'Pause and resume use the alarm-aware routine path.');

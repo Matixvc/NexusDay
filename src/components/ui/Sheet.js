@@ -1,4 +1,5 @@
 import {
+  AccessibilityInfo,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -8,11 +9,13 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useEffect, useState } from 'react';
 import { themedStyles, colors, radius, spacing, typography } from '../../theme/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TextButton } from './primitives';
 import { Icon } from '../Icon';
 import { useResponsiveLayout } from '../../theme/responsive';
+import { useAppData } from '../../context/AppDataContext';
 
 /**
  * Bottom sheet used for every create/edit form and every confirmation.
@@ -23,13 +26,22 @@ import { useResponsiveLayout } from '../../theme/responsive';
  * navigation bar and the iOS home indicator (the app runs edge-to-edge).
  */
 export function Sheet({ visible, onClose, title, subtitle, children, scrollable = true, footer }) {
+  const { settings } = useAppData();
+  const [systemReduceMotion, setSystemReduceMotion] = useState(false);
   const insets = useSafeAreaInsets();
   const responsive = useResponsiveLayout();
+  useEffect(() => {
+    let mounted = true;
+    Promise.resolve(AccessibilityInfo.isReduceMotionEnabled?.()).then((enabled) => { if (mounted) setSystemReduceMotion(Boolean(enabled)); });
+    const subscription = AccessibilityInfo.addEventListener?.('reduceMotionChanged', setSystemReduceMotion);
+    return () => { mounted = false; subscription?.remove?.(); };
+  }, []);
+  const reduceMotion = settings?.reduceMotion === true || systemReduceMotion;
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType={reduceMotion ? 'none' : 'slide'}
       statusBarTranslucent
       onRequestClose={onClose}
       accessibilityViewIsModal

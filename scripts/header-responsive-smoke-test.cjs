@@ -1,0 +1,10 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = fs.readFileSync(path.resolve(__dirname, '../src/components/ui/AppHeader.js'), 'utf8');
+assert.match(source, /copy: \{ flex: 1, minWidth: 0, flexShrink: 1 \}/);
+assert.match(source, /subtitle: \{ marginTop: spacing\.xs, flexShrink: 1 \}/);
+assert.match(source, /variant === 'compact'/);
+assert.match(source, /accessibilityRole="header"/);
+assert.match(source, /actions: \{ flexShrink: 0/);
+console.log('header-responsive-smoke-test: encabezado flexible y accesible');
