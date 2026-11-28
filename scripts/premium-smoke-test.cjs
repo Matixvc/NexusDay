@@ -30,8 +30,8 @@ assert.ok(!/route:\s*'Cumplea(?:Ã±|ñ)os'/.test(home), 'Inicio no debe exponer
 assert.ok(!/route:\s*'Notas'/.test(home), 'Inicio no debe duplicar la navegación principal de Notas.');
 assert.ok(!/route:\s*'Agenda'/.test(home), 'Inicio no debe duplicar la navegación principal del Calendario.');
 assert.match(home, /useFocusEffect\([\s\S]*?millisecondsToNextMinute\(now\)[\s\S]*?AppState\.addEventListener/, 'Día a Día debe actualizar su reloj solo mientras está enfocado y al volver a primer plano.');
-assert.equal(appConfig.version, '1.2.0', 'La próxima APK debe identificar la fase U10.2 como versión 1.2.0.');
-assert.equal(appConfig.runtimeVersion, '1.1.0', 'La OTA debe conservar compatibilidad con la APK base 1.1.0.');
+assert.equal(appConfig.version, '1.3.0', 'La configuración actual debe identificar NexusDay como versión 1.3.0.');
+assert.equal(appConfig.runtimeVersion, '1.3.0', 'La OTA debe conservar compatibilidad con la APK base 1.3.0.');
 assert.equal(appConfig.android.package, 'com.matix03.nexusday', 'La actualización debe conservar el application ID instalado.');
 assert.match(home, /buildDashboard\(\{[\s\S]*?now: new Date\(clockTimestamp\)/, 'El resumen de hoy debe recalcularse con el reloj actualizado.');
 assert.match(dashboardService, /todayCommitments: activeActivities\.length \+ todayEvents\.length \+ todayRoutines\.length/, 'Inicio debe resumir el compromiso diario sin añadir datos ajenos.');
